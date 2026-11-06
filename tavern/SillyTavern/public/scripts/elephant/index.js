@@ -10,7 +10,8 @@
  *   power  — the character controls the app (scene, colours, title cards, glitch, whispers);
  *   forge  — character generator (canon-aware cards + Anima avatars);
  *   director — the character's own plan before each reply (helper model);
- *   cost   — what each turn and day costs (NanoGPT balance).
+ *   cost   — what each turn and day costs (NanoGPT balance);
+ *   voices — one dialogue colour per character, owned by the app.
  * Generation calls globalThis.ElephantCore.beforeGenerate (see
  * runGenerationInterceptors): memory, then the director, then the game engine.
  */
@@ -23,6 +24,7 @@ import { init as initWelcome } from './welcome/index.js';
 import { init as initPower } from './power/index.js';
 import { init as initForge } from './forge/index.js';
 import { init as initCost } from './cost/index.js';
+import { init as initVoices } from './voices/index.js';
 import { init as initDirector, beforeGenerate as directorBeforeGenerate } from './director/index.js';
 
 async function beforeGenerate(chat, contextSize, abort, type) {
@@ -39,7 +41,7 @@ async function beforeGenerate(chat, contextSize, abort, type) {
 
 export async function initElephantCore() {
     globalThis.ElephantCore = { version: 2, beforeGenerate };
-    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['power', initPower], ['forge', initForge], ['director', initDirector], ['cost', initCost]]) {
+    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['power', initPower], ['forge', initForge], ['director', initDirector], ['cost', initCost], ['voices', initVoices]]) {
         try {
             await init();
         } catch (e) {

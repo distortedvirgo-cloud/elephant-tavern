@@ -473,7 +473,7 @@ export function parseTrackerLine(text) {
  * Applies the extractor's report of what happened in the narrator's reply.
  * Everything is clamped: the model reports, the engine decides how much it counts.
  */
-export function applyReport(state, report, { trackerLine = null } = {}) {
+export function applyReport(state, report, { trackerLine = null, colors = null } = {}) {
     const s = clone(state);
     const notes = [];
     const events = [];
@@ -505,7 +505,8 @@ export function applyReport(state, report, { trackerLine = null } = {}) {
                 attraction: clamp(Number(n.start_attraction ?? 0) || 0, 0, 70),
                 affection: clamp(Number(n.start_affection ?? 0) || 0, 0, 70),
                 openness: clamp(Number(n.start_openness ?? 20) || 20, 0, 70),
-                color: NPC_COLORS.find(c => !used.has(c)) || NPC_COLORS[Object.keys(s.npcs).length % NPC_COLORS.length],
+                // The app's voice table (elephant/voices) decides colours when it knows this character.
+                color: (typeof colors === 'function' ? colors(name) : null) || NPC_COLORS.find(c => !used.has(c)) || NPC_COLORS[Object.keys(s.npcs).length % NPC_COLORS.length],
                 met: s.turn,
             };
             notes.push({ kind: 'npc_new', name });

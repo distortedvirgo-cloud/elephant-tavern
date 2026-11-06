@@ -242,7 +242,9 @@ async function onReply(mesId) {
     }
     // A swipe may have arrived meanwhile; only write to the message we read.
     if (c.chat[mesId] !== msg) return;
-    const { state, notes, events } = E.applyReport(base, report, { trackerLine: tracker });
+    const voices = globalThis.ElephantCore?.voices;
+    const { state, notes, events } = E.applyReport(base, report, { trackerLine: tracker, colors: voices ? (name) => voices.colorFor(name, { assign: false }) : null });
+    if (voices) for (const n of Object.values(state.npcs)) voices.adopt(n.name, n.color);
     writeSnapshot(mesId, { state, notes, events });
     await c.saveChat();
     // Toasts, banners and the HUD change land with the (translated) text, not before it.
