@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Builds the SillyTavern bundle that ships inside the APK:
-#   app/src/main/assets/tavern.zip  — patched SillyTavern + node_modules + built-in extensions
+#   app/src/main/assets/tavern.zip  — the SillyTavern fork + node_modules + Elephant Memory
 #   app/src/main/assets/tavern.json — version info and entry count (for the install progress bar)
 #
-# Requires: git, node >= 20, npm, zip, python3.
+# Requires: git, node >= 20, npm, zip, python3, tar.
+# The SillyTavern fork (with Elephant Core) is tavern/SillyTavern in this repo.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,26 +13,20 @@ WORK="$ROOT/build/tavern"
 ST="$WORK/SillyTavern"
 ASSETS="$ROOT/app/src/main/assets"
 
-ST_REF="$(tr -d '[:space:]' < "$TAVERN/st.version")"
 EM_REPO="https://github.com/distortedvirgo-cloud/SillyTavern-ElephantMemory"
 EM_REF="$(tr -d '[:space:]' < "$TAVERN/elephant-memory.version")"
+ST_REF="$(node -p "require('$TAVERN/SillyTavern/package.json').version")-elephant"
 
-echo "==> SillyTavern $ST_REF"
+echo "==> SillyTavern fork ($ST_REF)"
 rm -rf "$WORK"
 mkdir -p "$WORK"
-git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ST_REF" https://github.com/SillyTavern/SillyTavern "$ST"
-rm -rf "$ST/.git" "$ST/.github" "$ST/tests" "$ST/colab" "$ST/docker/docker-compose.yml" "$ST/src/electron"
+# The fork lives in the repo (tavern/SillyTavern): copy it without local state.
+(cd "$TAVERN/SillyTavern" && tar --exclude=./node_modules --exclude=./data --exclude=./dist --exclude=./config.yaml -cf - .) | (mkdir -p "$ST" && cd "$ST" && tar -xf -)
 
-echo "==> Patching"
-node "$TAVERN/patch-st.mjs" "$ST"
-cp "$TAVERN/elephant-boot.mjs" "$ST/elephant-boot.mjs"
-
-echo "==> Built-in extensions"
+echo "==> Elephant Memory"
 EXT="$ST/public/scripts/extensions/third-party"
 mkdir -p "$EXT"
-cp -r "$TAVERN/extensions/ElephantStage" "$EXT/ElephantStage"
-cp -r "$TAVERN/extensions/ElephantGame" "$EXT/ElephantGame"
-git -c advice.detachedHead=false clone --quiet "$EM_REPO" "$EXT/ElephantMemory"
+git clone --quiet "$EM_REPO" "$EXT/ElephantMemory"
 git -C "$EXT/ElephantMemory" -c advice.detachedHead=false checkout --quiet "$EM_REF"
 EM_COMMIT="$(git -C "$EXT/ElephantMemory" rev-parse --short HEAD)"
 rm -rf "$EXT/ElephantMemory/.git"

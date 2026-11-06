@@ -7,12 +7,15 @@ SillyTavern как настоящее Android-приложение. Внутри
 
 ## Что внутри
 
-| Слой | Что делает |
-|---|---|
-| **Android-оболочка** (`app/`) | Kotlin + JNI. Node.js (nodejs-mobile) крутит SillyTavern в отдельном процессе `:node` с foreground-сервисом — генерация не обрывается, когда приложение свёрнуто. WebView открывает `127.0.0.1`. Бэкап/восстановление, лог сервера, системная кнопка «назад», вибрация, сохранение экспортов в «Загрузки». |
-| **SillyTavern** (`tavern/`) | Чистый upstream нужной версии + маленькие патчи (`patch-st.mjs`). Фронтенд-библиотеки собираются заранее — сервер стартует за секунды. |
-| **🎭 Elephant Stage** (`tavern/extensions/ElephantStage`) | Мобильный интерфейс и «живая сцена» — см. ниже. |
-| **🐘 Elephant Memory** | [Твоё расширение](https://github.com/distortedvirgo-cloud/SillyTavern-ElephantMemory), подтягивается при сборке (`tavern/elephant-memory.version`). |
+| Слой | Где | Что делает |
+|---|---|---|
+| **Android-оболочка** | `app/` | Kotlin + JNI. Node.js (nodejs-mobile) запускает SillyTavern в отдельном процессе `:node` с foreground-сервисом, поэтому генерация не обрывается, когда приложение свёрнуто. WebView открывает `127.0.0.1`. Бэкап и восстановление, лог сервера, кнопка «назад», вибрация, сохранение в «Загрузки». |
+| **Форк SillyTavern** | `tavern/SillyTavern` | Исходники SillyTavern 1.19.0, правятся прямо здесь. Фронтенд-библиотеки собираются заранее, поэтому сервер стартует за секунды. |
+| **Elephant Core — сервер** | `tavern/SillyTavern/src/elephant` | `/api/elephant/*`: вызовы служебной модели NanoGPT с сохранённым ключом. Профиль Connection Manager не нужен, а запрос не обрывается, если WebView уснул. Список моделей с ценами. |
+| **Elephant Core — клиент** | `tavern/SillyTavern/public/scripts/elephant` | Часть приложения, а не расширение: стартует из `script.js` вместе с таверной. Генерация вызывает игровой движок напрямую (`runGenerationInterceptors`). |
+| **🐘 Elephant Memory** | [отдельный репо](https://github.com/distortedvirgo-cloud/SillyTavern-ElephantMemory) | Подтягивается при сборке (`tavern/elephant-memory.version`) и стоит как встроенное расширение. |
+
+Точки, где ядро вшито в SillyTavern: `public/script.js` (запуск ядра), `public/scripts/extensions.js` (хук генерации), `src/server-startup.js` (роутер `/api/elephant`), `public/index.html` (стили ядра), `webpack.config.js` (готовый фронтенд).
 
 ### 🎭 Elephant Stage
 
@@ -75,9 +78,11 @@ SillyTavern как настоящее Android-приложение. Внутри
 1. Установи APK (последний — во вкладке **Releases** или в артефактах **Actions**).
    Первый старт распаковывает SillyTavern (~320 МБ) — около минуты, дальше запуск за секунды.
 2. Хаб (⋮⋮⋮ слева вверху) → **Подключение** → Chat Completion → **NanoGPT**, вставь ключ.
-3. Сохрани два профиля в Connection Manager: основной («Рассказчик») и дешёвый («Летописец»).
-   Выбери «Летописца» в **Память** (Elephant Memory) — Elephant Stage возьмёт его же.
-4. **Сцена и арт** → выбери модель картинок и включи автогенерацию.
+3. **Сцена и арт** → **Служебная модель**: выбери дешёвую модель NanoGPT из списка с ценами
+   (например DeepSeek Flash). Её используют сцена, игровой режим и промпты картинок.
+4. Для Elephant Memory пока нужен профиль в Connection Manager с той же дешёвой моделью
+   (выбирается в разделе **Память**).
+5. **Сцена и арт** → модель картинок и автогенерация. **Игра** → игровой режим для чата.
 
 Перенос с ПК: заархивируй папку `SillyTavern/data` в zip и выбери его в
 **Приложение → Восстановить из бэкапа**.
@@ -95,8 +100,8 @@ SillyTavern как настоящее Android-приложение. Внутри
 ./gradlew assembleRelease
 ```
 
-Обновить SillyTavern — поменять `tavern/st.version` (если патч не применится, сборка
-упадёт с понятной ошибкой в `patch-st.mjs`).
+SillyTavern живёт в репо как обычный код. Новую версию upstream подтягивать по желанию:
+слить её в `tavern/SillyTavern` и разрешить конфликты в перечисленных точках.
 
 ### Ключ подписи
 
