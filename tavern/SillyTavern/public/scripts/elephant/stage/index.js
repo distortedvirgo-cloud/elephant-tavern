@@ -188,6 +188,7 @@ function buildHub() {
                     <button class="et-pill" data-et-act="stopt" data-opt="option_impersonate"><i class="fa-solid fa-user-pen"></i> Написать за меня</button>
                     <button class="et-pill" data-et-act="stopt" data-opt="option_delete_mes"><i class="fa-solid fa-trash-can"></i> Удалить сообщения</button>
                     <button class="et-pill" data-et-act="stopt" data-opt="option_toggle_AN"><i class="fa-solid fa-note-sticky"></i> Заметка автора</button>
+                    <button class="et-pill" data-et-act="exportchat"><i class="fa-solid fa-file-export"></i> Выгрузить чат</button>
                 </div>
                 <div class="et-hub-cost" data-et-act="section" data-et-section="stage"></div>
                 <div class="et-tiles">${tiles}</div>
@@ -349,6 +350,9 @@ function renderCharsSheet() {
             <button class="et-btn" data-et-act="newchar"><i class="fa-solid fa-wand-magic-sparkles"></i> Создать</button>
             <button class="et-btn et-btn-ghost" data-et-act="importchar"><i class="fa-solid fa-file-import"></i> Импорт</button>
         </div>
+        <div class="et-row">
+            <button class="et-btn et-btn-ghost" data-et-act="importchat"><i class="fa-solid fa-box-open"></i> Загрузить чат из файла</button>
+        </div>
         ${list.length > 6 ? '<input class="text_pole et-char-search" type="search" placeholder="Поиск">' : ''}
         <div class="et-chars">${rows || '<p class="et-note">Пока никого. Создай персонажа или импортируй карточку.</p>'}</div>
         <button class="et-btn et-btn-ghost et-chars-more" data-et-act="allchars"><i class="fa-solid fa-sliders"></i> Теги, папки и группы</button>`;
@@ -439,6 +443,8 @@ async function onAction(e) {
         case 'importchar': closeSheets(true); return $('#character_import_file').trigger('click');
         case 'allchars': closeSheets(true); return openDrawer('#rightNavHolder', '#rm_button_characters');
         case 'closedrawers': return closeDrawers();
+        case 'exportchat': closeSheets(true); return globalThis.ElephantCore?.transfer?.exportCurrentChat();
+        case 'importchat': closeSheets(true); return globalThis.ElephantCore?.transfer?.pickBundle();
         case 'image': return quickImage();
         case 'section': {
             const sec = SECTIONS.find(s => s.id === el.dataset.etSection);

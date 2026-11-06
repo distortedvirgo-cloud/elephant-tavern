@@ -787,6 +787,8 @@ router.post('/import', validateAvatarUrlMiddleware, function (request, response)
     }
 
     try {
+        // Elephant Tavern: a character that never chatted on this install has no chat folder yet.
+        fs.mkdirSync(directoryPath, { recursive: true });
         const pathToUpload = path.join(request.file.destination, request.file.filename);
         const data = fs.readFileSync(pathToUpload, 'utf8');
 
