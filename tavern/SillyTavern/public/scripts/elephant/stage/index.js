@@ -42,7 +42,7 @@ const DEFAULTS = {
         every: 8,
         mode: 'auto',  // auto (pov when the player is in the action, else a wide shot) | pov | scene | portrait
         size: 'auto',
-        style: 'anime',     // anime | art | custom (stylePrefix)
+        style: 'western',   // western | comic | semireal | anime | art | custom (stylePrefix)
         artist: '',         // optional "@artist" for a specific look
         hires: true,        // 1.5K output: sharper details and anatomy
         stylePrefix: 'masterpiece, best quality',
@@ -67,7 +67,9 @@ export function S() {
     }
     // 0.9.3: style presets and the anatomy-aware negative.
     if (s.images.negative === NEGATIVE_V1) s.images.negative = NEGATIVE_V2;
-    if (s.images.style === undefined) s.images.style = !s.images.stylePrefix || s.images.stylePrefix === 'masterpiece, best quality' ? 'anime' : 'custom';
+    if (s.images.style === undefined) s.images.style = !s.images.stylePrefix || s.images.stylePrefix === 'masterpiece, best quality' ? 'western' : 'custom';
+    // 0.9.6: the anime default gave way to the western digital-art look (once; a later choice stays).
+    if (!s.images.westernMigrated) { if (s.images.style === 'anime') s.images.style = 'western'; s.images.westernMigrated = true; }
     // 0.9: "alternate" (POV/portrait in turns) became "auto" (the frame follows the scene).
     if (s.images.mode === 'alternate') s.images.mode = 'auto';
     // 0.5: Anima is the default image model — move untouched old defaults over.

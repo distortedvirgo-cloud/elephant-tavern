@@ -187,12 +187,19 @@ export function negativeFor(prompt, base = '') {
 /* Style presets (research: Anima's default look is neutral; era and source tags give it a real anime look,
    "anime coloring" keeps it from glossy AI slop). */
 export const STYLES = {
+    // Western digital art: thin lineart, flat shading with glossy highlights, muted colours, realistic proportions.
+    western: 'masterpiece, best quality, newest, realistic proportions, lineart, flat shading, shiny skin, muted colors, realistic background, photo background',
+    comic: 'masterpiece, best quality, newest, western comics (style), realistic, thin lineart, cel shading, shiny skin, muted colors, detailed background',
+    semireal: 'masterpiece, best quality, newest, digital art, semi-realistic, clean lineart, soft cel shading, natural colors, glossy highlights, detailed realistic background',
     anime: 'masterpiece, best quality, newest, anime screenshot, anime coloring',
     art: 'masterpiece, best quality, newest, highres, official art',
 };
+/** Pushes the non-anime styles away from the anime look the model defaults to. */
+const STYLE_NEGATIVE = { western: 'anime screenshot, anime coloring, chibi', comic: 'anime screenshot, anime coloring, chibi', semireal: 'anime screenshot, chibi' };
+export const styleNegative = (settings) => STYLE_NEGATIVE[settings?.style] || '';
 
 export function stylePrefixFor(settings) {
-    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.anime);
+    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.western);
     const artist = String(settings.artist || '').trim();
     const at = artist ? (artist.startsWith('@') ? artist : `@${artist}`) : '';
     return [base.trim(), at].filter(Boolean).join(', ');
@@ -210,7 +217,7 @@ export async function generateImage(settings, prompt, mode, signal) {
     const body = {
         model: settings.model,
         prompt: fullPrompt,
-        negative_prompt: negativeFor(prompt, settings.negative),
+        negative_prompt: [negativeFor(prompt, settings.negative), styleNegative(settings)].filter(Boolean).join(', '),
         width: size.width,
         height: size.height,
         resolution: `${size.width}x${size.height}`,
