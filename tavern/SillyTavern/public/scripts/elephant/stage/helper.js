@@ -91,12 +91,12 @@ export function currentCharacter() {
     };
 }
 
-/** Last n visible messages as plain "Name: text" lines (originals, not translations). */
+/** Last n visible messages as plain "Name: text" lines (originals, not translations). Long ones keep their end: that is "now". */
 export function recentMessages(n = 4, upTo = null) {
     const chat = ctx().chat ?? [];
     const end = upTo === null ? chat.length : upTo + 1;
     return chat.slice(0, end).filter(m => !m.is_system && m.mes).slice(-n)
-        .map(m => `${m.name}: ${String(m.mes).replace(/<[^>]+>/g, '').slice(0, 1500)}`).join('\n\n');
+        .map(m => { const t = String(m.mes).replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').trim(); return `${m.name}: ${t.length > 2200 ? '…' + t.slice(-2200) : t}`; }).join('\n\n');
 }
 
 export function clampWords(text, max) {

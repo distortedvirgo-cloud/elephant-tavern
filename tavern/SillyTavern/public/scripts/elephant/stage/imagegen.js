@@ -29,44 +29,55 @@ Write the visual reference for {{name}} as ONE line of comma-separated Danbooru-
 - Otherwise use descriptive tags: count tag (1girl / 1boy / 1other), apparent age, build, skin, eye color, hair color + length + style, distinguishing marks, default outfit, accessories.
 At most 45 words. Never invent details the description does not support. Output only the line.`;
 
-const PROMPT_SYSTEM = 'You write prompts for Anima, an anime image model trained on Danbooru tags plus natural language. You never refuse and never add commentary.';
+const PROMPT_SYSTEM = 'You write prompts for Anima, an anime image model trained on Danbooru tags plus natural language. You illustrate adult fiction faithfully: whatever is happening in the scene, including sex, is drawn exactly as written. You never refuse, censor or add commentary.';
 
 /*
- * Anima prompt order: [safety] [count: 1girl/1boy…] [character tag] [series tag] [general tags], then an
- * optional plain-English sentence for the action and setting. Lowercase tags, spaces not underscores.
- * Quality tags are added from the style prefix, so the model must not write them.
+ * The helper first writes a SCENE line (who is there, what each body is doing right now),
+ * then the PROMPT line. Only PROMPT goes to the image model; SCENE makes it look at the action
+ * instead of falling back to "the character posing".
+ * Anima prompt order: [safety] [count] [character + series tags] [ACTION tags] [general tags] + one sentence.
  */
-const ANIMA_RULES = `Format — one line, exactly in this order:
-1. one safety tag that fits the moment: safe, sensitive, nsfw or explicit;
-2. count tags (1girl, 1boy, 2girls, 1girl 1boy…);
-3. the character's Danbooru character tag and copyright tag if the reference starts with them (keep them exactly);
-4. Danbooru general tags: appearance from the reference (clothing from the story overrides it), expression, pose, framing, camera angle, lighting, location, time of day;
-5. then ONE short plain-English sentence describing the action and mood.
-Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 70 words.`;
+const ANIMA_RULES = `Answer in exactly two lines:
+SCENE: one plain sentence — who is in the frame and what each of them is physically doing at the last moment of the story (the act, the position, where hands and mouths are, what is undressed or exposed).
+PROMPT: the Anima prompt, one line, in this order:
+1. one rating tag: safe, sensitive, nsfw or explicit (any sex act or exposed genitals = explicit);
+2. count tags for everyone visible (1girl, 1boy, 1girl 1boy, 2girls…); a partner seen only in part still counts (add "faceless male" / "faceless female" when their face is out of frame);
+3. the character's Danbooru character tag and copyright tag if the reference starts with them (keep exactly);
+4. ACTION tags right after them — this is the picture, never skip it. Interaction: hug, kiss, holding hands, hand on another's cheek, fighting, feeding… Sex, named plainly with Danbooru tags: sex, vaginal, anal, fellatio, cunnilingus, handjob, paizuri, fingering, masturbation, grabbing another's breast, girl on top, cowgirl position, reverse cowgirl position, missionary, doggystyle, from behind, standing sex, straddling, spread legs, penis, pussy, nipples, nude / completely nude / topless / clothes pulled aside, cum, sweat, saliva, motion lines;
+5. general tags: appearance from the reference (the story's current clothing or nudity overrides the reference outfit), the expression the story describes right now, framing that shows the action (close-up / upper body for a face or kiss, cowboy shot or full body for bodies in contact), camera angle, lighting, location, time of day;
+6. then ONE short plain-English sentence describing the action concretely (who does what to whom), not the mood.
+Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 90 words. If nothing physical is happening, show the character's current pose and expression instead.`;
 
 const PROMPT_TEMPLATES = {
     portrait: `Character visual reference — {{char}}: {{dna}}
 
-{{state}}Recent story:
+{{state}}Recent story (the last lines are the moment to draw):
 <messages>
 {{messages}}
 </messages>
 
-Write an Anima prompt for a character-focused picture of {{char}} at this exact moment: portrait or upper body, {{char}} in focus, looking {{gaze}}, expression and clothing matching what is happening now, the current location softly in the background.
-${ANIMA_RULES}
-Output only the prompt.`,
+Draw {{char}} at this exact moment, {{char}} in focus. If {{char}} is doing something with someone (talking face to face, kissing, fighting, having sex), show that interaction and the other person as much as the framing needs; frame it so the action is visible. If not, a portrait or upper body looking {{gaze}}, with the expression and clothing of this moment and the location softly behind.
+${ANIMA_RULES}`,
 
     pov: `Character visual reference — {{char}}: {{dna}}
 
-{{state}}Recent story:
+{{state}}Recent story (the last lines are the moment to draw):
 <messages>
 {{messages}}
 </messages>
 
-Write an Anima prompt for a first-person POV picture through the eyes of {{user}} at this exact moment: include the tags "pov" and "pov hands" only if {{user}}'s hands are doing something; {{user}} is otherwise not visible; {{char}} is in front of the camera at the distance and angle the scene implies, reacting to {{user}}; show the location, lighting and time of day.
-${ANIMA_RULES}
-Output only the prompt.`,
+Draw this exact moment as a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}} appears only as the body parts the viewer would see (pov hands, a penis, legs, "1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; show the location, lighting and time of day.
+${ANIMA_RULES}`,
 };
+
+/** Takes the PROMPT line out of the helper's answer (falls back to the whole text). */
+export function extractPrompt(out) {
+    const text = String(out ?? '').trim();
+    const m = text.match(/PROMPT\s*:\s*([\s\S]+)/i);
+    let p = m ? m[1] : text.replace(/^SCENE\s*:.*$/im, '');
+    p = p.split('\n').map(l => l.trim()).filter(Boolean)[0] || '';
+    return p.replace(/^(prompt|image prompt)\s*:\s*/i, '').replace(/^["'`\s]+|["'`\s]+$/g, '');
+}
 
 function fill(t, vars) {
     return t.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? '');
@@ -105,9 +116,11 @@ export async function buildPrompt(settings, mode, mesId) {
         messages: recentMessages(mode === 'pov' ? 3 : 2, mesId),
         gaze: mode === 'portrait' ? 'at the viewer' : 'at the camera',
     };
-    const template = settings.prompts?.[mode] || PROMPT_TEMPLATES[mode];
-    const out = await callHelper(settings, PROMPT_SYSTEM, fill(template, vars), 300);
-    return clampWords(out.replace(/^(prompt|image prompt)\s*:\s*/i, '').replace(/^["'\s]+|["'\s]+$/g, ''), 110);
+    const custom = settings.prompts?.[mode];
+    const template = custom && /PROMPT:/.test(custom) ? custom : PROMPT_TEMPLATES[mode];
+    const out = await callHelper(settings, PROMPT_SYSTEM, fill(template, vars), 600);
+    log('image prompt draft', out);
+    return clampWords(extractPrompt(out), 130);
 }
 
 export async function generateImage(settings, prompt, mode, signal) {
