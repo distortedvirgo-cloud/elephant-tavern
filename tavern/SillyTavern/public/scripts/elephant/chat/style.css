@@ -1,0 +1,70 @@
+/* Elephant Core — mobile chat screen: action sheet, reply ideas, gesture UI. */
+
+/* On phones the long-press sheet replaces the per-message button row. */
+body.et-shell.ec-gesture-ui .mes .mes_buttons,
+body.et-shell.ec-gesture-ui .mes .mes_edit { display: none !important; }
+body.et-shell .mes { transition: transform 0.18s ease-out; -webkit-touch-callout: none; }
+body.et-shell .mes .mes_text { -webkit-user-select: text; user-select: text; }
+
+#ec-scrim {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh;
+    z-index: 4400; background: rgba(0, 0, 0, 0.5); opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+body.ec-sheet-open #ec-scrim { opacity: 1; pointer-events: auto; }
+
+.ec-sheet {
+    position: fixed; left: 0; width: 100vw; top: 100dvh; z-index: 4401; box-sizing: border-box;
+    max-height: 80dvh; overflow-y: auto;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--et-bg-a, #14121c) 70%, #15131d), #121119);
+    border-top: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px 24px 0 0;
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55);
+    padding: 0 12px calc(12px + var(--et-safe-bottom, 0px));
+    color: rgba(240, 236, 250, 0.94);
+    transform: translateY(2%); visibility: hidden;
+    transition: transform 0.3s cubic-bezier(.2, .8, .2, 1), visibility 0s linear 0.3s;
+}
+.ec-sheet.ec-open { transform: translateY(-100%); visibility: visible; transition: transform 0.3s cubic-bezier(.2, .8, .2, 1), visibility 0s; }
+@media (min-width: 1001px) { .ec-sheet { left: 50%; width: 440px; margin-left: -220px; } }
+.ec-grip { height: 20px; display: grid; place-items: center; }
+.ec-grip::after { content: ''; width: 42px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); }
+
+.ec-preview { padding: 4px 6px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); margin-bottom: 6px; }
+.ec-preview b { display: block; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--et-accent, #b48cff); }
+.ec-preview span { display: block; font-size: 13.5px; opacity: 0.75; margin-top: 3px; line-height: 1.4; }
+
+.ec-list { display: flex; flex-direction: column; }
+.ec-item {
+    display: flex; align-items: center; gap: 14px; text-align: left;
+    padding: 13px 10px; border: 0; border-radius: 12px; background: transparent;
+    color: inherit; font-size: 15px;
+}
+.ec-item:active { background: rgba(255, 255, 255, 0.07); }
+.ec-item i { width: 22px; text-align: center; color: var(--et-accent, #b48cff); font-size: 17px; }
+.ec-danger, .ec-danger i { color: #ff8f8f !important; }
+
+/* reply ideas */
+#ec-ideas { display: none; gap: 6px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: none; }
+#ec-ideas.ec-show { display: flex; }
+#ec-ideas::-webkit-scrollbar { display: none; }
+.ec-idea {
+    flex: 0 0 auto; width: max-content; max-width: 70vw; text-align: left; overflow: hidden;
+    white-space: normal; overflow-wrap: anywhere;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 12px; border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--et-accent, #b48cff) 32%, transparent);
+    background: rgba(18, 17, 26, 0.88);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    color: rgba(240, 236, 250, 0.95); font-size: 13.5px; line-height: 1.35;
+    animation: ec-in 0.3s cubic-bezier(.2, 1.3, .4, 1) both;
+}
+.ec-idea:nth-child(2) { animation-delay: 0.06s; }
+.ec-idea:nth-child(3) { animation-delay: 0.12s; }
+.ec-idea span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ec-idea small { font-size: 11px; opacity: 0.7; font-weight: 700; letter-spacing: 0.04em; }
+.ec-idea[data-tone="bold"] { border-color: rgba(255, 140, 90, 0.45); }
+.ec-idea[data-tone="careful"] { border-color: rgba(126, 200, 227, 0.45); }
+.ec-idea[data-tone="unexpected"] { border-color: rgba(200, 160, 255, 0.5); }
+.ec-idea.ec-loading { flex-direction: row; align-items: center; gap: 8px; opacity: 0.8; }
+.ec-idea:active { transform: scale(0.97); }
+@keyframes ec-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }
+#ec-ideas-btn { color: #ffd58a; }
