@@ -79,3 +79,10 @@ body.em-tr-veil #chat .mes.last_mes:not([is_user="true"]) .mes_block::after {
 @media (prefers-reduced-motion: reduce) {
     body.em-tr-veil #chat .mes.last_mes:not([is_user="true"]) .mes_block::after { animation: none; }
 }
+
+/* Живой перевод: русские абзацы появляются по ходу генерации (поверх скрытого английского). */
+body.em-tr-veil #chat .mes.last_mes:not([is_user="true"]) .em-tr-live { display: block !important; }
+#chat .em-tr-live p:last-child { margin-bottom: 0; }
+#chat .em-tr-live .em-live-p { animation: em-live-in 0.35s ease-out both; }
+#chat .em-tr-live .em-live-p + .em-live-p { margin-top: 0.6em; }
+@keyframes em-live-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

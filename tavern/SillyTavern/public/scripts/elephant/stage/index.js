@@ -177,6 +177,7 @@ function buildHub() {
                     <button class="et-pill" data-et-act="stopt" data-opt="option_delete_mes"><i class="fa-solid fa-trash-can"></i> Удалить сообщения</button>
                     <button class="et-pill" data-et-act="stopt" data-opt="option_toggle_AN"><i class="fa-solid fa-note-sticky"></i> Заметка автора</button>
                 </div>
+                <div class="et-hub-cost" data-et-act="section" data-et-section="stage"></div>
                 <div class="et-tiles">${tiles}</div>
             </div>
         </section>`;
@@ -237,7 +238,14 @@ function openSheet(name) {
     if (!el) return;
     if (name === 'scene') renderSceneSheet();
     if (name === 'app') renderAppSheet();
-    if (name === 'hub') markHub();
+    if (name === 'hub') {
+        markHub();
+        const cost = globalThis.ElephantCore?.cost;
+        if (cost) {
+            $('.et-hub-cost').html(cost.summaryHtml());
+            cost.readBalance().then(() => $('.et-hub-cost').html(cost.summaryHtml()));
+        }
+    }
     if (name === 'chars') renderCharsSheet();
     el.classList.add('et-open');
     document.body.classList.add('et-sheet-open');

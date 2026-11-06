@@ -826,3 +826,8 @@ body.et-shell.et-drawer-open #et-header [data-et-act="hub"] { background: rgba(2
 body.et-shell #options_button,
 body.et-shell #extensionsMenuButton { display: none !important; }
 .et-hub-quick { flex-wrap: wrap; overflow-x: visible; }
+
+/* ------------------------------------------------------------- costs */
+body.et-shell .mes .et-cost { margin-top: 6px; font-size: 11px; color: var(--et-muted); opacity: 0.75; text-align: right; font-variant-numeric: tabular-nums; }
+.et-hub-cost { margin: -6px 2px 12px; font-size: 13px; color: var(--et-muted); cursor: pointer; }
+.et-hub-cost b { color: var(--et-text); font-weight: 600; }

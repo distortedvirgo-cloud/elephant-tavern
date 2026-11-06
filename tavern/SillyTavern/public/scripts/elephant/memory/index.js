@@ -712,6 +712,165 @@ function veilOff({ scrollTo = null } = {}) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Живой перевод: пока рассказчик ещё пишет, каждый законченный абзац сразу
+// уходит переводчику, и русский текст появляется в пузыре по частям. Когда
+// ответ готов, переведённые куски собираются, недостающие доводятся.
+// ---------------------------------------------------------------------------
+const live = { on: false };
+
+function liveEligible() {
+    const s = settings();
+    if (!s.translateEnabled || !s.translateIncoming) return false;
+    // Only with a separate helper: the main model is busy writing the reply.
+    return Boolean(s.translatorProfile || s.helperProfile || ctx().extensionSettings?.elephant_stage?.helperModel);
+}
+
+/** Paragraphs of a message; an HTML comment or block that spans blank lines stays in one piece. */
+function splitParas(text) {
+    const raw = String(text ?? '').split(/\n[ \t]*\n/);
+    const out = [];
+    let buf = null;
+    const open = (t) => (t.match(/<!--/g) || []).length > (t.match(/-->/g) || []).length
+        || (t.match(/<(div|style|table|details)\b/gi) || []).length > (t.match(/<\/(div|style|table|details)>/gi) || []).length;
+    for (const p of raw) {
+        buf = buf === null ? p : `${buf}\n\n${p}`;
+        if (!open(buf)) { out.push(buf); buf = null; }
+    }
+    if (buf !== null) out.push(buf);
+    return out;
+}
+
+function liveReset(on) {
+    live.on = on;
+    live.chatId = ctx().getCurrentChatId?.();
+    live.queued = 0;      // how many paragraphs of the stream are queued
+    live.paras = [];      // original paragraphs in order
+    live.trans = [];      // their translations (same index)
+    live.byText = new Map();
+    live.busy = null;     // promise of the paragraph being translated
+    live.mesId = null;
+}
+
+async function translateChunk(text, idx, priorPairs) {
+    const s = settings();
+    const { masked, parts } = maskProtected(text, { maskVtk: !s.translateVtk });
+    if (!/\p{L}/u.test(masked.replace(/⟦\d+⟧/g, ''))) return text; // only markup: nothing to translate
+    const c = ctx();
+    const nm = names();
+    const m = c.chat[idx];
+    const before = buildContextPairs(c.chat, idx, Number(s.translateContext), nm) || '';
+    const speaker = m?.name || nm.char;
+    const same = priorPairs.length ? `\n\n[${speaker} — this same message so far, original]\n${priorPairs.map(p => p[0]).join('\n\n')}\n[${speaker} — this same message so far, translation]\n${priorPairs.map(p => p[1]).join('\n\n')}` : '';
+    const raw = await callModel(s.prompts.translator_system, fillTemplate(s.prompts.translate_display, {
+        glossary: glossaryText(),
+        state: getData()?.state || '(none)',
+        context: (before + same) || '(none)',
+        speaker,
+        target: s.translateTarget,
+        text: masked,
+    }), 'translator', s.translateMaxTokens);
+    const out = cleanTranslation(raw);
+    if (!out) throw new Error('empty translation');
+    return unmaskProtected(out, parts);
+}
+
+function pairsBefore(i) {
+    const out = [];
+    for (let k = Math.max(0, i - 3); k < i; k++) if (live.trans[k] !== undefined) out.push([live.paras[k], live.trans[k]]);
+    return out;
+}
+
+function renderLive() {
+    if (!live.on || live.mesId === null) return;
+    const c = ctx();
+    const $mes = $(`#chat .mes[mesid="${live.mesId}"]`);
+    if (!$mes.length) return;
+    let $live = $mes.find('.em-tr-live');
+    if (!$live.length) $live = $('<div class="em-tr-live mes_text"></div>').insertAfter($mes.find('.mes_text').first());
+    const m = c.chat[live.mesId];
+    // Append only what is new: paragraphs already on screen are never re-rendered (no blinking).
+    let shown = Number($live.attr('data-n') || 0);
+    while (live.trans[shown] !== undefined) {
+        const t = live.trans[shown];
+        const html = typeof c.messageFormatting === 'function' ? c.messageFormatting(t, m?.name, false, false, live.mesId) : escapeHtml(t);
+        $live.append(`<div class="em-live-p">${html}</div>`);
+        shown++;
+    }
+    $live.attr('data-n', shown);
+}
+
+function pumpLive() {
+    if (!live.on || live.busy) return;
+    const i = live.trans.findIndex((t, k) => t === undefined && k < live.queued);
+    const next = i >= 0 ? i : (live.trans.length < live.queued ? live.trans.length : -1);
+    if (next < 0) return;
+    const text = live.paras[next];
+    const idx = live.mesId;
+    live.busy = translateChunk(text, idx, pairsBefore(next))
+        .then((t) => { live.trans[next] = t; live.byText.set(text, t); renderLive(); })
+        .catch((e) => { console.warn('[Elephant Memory] live translate', e); live.failed = true; })
+        .finally(() => { live.busy = null; if (!live.failed) pumpLive(); });
+}
+
+function onStreamText(text) {
+    if (!live.on || typeof text !== 'string' || live.failed) return;
+    if (ctx().getCurrentChatId?.() !== live.chatId) { live.on = false; return; }
+    if (live.mesId === null) {
+        const chat = ctx().chat ?? [];
+        const last = chat.length - 1;
+        if (last < 0 || chat[last].is_user) return;
+        live.mesId = last;
+    }
+    const paras = splitParas(text);
+    // Everything but the last paragraph is finished.
+    for (let k = live.queued; k < paras.length - 1; k++) {
+        if (!paras[k].trim()) continue;
+        live.paras[k] = paras[k];
+        live.queued = k + 1;
+    }
+    pumpLive();
+}
+
+/** The reply is complete: reuse finished paragraphs, translate the rest, store the result. */
+async function finishLive(idx) {
+    const c = ctx();
+    const m = c.chat?.[idx];
+    if (!live.on || !m || live.failed || c.getCurrentChatId?.() !== live.chatId) { live.on = false; return false; }
+    live.on = false;
+    live.finishing = true;
+    try { return await finishLiveInner(idx, m); } finally { live.finishing = false; }
+}
+
+async function finishLiveInner(idx, m) {
+    const c = ctx();
+    try { await live.busy; } catch { /* handled */ }
+    const paras = splitParas(m.mes);
+    const out = [];
+    const pairs = [];
+    for (const p of paras) {
+        let t = live.byText.get(p);
+        if (t === undefined) {
+            if (!p.trim()) { out.push(p); continue; }
+            t = await translateChunk(p, idx, pairs.slice(-3));
+            // Show it right away while the rest is finishing.
+            live.trans.push(t);
+        }
+        out.push(t);
+        pairs.push([p, t]);
+        live.on = true; live.mesId = idx; live.trans = [...out]; renderLive(); live.on = false;
+    }
+    if (hashText(c.chat[idx]?.mes) !== hashText(m.mes)) return false;
+    const text = out.join('\n\n');
+    m.extra ??= {};
+    m.extra.em_tr = { src: hashText(m.mes), text };
+    m.extra.display_text = text;
+    $(`#chat .mes[mesid="${idx}"] .em-tr-live`).remove();
+    refreshMessage(idx);
+    await c.saveChat?.();
+    return true;
+}
+
 /** Переводит сообщение для показа (оригинал остаётся в промпте). */
 export async function translateForDisplay(idx, { force = false } = {}) {
     const s = settings();
@@ -1189,10 +1348,15 @@ export async function init() {
             try {
                 // Сначала перевод (его ждёт игрок), проверка ответа — потом.
                 const s = settings();
-                if (s.translateEnabled && s.translateIncoming) await translateForDisplay(idx).catch(() => false);
+                if (s.translateEnabled && s.translateIncoming) {
+                    const ok = await finishLive(idx).catch((e) => { console.warn('[Elephant Memory] live finish', e); return false; });
+                    if (!ok) await translateForDisplay(idx).catch(() => false);
+                }
+                $(`#chat .mes[mesid="${idx}"] .em-tr-live`).remove();
                 veilOff({ scrollTo: idx });
                 // One light tap when the reply is ready; the app only lets it through in the background.
                 try { globalThis.ElephantApp?.haptic?.('ready'); } catch { /* not in the app */ }
+                document.dispatchEvent(new CustomEvent('elephant-reply-ready', { detail: { mesId: idx } }));
                 regenerated = await checkReply(idx);
             } catch (e) {
                 console.error('[Elephant Memory] reply check', e);
@@ -1206,10 +1370,12 @@ export async function init() {
     if (et.GENERATION_STARTED) ev.on(et.GENERATION_STARTED, (type, _opts, dryRun) => {
         if (dryRun || ['quiet', 'impersonate'].includes(type)) return;
         veilOn();
+        liveReset(type !== 'continue' && liveEligible());
     });
+    if (et.STREAM_TOKEN_RECEIVED) ev.on(et.STREAM_TOKEN_RECEIVED, onStreamText);
     // Остановка или ошибка без ответа — снимаем вуаль.
-    if (et.GENERATION_STOPPED) ev.on(et.GENERATION_STOPPED, () => veilOff());
-    if (et.GENERATION_ENDED) ev.on(et.GENERATION_ENDED, () => setTimeout(() => { if (!translating.size) veilOff(); }, 4000));
+    if (et.GENERATION_STOPPED) ev.on(et.GENERATION_STOPPED, () => { live.on = false; $('#chat .em-tr-live').remove(); veilOff(); });
+    if (et.GENERATION_ENDED) ev.on(et.GENERATION_ENDED, () => setTimeout(() => { if (!translating.size && !live.on && !live.finishing) veilOff(); }, 4000));
     if (et.CHAT_CHANGED) ev.on(et.CHAT_CHANGED, () => veilOff());
 
     // Сообщение пользователя переводится до сборки промпта — поэтому ждём.

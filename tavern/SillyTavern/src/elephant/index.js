@@ -56,6 +56,22 @@ async function callNano(key, body) {
     }
 }
 
+/** NanoGPT balance in USD (spendable, pending usage included). Used to show what a turn cost. */
+router.post('/balance', async (request, response) => {
+    try {
+        const key = nanoKey(request);
+        if (!key) return response.status(400).json({ error: 'no-key' });
+        const url = process.env.ELEPHANT_NANOGPT_BALANCE_URL || NANOGPT.replace(/\/v1\/?$/, '') + '/check-balance';
+        const res = await fetch(url, { method: 'POST', headers: { 'x-api-key': key, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15_000) });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) return response.status(502).json({ error: 'upstream', status: res.status });
+        const usd = Number(data.usd_spendable_balance ?? data.usd_balance);
+        return response.json({ usd: Number.isFinite(usd) ? usd : null });
+    } catch (error) {
+        return response.status(500).json({ error: 'internal', message: String(error?.message || error) });
+    }
+});
+
 router.get('/health', (_request, response) => response.json({ ok: true, core: 'elephant', version: 1 }));
 
 router.post('/complete', async (request, response) => {
