@@ -92,7 +92,25 @@ async function connectNanoGpt(model) {
     setTimeout(() => $('#api_button_openai').trigger('click'), 300);
 }
 
-/** Installs the bundled Elephant Tavern preset and selects it (once per PRESET_VERSION). */
+/** Fingerprint of what matters in a preset: prompt texts, their on/off state, samplers. */
+function presetHash(p) {
+    if (!p) return '';
+    const order = p.prompt_order?.find(g => String(g.character_id) === '100001')?.order ?? p.prompt_order?.[0]?.order ?? [];
+    const key = JSON.stringify([
+        (p.prompts ?? []).map(x => [x.identifier, x.content ?? '', x.role ?? '', x.injection_position ?? 0, x.injection_depth ?? 0]),
+        order.map(o => [o.identifier, Boolean(o.enabled)]),
+        [p.temperature, p.top_p, p.openai_max_tokens, p.reasoning_effort, p.names_behavior],
+    ]);
+    let h = 5381;
+    for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+}
+
+/**
+ * Installs the bundled Elephant Tavern preset and selects it (once per PRESET_VERSION).
+ * If the user changed the installed preset since, their copy stays: the new version is
+ * saved next to it as "Elephant Tavern vN" and nothing is switched.
+ */
 export async function installPreset({ force = false } = {}) {
     if (!force && localStorage.getItem('et-preset-installed') === PRESET_VERSION) return false;
     try {
@@ -101,10 +119,25 @@ export async function installPreset({ force = false } = {}) {
         const preset = await res.json();
         const pm = getPresetManager('openai');
         if (!pm) throw new Error('no preset manager');
-        await pm.savePreset(PRESET_NAME, preset);
-        allowPresetScripts('openai', PRESET_NAME);
-        const value = pm.findPreset(PRESET_NAME);
-        if (value !== undefined) await pm.selectPreset(value);
+        const { presets, preset_names } = pm.getPresetList('openai');
+        const existing = preset_names?.[PRESET_NAME] !== undefined ? presets[preset_names[PRESET_NAME]] : null;
+        const known = localStorage.getItem('et-preset-hash');
+        const edited = existing && known && presetHash(existing) !== known;
+        if (edited && !force) {
+            const name = `${PRESET_NAME} v${PRESET_VERSION}`;
+            const keep = pm.getSelectedPreset();
+            await pm.savePreset(name, { ...preset, name });
+            // Saving selects the new preset in the list; stay on the one the user was using.
+            if (keep !== undefined && pm.getSelectedPreset() !== keep) await pm.selectPreset(keep);
+            allowPresetScripts('openai', name);
+            globalThis.toastr?.info(`Вышла новая версия пресета. Твой изменённый «${PRESET_NAME}» не тронут, новый лежит рядом: «${name}».`, 'Elephant Tavern', { timeOut: 12000 });
+        } else {
+            await pm.savePreset(PRESET_NAME, preset);
+            allowPresetScripts('openai', PRESET_NAME);
+            const value = pm.findPreset(PRESET_NAME);
+            if (value !== undefined) await pm.selectPreset(value);
+            localStorage.setItem('et-preset-hash', presetHash(preset));
+        }
         localStorage.setItem('et-preset-installed', PRESET_VERSION);
         ctx().saveSettingsDebounced();
         return true;

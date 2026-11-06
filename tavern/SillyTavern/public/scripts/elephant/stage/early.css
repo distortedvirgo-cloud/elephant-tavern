@@ -49,6 +49,8 @@
         linear-gradient(170deg, var(--et-bg-a), var(--et-bg-b));
     opacity: 0.9;
     animation: et-drift 38s ease-in-out infinite alternate;
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 body:not(.et-shell) #et-backdrop .et-bd-gradient { opacity: 0.35; }
@@ -68,6 +70,8 @@ body:not(.et-shell) #et-backdrop .et-bd-gradient { opacity: 0.35; }
     filter: blur(3px) saturate(1.1);
     transform: scale(1.04);
     transition: opacity 1.6s ease, transform 14s ease-out;
+    will-change: opacity, transform;
+    backface-visibility: hidden;
 }
 
 #et-backdrop .et-bd-img.et-show {
@@ -314,8 +318,11 @@ body.et-shell .mes {
     border: 0 !important;
     background: transparent !important;
     max-width: 100%;
-    animation: et-in 0.42s var(--et-ease) both;
 }
+
+/* Only a newly arrived message slides in. Animating every .mes made the whole chat
+   blink on each re-render (opening a chat, loading more, swipes). */
+body.et-shell .mes.last_mes { animation: et-in 0.42s var(--et-ease) both; }
 
 @keyframes et-in { from { opacity: 0; transform: translateY(10px) scale(0.99); } to { opacity: 1; transform: none; } }
 

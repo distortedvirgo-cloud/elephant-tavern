@@ -380,7 +380,8 @@ function updateHeader() {
     const $h = $('#et-header');
     $h.find('.et-name').text(ch?.name || 'Elephant Tavern');
     const $ava = $h.find('.et-ava');
-    if (ch?.avatarUrl) $ava.attr('src', ch.avatarUrl).show();
+    // Re-setting the same src makes some WebViews reload the image and blink.
+    if (ch?.avatarUrl) { if ($ava.attr('src') !== ch.avatarUrl) $ava.attr('src', ch.avatarUrl); $ava.show(); }
     else $ava.removeAttr('src').hide();
     $h.toggleClass('et-no-char', !ch);
     const moodId = S().lockMood || scene.mood;
@@ -509,6 +510,7 @@ function setBackdrop(url) {
         bd.classList.remove('et-has-img');
         return;
     }
+    if (front.classList.contains('et-show') && front.getAttribute('src') === url) return; // already shown
     back.onload = () => {
         back.classList.add('et-show');
         front.classList.remove('et-show');
@@ -535,10 +537,13 @@ async function readScene(mesId, { force = false } = {}) {
     const data = chatData();
     const before = scene;
     const quick = heuristicScene(msg.mes, before);
-    applyScene(quick, { events: false });
+    const s = S();
+    // When a model reads the scene (helper or Elephant Game), don't flash the keyword guess first:
+    // the colours would switch twice in a few seconds.
+    const smarter = Boolean(globalThis.ElephantGame?.ownsScene?.()) || (s.sceneLLM && hasHelper(s));
+    if (!smarter) applyScene(quick, { events: false });
     playEvents(quick.events, mesId);
 
-    const s = S();
     let changed = false;
     // Elephant Game reads the scene in its own per-turn report and hands it over (externalScene).
     if (globalThis.ElephantGame?.ownsScene?.()) {
@@ -807,15 +812,13 @@ function onChatChanged() {
     document.body.classList.toggle('et-group-chat', Boolean(ctx().groupId));
     const data = chatData();
     const stored = data?.scene;
-    applyScene(stored ? { ...stored, events: [] } : heuristicScene(''), { events: false });
-    setBackdrop(data?.sceneImage || '');
-    if (!stored) {
+    let initial = stored ? { ...stored, events: [] } : null;
+    if (!initial) {
         const id = lastCharMessageId();
-        if (id >= 0) {
-            const quick = heuristicScene(ctx().chat[id].mes);
-            applyScene({ ...quick, events: [] }, { events: false });
-        }
+        initial = { ...heuristicScene(id >= 0 ? ctx().chat[id].mes : ''), events: [] };
     }
+    applyScene(initial, { events: false });
+    setBackdrop(data?.sceneImage || '');
     updateHeader();
     // Pre-compute the character's visual reference while the user reads.
     const s = S();

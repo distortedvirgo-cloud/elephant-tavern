@@ -21,7 +21,7 @@
  */
 
 import {
-    TRANSLATE_PROMPTS, hashText, hasCyrillic, maskProtected, unmaskProtected,
+    TRANSLATE_PROMPTS, OLD_TRANSLATE_DEFAULTS, hashText, hasCyrillic, maskProtected, unmaskProtected,
     cleanTranslation, mergeGlossary, buildContextPairs, escapeHtml,
 } from './translate.js';
 
@@ -366,7 +366,7 @@ export function settings() {
         if (s[k] === undefined) s[k] = structuredClone(v);
     }
     for (const [k, v] of Object.entries(DEFAULT_PROMPTS)) {
-        if (!s.prompts[k]) s.prompts[k] = v;
+        if (!s.prompts[k] || OLD_TRANSLATE_DEFAULTS[k]?.includes(s.prompts[k])) s.prompts[k] = v;
     }
     return s;
 }
@@ -681,6 +681,35 @@ function refreshMessage(idx) {
     const c = ctx();
     const m = c.chat[idx];
     if (m && typeof c.updateMessageBlock === 'function') c.updateMessageBlock(idx, m);
+}
+
+// ---------------------------------------------------------------------------
+// Вуаль перевода: пока модель пишет по-английски и пока идёт перевод, текст
+// последнего ответа скрыт за аккуратной заглушкой — без вспышки английского
+// и без прыжка в конце, когда текст подменяется русским.
+// ---------------------------------------------------------------------------
+let veilTimer = null;
+function veilOn() {
+    const s = settings();
+    if (!s.translateEnabled || !s.translateIncoming) return;
+    document.body.classList.add('em-tr-veil');
+    clearTimeout(veilTimer);
+    veilTimer = setTimeout(veilOff, 120_000); // страховка
+}
+function veilOff({ scrollTo = null } = {}) {
+    clearTimeout(veilTimer);
+    if (!document.body.classList.contains('em-tr-veil')) return;
+    document.body.classList.remove('em-tr-veil');
+    if (scrollTo === null) return;
+    // Длинный ответ — к его началу, короткий — к низу чата.
+    requestAnimationFrame(() => {
+        const chatEl = document.getElementById('chat');
+        const mes = chatEl?.querySelector(`.mes[mesid="${scrollTo}"]`);
+        if (!chatEl || !mes) return;
+        const top = mes.offsetTop - 8;
+        const bottom = chatEl.scrollHeight - chatEl.clientHeight;
+        chatEl.scrollTo({ top: mes.offsetHeight > chatEl.clientHeight ? top : bottom, behavior: 'smooth' });
+    });
 }
 
 /** Переводит сообщение для показа (оригинал остаётся в промпте). */
@@ -1153,21 +1182,33 @@ export async function init() {
 
     // Не ждём здесь служебные вызовы, чтобы не задерживать показ ответа.
     ev.on(et.MESSAGE_RECEIVED, (mesId, type) => {
-        if (type === 'impersonate') return;
+        if (type === 'impersonate') return veilOff();
         const idx = Number(mesId);
         (async () => {
             let regenerated = false;
             try {
+                // Сначала перевод (его ждёт игрок), проверка ответа — потом.
+                const s = settings();
+                if (s.translateEnabled && s.translateIncoming) await translateForDisplay(idx).catch(() => false);
+                veilOff({ scrollTo: idx });
                 regenerated = await checkReply(idx);
             } catch (e) {
                 console.error('[Elephant Memory] reply check', e);
+            } finally {
+                veilOff();
             }
-            const s = settings();
-            if (!regenerated && s.translateEnabled && s.translateIncoming) await translateForDisplay(idx);
             scheduleMaintain();
             refreshUI();
         })();
     });
+    if (et.GENERATION_STARTED) ev.on(et.GENERATION_STARTED, (type, _opts, dryRun) => {
+        if (dryRun || ['quiet', 'impersonate'].includes(type)) return;
+        veilOn();
+    });
+    // Остановка или ошибка без ответа — снимаем вуаль.
+    if (et.GENERATION_STOPPED) ev.on(et.GENERATION_STOPPED, () => veilOff());
+    if (et.GENERATION_ENDED) ev.on(et.GENERATION_ENDED, () => setTimeout(() => { if (!translating.size) veilOff(); }, 4000));
+    if (et.CHAT_CHANGED) ev.on(et.CHAT_CHANGED, () => veilOff());
 
     // Сообщение пользователя переводится до сборки промпта — поэтому ждём.
     const onUserRendered = async (mesId) => {

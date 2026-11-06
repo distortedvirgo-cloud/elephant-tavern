@@ -58,3 +58,24 @@
 .elephant-memory summary {
     cursor: pointer;
 }
+
+/* Вуаль перевода: английский текст ответа не мелькает, пока идёт генерация и перевод. */
+body.em-tr-veil #chat .mes.last_mes:not([is_user="true"]) .mes_text {
+    display: none;
+}
+body.em-tr-veil #chat .mes.last_mes:not([is_user="true"]) .mes_block::after {
+    content: "Пишет и переводит";
+    display: block;
+    padding: 6px 2px 10px;
+    font-size: 0.9em;
+    opacity: 0.65;
+    font-style: italic;
+    animation: em-veil-pulse 1.6s ease-in-out infinite;
+}
+@keyframes em-veil-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.8; }
+}
+@media (prefers-reduced-motion: reduce) {
+    body.em-tr-veil #chat .mes.last_mes:not([is_user="true"]) .mes_block::after { animation: none; }
+}
