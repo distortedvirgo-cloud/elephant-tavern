@@ -1,0 +1,12 @@
+{
+    "display_name": "Elephant Stage",
+    "loading_order": 95,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Elephant Tavern",
+    "version": "0.1.0",
+    "minimum_client_version": "1.13.0",
+    "homePage": "https://github.com/distortedvirgo-cloud/elephant-tavern"
+}

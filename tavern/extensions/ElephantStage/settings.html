@@ -1,0 +1,90 @@
+<div class="et-settings">
+    <h3 class="et-title">🎭 Сцена и арт</h3>
+
+    <div class="et-group">
+        <h4 class="et-h">Служебная модель</h4>
+        <p class="et-note">Дешёвая модель читает сцену и пишет промпты для картинок. По умолчанию берётся та же, что у Elephant Memory.</p>
+        <select id="et_helper_profile" class="text_pole" data-et-key="helperProfile"></select>
+        <div id="et_profile_warn" class="et-warn">Профиль не выбран — сцена читается только по ключевым словам, а картинки не смогут построить промпт. Создайте профиль с дешёвой моделью в Connection Manager.</div>
+        <label class="et-check"><input type="checkbox" data-et-key="sceneLLM"><span>Читать сцену моделью (точнее: место, время, погода, события)</span></label>
+        <label class="et-check"><input type="checkbox" data-et-key="allowMainModel"><span>Если профиля нет — использовать основную модель (дороже)</span></label>
+    </div>
+
+    <div class="et-group">
+        <h4 class="et-h">Живой интерфейс</h4>
+        <label class="et-check"><input type="checkbox" data-et-key="effects"><span>Эффекты сцены: частицы, вспышки, сердечки</span></label>
+        <label class="et-range">Интенсивность <b data-et-out="intensity"></b>
+            <input type="range" min="0.2" max="1.5" step="0.1" data-et-key="intensity">
+        </label>
+        <label class="et-check"><input type="checkbox" data-et-key="shake"><span>Тряска экрана при ударах и взрывах</span></label>
+        <label class="et-check"><input type="checkbox" data-et-key="haptics"><span>Вибрация (удары, сердцебиение, смена настроения)</span></label>
+        <label class="et-check"><input type="checkbox" data-et-key="backdrop"><span>POV-кадр становится фоном чата</span></label>
+        <label class="et-range">Затемнение фона <b data-et-out="backdropDim"></b>
+            <input type="range" min="0.2" max="0.9" step="0.05" data-et-key="backdropDim">
+        </label>
+        <label class="et-check"><input type="checkbox" data-et-key="shell"><span>Мобильный интерфейс Elephant Tavern</span></label>
+    </div>
+
+    <div class="et-group">
+        <h4 class="et-h">Картинки NanoGPT</h4>
+        <p class="et-note">Используется ключ NanoGPT, сохранённый в «Подключении». Картинки сохраняются в галерею персонажа и прикрепляются к сообщению.</p>
+        <label class="et-check"><input type="checkbox" data-et-key="images.enabled"><span>Автогенерация картинок</span></label>
+
+        <label class="et-field">Модель
+            <div class="et-inline">
+                <select id="et_image_model" class="text_pole" data-et-key="images.model"></select>
+                <button class="menu_button et-icon-btn" data-et-do="models" title="Обновить список"><i class="fa-solid fa-rotate"></i></button>
+            </div>
+        </label>
+        <div id="et_models_err" class="et-warn" style="display:none"></div>
+
+        <label class="et-field">Когда рисовать
+            <select class="text_pole" data-et-key="images.auto">
+                <option value="scene">При смене сцены (и не реже чем раз в 2× интервала)</option>
+                <option value="every">Каждые N ответов</option>
+                <option value="off">Только по кнопке</option>
+            </select>
+        </label>
+        <label class="et-field">Интервал N (ответов персонажа)
+            <input type="number" min="2" max="100" class="text_pole" data-et-key="images.every">
+        </label>
+        <label class="et-field">Что рисовать
+            <select class="text_pole" data-et-key="images.mode">
+                <option value="alternate">По очереди: POV и портрет</option>
+                <option value="pov">POV — сцена твоими глазами</option>
+                <option value="portrait">Портрет — фокус на персонаже</option>
+            </select>
+        </label>
+        <label class="et-field">Размер
+            <select class="text_pole" data-et-key="images.size">
+                <option value="auto">Авто (POV горизонтально, портрет вертикально)</option>
+                <option value="portrait">Вертикально 832×1216</option>
+                <option value="square">Квадрат 1024×1024</option>
+                <option value="landscape">Горизонтально 1216×832</option>
+            </select>
+        </label>
+        <label class="et-field">Стиль (добавляется в начало промпта)
+            <textarea class="text_pole" rows="2" data-et-key="images.stylePrefix"></textarea>
+        </label>
+        <label class="et-field">Негативный промпт
+            <textarea class="text_pole" rows="2" data-et-key="images.negative"></textarea>
+        </label>
+        <div class="et-inline">
+            <label class="et-field">Шаги <input type="number" min="0" max="100" placeholder="авто" class="text_pole" data-et-key="images.steps"></label>
+            <label class="et-field">CFG <input type="number" min="0" max="30" step="0.5" placeholder="авто" class="text_pole" data-et-key="images.scale"></label>
+        </div>
+
+        <div id="et_dna_block" class="et-dna">
+            <label class="et-field">Внешность — <b id="et_dna_name"></b>
+                <textarea id="et_dna" class="text_pole" rows="3" placeholder="Сгенерируется из карточки при первой картинке"></textarea>
+            </label>
+            <p class="et-note">Эти теги держат персонажа узнаваемым от кадра к кадру. Можно поправить руками.</p>
+            <div class="et-inline">
+                <button class="menu_button" data-et-do="dna"><i class="fa-solid fa-dna"></i> Из карточки заново</button>
+                <button class="menu_button" data-et-do="test"><i class="fa-solid fa-camera-retro"></i> Нарисовать сейчас</button>
+            </div>
+        </div>
+    </div>
+
+    <p class="et-note">Команды: <code>/stage-pov</code>, <code>/stage-portrait</code>, <code>/stage-mood romance|auto</code>, <code>/stage-fx hit</code></p>
+</div>

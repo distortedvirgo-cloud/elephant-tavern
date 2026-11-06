@@ -1,0 +1,5 @@
+/* Desktop / extension-panel styles. The mobile shell lives in early.css (loaded in <head>). */
+#elephant_stage_settings .et-desktop-settings { padding: 6px 4px; }
+#elephant_stage_settings .et-title { display: none; }
+body:not(.et-shell) .et-settings { --et-muted: rgba(220, 214, 235, 0.6); --et-line: rgba(255, 255, 255, 0.08); }
+body:not(.et-shell) #sheld { z-index: 30; }

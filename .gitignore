@@ -1,0 +1,15 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+*.apk
+/build/
+app/libnode/
+app/src/main/assets/tavern.zip
+app/src/main/assets/tavern.json
+app/.cxx/
+*.jks
+*.keystore
