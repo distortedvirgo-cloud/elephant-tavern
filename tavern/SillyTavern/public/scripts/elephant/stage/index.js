@@ -10,7 +10,7 @@
  *
  * Only SillyTavern.getContext() and a couple of stable utils are used.
  */
-import { MODULE, ctx, toast, log, listProfiles, helperProfileId, hasHelper, callHelper, loadHelperModels, memoryState, currentCharacter, haptic, inApp } from './helper.js';
+import { MODULE, ctx, toast, log, listProfiles, helperProfileId, hasHelper, callHelper, loadHelperModels, memoryState, currentCharacter, haptic, inApp, whenRevealed } from './helper.js';
 import { Effects, AMBIENT_PRESETS } from './effects.js';
 import { MOODS, MOOD_IDS, heuristicScene, scenePrompt, parseSceneJson, ambientFor, describeScene } from './scene.js';
 import { SIZES, loadModels, visualDna, buildPrompt, generateImage, attachToMessage } from './imagegen.js';
@@ -623,8 +623,11 @@ async function readScene(mesId, { force = false } = {}) {
     // When a model reads the scene (helper or Elephant Game), don't flash the keyword guess first:
     // the colours would switch twice in a few seconds.
     const smarter = Boolean(globalThis.ElephantGame?.ownsScene?.()) || (s.sceneLLM && hasHelper(s));
-    if (!smarter) applyScene(quick, { events: false });
-    playEvents(quick.events, mesId);
+    if (!smarter || globalThis.ElephantGame?.ownsScene?.()) {
+        await whenRevealed();
+        if (!smarter) applyScene(quick, { events: false });
+        playEvents(quick.events, mesId);
+    }
 
     let changed = false;
     // Elephant Game reads the scene in its own per-turn report and hands it over (externalScene).
@@ -638,10 +641,13 @@ async function readScene(mesId, { force = false } = {}) {
             const out = await callHelper(s, 'You are a precise scene classifier. Output only JSON.',
                 scenePrompt({ message: String(msg.mes).slice(0, 4000), state: memoryState().slice(0, 2500), previous: before, user: c.name1, char: c.name2 }), 160, { json: true });
             const parsed = parseSceneJson(out);
+            await whenRevealed();
             if (parsed && seq === sceneSeq) {
                 changed = parsed.changed || parsed.location !== before.location;
                 applyScene(parsed, { events: false });
-                playEvents(parsed.events, mesId);
+                playEvents([...new Set([...(quick.events || []), ...(parsed.events || [])])], mesId);
+            } else if (seq === sceneSeq) {
+                playEvents(quick.events, mesId);
             }
         } catch (e) {
             if (e.message !== 'no-helper') log('scene read failed', e);
@@ -657,7 +663,8 @@ async function readScene(mesId, { force = false } = {}) {
 }
 
 /** A scene read by someone else (Elephant Game's reporter) for message mesId. */
-function externalScene(raw, mesId) {
+async function externalScene(raw, mesId) {
+    await whenRevealed();
     const before = scene;
     const parsed = parseSceneJson(JSON.stringify(raw));
     if (!parsed) return;
@@ -674,6 +681,8 @@ function externalScene(raw, mesId) {
 
 function onStreamToken(text) {
     if (!S().effects || typeof text !== 'string') return;
+    // Behind the translation veil the reader sees nothing yet: no effects mid-stream.
+    if (document.body.classList.contains('em-tr-veil')) return;
     const now = Date.now();
     if (now - lastStreamCheck < 900) return;
     lastStreamCheck = now;

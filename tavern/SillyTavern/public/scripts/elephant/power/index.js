@@ -11,7 +11,7 @@
  *
  * Levels per character: off · effects · full (effects + illustrations).
  */
-import { ctx, currentCharacter, haptic, log } from '../stage/helper.js';
+import { ctx, currentCharacter, haptic, log, whenRevealed } from '../stage/helper.js';
 import { MOOD_IDS } from '../stage/scene.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
@@ -196,7 +196,7 @@ export async function init() {
         const level = levelFor(ch.key);
         if (level === 'off') return;
         const cmd = parseStage(msg.mes);
-        if (cmd) setTimeout(() => perform(cmd, mesId, level), 120);
+        if (cmd) whenRevealed().then(() => setTimeout(() => perform(cmd, mesId, level), 120));
     });
     for (const e of [et.MESSAGE_SWIPED, et.MESSAGE_DELETED]) if (e) ev.on(e, () => { active = null; });
 

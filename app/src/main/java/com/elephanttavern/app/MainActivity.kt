@@ -118,12 +118,17 @@ class MainActivity : Activity() {
         webView?.evaluateJavascript(js, null)
     }
 
+    /** True while the app is on screen; haptics from the story stay silent in the background. */
+    @Volatile private var foreground = false
+
     override fun onResume() {
         super.onResume()
+        foreground = true
         startPolling()
     }
 
     override fun onPause() {
+        foreground = false
         polling = false
         super.onPause()
     }
@@ -514,6 +519,13 @@ class MainActivity : Activity() {
         fun haptic(kind: String) {
             val v = getSystemService(Vibrator::class.java) ?: return
             if (!v.hasVibrator()) return
+            // In the background only "ready" (one light tap: the reply is done) gets through;
+            // on screen "ready" is silent, the reply itself is the signal.
+            if (kind == "ready") {
+                if (!foreground) v.vibrate(VibrationEffect.createOneShot(18, 70))
+                return
+            }
+            if (!foreground) return
             val effect = when (kind) {
                 "tick" -> VibrationEffect.createOneShot(12, 60)
                 "hit" -> VibrationEffect.createWaveform(longArrayOf(0, 40, 30, 70), intArrayOf(0, 255, 0, 180), -1)
@@ -523,6 +535,9 @@ class MainActivity : Activity() {
             }
             v.vibrate(effect)
         }
+
+        @JavascriptInterface
+        fun isForeground(): Boolean = foreground
 
         @JavascriptInterface
         fun keepScreenOn(on: Boolean) = ui.post {

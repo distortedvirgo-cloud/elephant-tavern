@@ -11,7 +11,7 @@
  * State is snapshotted on every message (message.extra.elephant_game.state = state AFTER
  * that message), so swipes, edits and deletions roll the game back for free.
  */
-import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter } from '../stage/helper.js';
+import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter, whenRevealed } from '../stage/helper.js';
 import * as E from './engine.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
@@ -245,6 +245,8 @@ async function onReply(mesId) {
     const { state, notes, events } = E.applyReport(base, report, { trackerLine: tracker });
     writeSnapshot(mesId, { state, notes, events });
     await c.saveChat();
+    // Toasts, banners and the HUD change land with the (translated) text, not before it.
+    await whenRevealed();
     renderHud(state);
     showNotes(notes);
     for (const ev of events) {

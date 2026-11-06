@@ -1191,6 +1191,8 @@ export async function init() {
                 const s = settings();
                 if (s.translateEnabled && s.translateIncoming) await translateForDisplay(idx).catch(() => false);
                 veilOff({ scrollTo: idx });
+                // One light tap when the reply is ready; the app only lets it through in the background.
+                try { globalThis.ElephantApp?.haptic?.('ready'); } catch { /* not in the app */ }
                 regenerated = await checkReply(idx);
             } catch (e) {
                 console.error('[Elephant Memory] reply check', e);

@@ -107,4 +107,20 @@ export function clampWords(text, max) {
 export const haptic = (kind) => {
     try { globalThis.ElephantApp?.haptic?.(kind); } catch { /* not in the app */ }
 };
+/**
+ * Resolves once the reader can see the reply: Elephant Memory hides it behind a veil while
+ * the translation is made. Scene changes, effects, banners and haptics wait for this, so they
+ * land together with the text instead of before it.
+ */
+export function whenRevealed(timeout = 120_000) {
+    const veiled = () => document.body.classList.contains('em-tr-veil');
+    if (!veiled()) return Promise.resolve();
+    return new Promise((resolve) => {
+        const done = () => { mo.disconnect(); clearTimeout(t); resolve(); };
+        const mo = new MutationObserver(() => { if (!veiled()) done(); });
+        mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        const t = setTimeout(done, timeout);
+    });
+}
+
 export const inApp = () => typeof globalThis.ElephantApp !== 'undefined';
