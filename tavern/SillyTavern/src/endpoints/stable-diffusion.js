@@ -1476,10 +1476,18 @@ nanogpt.post('/generate', async (request, response) => {
         const b = request.body || {};
         const width = Number(b.width) || 1024;
         const height = Number(b.height) || 1024;
+        // The Image API wants a size class (1k/1.5k) plus an aspect ratio, not pixels.
+        const RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '1:2', '2:1', '9:21', '21:9'];
+        const target = width / height;
+        const aspect = RATIOS.reduce((best, r) => {
+            const [w, h] = r.split(':').map(Number);
+            return Math.abs(Math.log(w / h / target)) < Math.abs(Math.log(best[0] / best[1] / target)) ? [w, h] : best;
+        }, [1, 1]).join(':');
         const body = {
             model: b.model,
             prompt: b.prompt,
-            resolution: b.resolution || `${width}x${height}`,
+            resolution: Math.max(width, height) > 1300 ? '1.5k' : '1k',
+            aspect_ratio: aspect,
             n: 1,
             response_format: 'b64_json',
         };

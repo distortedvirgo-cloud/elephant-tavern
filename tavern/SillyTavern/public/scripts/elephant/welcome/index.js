@@ -75,6 +75,11 @@ async function connectNanoGpt(model) {
         if (!$sel.find(`option[value="${CSS.escape(model)}"]`).length) $sel.append($('<option>').val(model).text(model));
         $sel.val(model);
     }
+    // Stock 300 tokens cut replies short, especially on reasoning models.
+    if (!(Number(oai_settings.openai_max_tokens) >= 1200)) {
+        oai_settings.openai_max_tokens = 1200;
+        $('#openai_max_tokens').val(1200).trigger('input');
+    }
     ctx().saveSettingsDebounced();
     setTimeout(() => $('#api_button_openai').trigger('click'), 300);
 }
