@@ -63,7 +63,7 @@ Other characters (only if they are part of the main action): their canon look if
 </messages>
 `;
 
-const FRAME_POV = `a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}} appears only as the body parts the viewer would see (pov hands, a penis, legs, "1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; a kiss toward the viewer is "incoming kiss" (no faceless male for a kiss or a hug: only pov hands if hands show); show the location, lighting and time of day.`;
+const FRAME_POV = `a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}}'s body appears only where the story puts it in the action — "pov hands" ONLY when {{user}}'s own hands are doing something in the last message (touching, holding, grabbing, undressing: "I take her face in my hands" → pov hands, hands on another's face, holding another's face); no hands when {{user}} only looks, talks or lies there; a penis or legs only when the act involves them ("1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; a kiss toward the viewer is "incoming kiss"; show the location, lighting and time of day.`;
 
 const FRAME_SCENE = `a third-person shot of the scene, like a film still: {{user}} is NOT in the frame (no pov, no viewer's hands, no faceless partner standing for {{user}}); show the characters at the centre of the moment — what they are doing and what is being done to them — in their surroundings, framed around that interaction; the location, lighting and time of day.`;
 
@@ -222,7 +222,8 @@ export async function generateImage(settings, prompt, mode, signal) {
     const body = {
         model: settings.model,
         prompt: fullPrompt,
-        negative_prompt: [negativeFor(prompt, settings.negative), styleNegative(settings)].filter(Boolean).join(', '),
+        // POV without busy hands: keep the model from adding idle hands on its own.
+        negative_prompt: [negativeFor(prompt, settings.negative), styleNegative(settings), mode === 'pov' && !/\bpov hands?\b|\bhands? on\b|\bholding\b|\bgrabbing\b|\btouching\b/i.test(prompt) ? 'pov hands' : ''].filter(Boolean).join(', '),
         width: size.width,
         height: size.height,
         resolution: `${size.width}x${size.height}`,
