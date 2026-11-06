@@ -396,6 +396,8 @@ async function onAction(e) {
         case 'char':
             if (e.target.closest('.et-sub')) return; // the scene line has its own action
             if (ctx().characterId === undefined && !ctx().groupId) return openSheet('chars');
+            // In game mode the avatar opens the character's relationship card.
+            if (globalThis.ElephantGame?.isActive?.() && !ctx().groupId) return globalThis.ElephantGame.openCard();
             return openDrawer('#rightNavHolder', '#rm_button_selected_ch');
         case 'chars': return openSheet('chars');
         case 'pickchar': {

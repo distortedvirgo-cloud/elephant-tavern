@@ -119,6 +119,46 @@ export const TIERS = [
     { id: 'devoted', ru: 'Предан(а)', en: 'Devoted', min: 75 },
 ];
 
+/* Romance & intimacy, per character (eroge-style card). All 0..100 except trust (−100..100). */
+export const INTIMACY = [
+    { id: 'kiss', ru: 'Поцелуй', icon: '💋' },
+    { id: 'touch', ru: 'Ласки', icon: '🤲' },
+    { id: 'oral', ru: 'Оральный', icon: '👅' },
+    { id: 'sex', ru: 'Секс', icon: '🔥' },
+];
+const INTIMACY_IDS = INTIMACY.map(x => x.id);
+
+/** Fields every character record has (old saves get them on the fly). */
+export function ensureNpc(n) {
+    n.trust ??= 0;
+    n.attraction ??= 0;
+    n.affection ??= Math.max(0, Math.round((n.trust || 0) / 2));
+    n.lust ??= 0;
+    n.openness ??= 20;
+    n.orgasms ??= 0;
+    n.firsts ??= {};
+    n.likes ??= [];
+    n.spots ??= [];
+    n.limits ??= [];
+    return n;
+}
+
+/** One-word status for the card, from the numbers. */
+export function loveStatus(n) {
+    ensureNpc(n);
+    if (n.trust <= -30) return n.attraction >= 50 ? 'Ненависть и страсть' : 'Вражда';
+    if (n.affection >= 75 && n.attraction >= 60) return 'Любовь';
+    const intimate = n.firsts.sex || n.firsts.oral || n.firsts.touch;
+    if (intimate && n.affection >= 45) return 'Любовники';
+    if (intimate) return 'Страсть без обязательств';
+    if (n.lust >= 70) return 'Сгорает от желания';
+    if (n.attraction >= 60) return 'Хочет тебя';
+    if (n.affection >= 50) return 'Привязанность';
+    if (n.attraction >= 30) return 'Интерес';
+    if (n.trust >= 15) return 'Симпатия';
+    return 'Знакомство';
+}
+
 export const NPC_COLORS = ['7ec8e3', 'e3b77e', 'c3a6ff', '8fe3a8', 'ff9fb2', 'e3e07e', '7ee3d4', 'ffb38a', 'a6c8ff', 'd9a6ff', 'b4e37e', 'ff8f8f'];
 
 export const STRESS_MAX = 9;
@@ -172,8 +212,40 @@ export function modifier(state, skill) {
     return (state.skills[skill] ?? 0) + HARM[clamp(state.harm, 0, 3)].penalty;
 }
 
-export function effectiveDc(state, dc) {
-    return clamp(Math.round(Number(dc) || 8), 4, 14) + DIFFICULTY[state.difficulty].dc;
+/**
+ * How a character's feelings change a check aimed at them.
+ * charm: easier with someone who trusts, wants or is aroused by the player; harder with an enemy.
+ * resolve (resisting them): harder when they are bold and aroused, easier when the bond is thin.
+ * Returns { delta, why: ['её влечение −1', …] } — negative delta = easier.
+ */
+export function bondModifier(state, check) {
+    const out = { delta: 0, why: [] };
+    const name = String(check?.target || '').trim().toLowerCase();
+    if (!name) return out;
+    const npc = state.npcs?.[name] ?? Object.values(state.npcs || {}).find(n => n.name.toLowerCase().includes(name) || name.includes(n.name.toLowerCase()));
+    if (!npc) return out;
+    const n = ensureNpc(JSON.parse(JSON.stringify(npc)));
+    const add = (d, why) => { if (d) { out.delta += d; out.why.push(`${why} ${d > 0 ? '+' : '−'}${Math.abs(d)}`); } };
+    if (check.skill === 'charm' || check.skill === 'insight') {
+        if (n.trust <= -30) add(2, 'вражда');
+        else if (n.trust >= 45) add(-1, 'доверие');
+    }
+    if (check.skill === 'charm') {
+        if (n.attraction >= 65) add(-2, 'влечение');
+        else if (n.attraction >= 40) add(-1, 'влечение');
+        if (n.lust >= 60) add(-1, 'возбуждение');
+        if (n.affection >= 60) add(-1, 'привязанность');
+    }
+    if (check.skill === 'resolve') {
+        if (n.lust >= 60 && n.openness >= 50) add(1, 'её напор');
+        if (n.attraction >= 65) add(1, 'взаимное влечение');
+    }
+    out.delta = clamp(out.delta, -3, 3);
+    return out;
+}
+
+export function effectiveDc(state, dc, check = null) {
+    return clamp(Math.round(Number(dc) || 8), 4, 14) + DIFFICULTY[state.difficulty].dc + (check ? bondModifier(state, check).delta : 0);
 }
 
 /** Classify a total of 2d6 + mod. */
@@ -211,7 +283,7 @@ export function resolveCheck(state, check, opts = {}) {
     const skill = SKILLS[check.skill] ? check.skill : 'insight';
     const position = POSITIONS[check.position] ? check.position : 'risky';
     const effect = EFFECTS[check.effect] ? check.effect : 'standard';
-    const dc = effectiveDc(s, check.dc);
+    const dc = effectiveDc(s, check.dc, { ...check, skill });
     let mod = modifier(s, skill);
     const notes = [];
     if (opts.push) {
@@ -279,6 +351,8 @@ export function resolveCheck(state, check, opts = {}) {
         success_en: String(check.success_en || '').slice(0, 160),
         cost_en: String(check.cost_en || '').slice(0, 160),
         fail_en: String(check.fail_en || '').slice(0, 160),
+        target: String(check.target || '').slice(0, 40),
+        bond: bondModifier(state, { ...check, skill }).why,
         notes,
         events,
     };
@@ -415,7 +489,8 @@ export function applyReport(state, report, { trackerLine = null } = {}) {
 
     if (!report) return { state: s, notes, events };
 
-    // relationships
+    // relationships, romance, intimacy
+    const touched = new Set();
     for (const n of Array.isArray(report.npcs) ? report.npcs.slice(0, 6) : []) {
         const name = String(n?.name || '').trim();
         if (!name || name.length > 40) continue;
@@ -425,25 +500,72 @@ export function applyReport(state, report, { trackerLine = null } = {}) {
             const used = new Set(Object.values(s.npcs).map(x => x.color));
             npc = s.npcs[key] = {
                 name,
-                trust: clamp(Number(n.start_trust ?? 0) || 0, -30, 30),
-                attraction: 0,
+                // A character who already has history with the player (card, earlier story) starts where they are.
+                trust: clamp(Number(n.start_trust ?? 0) || 0, -40, 40),
+                attraction: clamp(Number(n.start_attraction ?? 0) || 0, 0, 70),
+                affection: clamp(Number(n.start_affection ?? 0) || 0, 0, 70),
+                openness: clamp(Number(n.start_openness ?? 20) || 20, 0, 70),
                 color: NPC_COLORS.find(c => !used.has(c)) || NPC_COLORS[Object.keys(s.npcs).length % NPC_COLORS.length],
                 met: s.turn,
             };
             notes.push({ kind: 'npc_new', name });
         }
+        ensureNpc(npc);
+        touched.add(key);
         npc.present = n.present !== false;
         npc.seen = s.turn;
         const dt = clamp(Math.round(Number(n.trust) || 0), -6, 6);
         const da = clamp(Math.round(Number(n.attraction) || 0), -5, 5);
-        if (dt || da) {
+        const df = clamp(Math.round(Number(n.affection) || 0), -5, 5);
+        const dl = clamp(Math.round(Number(n.lust) || 0), -40, 40);
+        let dop = clamp(Math.round(Number(n.openness) || 0), 0, 3);
+        if (dt || da || df) {
             const beforeTier = tierOf(npc.trust).id;
             npc.trust = clamp(npc.trust + dt, -100, 100);
             npc.attraction = clamp(npc.attraction + da, 0, 100);
-            notes.push({ kind: 'rel', name: npc.name, trust: dt, attraction: da, why: String(n.why_ru || '').slice(0, 60) });
+            npc.affection = clamp(npc.affection + df, 0, 100);
+            notes.push({ kind: 'rel', name: npc.name, trust: dt, attraction: da, affection: df, why: String(n.why_ru || '').slice(0, 60) });
             const afterTier = tierOf(npc.trust).id;
             if (afterTier !== beforeTier) notes.push({ kind: 'tier', name: npc.name, from: beforeTier, to: afterTier });
         }
+        // intimacy that happened in THIS exchange
+        const acts = (Array.isArray(n.intimacy) ? n.intimacy : [n.intimacy]).map(x => String(x || '').toLowerCase()).filter(x => INTIMACY_IDS.includes(x));
+        for (const act of acts) {
+            if (!npc.firsts[act]) {
+                npc.firsts[act] = s.time;
+                dop += 2; // every first time opens them up a little
+                notes.push({ kind: 'first', name: npc.name, act });
+            }
+        }
+        if (acts.length && dl <= 0) npc.lust = clamp(npc.lust + 15, 0, 100);
+        npc.lust = clamp(npc.lust + dl, 0, 100);
+        const orgasms = clamp(Math.round(Number(n.her_orgasm) || 0), 0, 3);
+        if (orgasms) {
+            npc.orgasms += orgasms;
+            npc.lust = clamp(npc.lust - 35 * orgasms, 5, 100); // release
+            dop += 1;
+            notes.push({ kind: 'orgasm', name: npc.name, n: orgasms });
+        }
+        if (dop) npc.openness = clamp(npc.openness + dop, 0, 100);
+        if (dl >= 10 || dl <= -10) notes.push({ kind: 'lust', name: npc.name, delta: dl });
+        const addTo = (list, items, max, kind) => {
+            for (const raw of Array.isArray(items) ? items : []) {
+                const t = String(raw || '').trim().slice(0, 40);
+                if (!t || list.some(x => x.toLowerCase() === t.toLowerCase())) continue;
+                list.push(t);
+                if (list.length > max) list.shift();
+                notes.push({ kind, name: npc.name, text: t });
+            }
+        };
+        addTo(npc.likes, n.likes_ru, 8, 'like');
+        addTo(npc.spots, n.weak_spots_ru, 5, 'spot');
+        addTo(npc.limits, n.limits_ru, 5, 'limit');
+    }
+    // Arousal cools down when nothing keeps it up.
+    for (const [key, npc] of Object.entries(s.npcs)) {
+        ensureNpc(npc);
+        if (touched.has(key)) continue;
+        npc.lust = clamp(npc.lust - (npc.seen === s.turn ? 6 : 20), 0, 100);
     }
     for (const npc of Object.values(s.npcs)) if (npc.seen !== s.turn) npc.present = false;
 
@@ -513,6 +635,24 @@ function similar(a, b) {
 // ------------------------------------------------------------------ narrator injection
 
 /** The block the narrator sees at depth 0. Compact on purpose. */
+const band = (v, steps) => { let out = steps[0][1]; for (const [min, txt] of steps) if (v >= min) out = txt; return out; };
+
+/** What the narrator needs to know about one character's feelings and body. */
+export function npcLine(n0, userName = '{{user}}') {
+    const n = ensureNpc(JSON.parse(JSON.stringify(n0)));
+    const parts = [`${n.name}: ${tierOf(n.trust).en}`];
+    parts.push(band(n.affection, [[0, 'no attachment yet'], [25, 'fond of ' + userName], [50, 'attached, cares, gets jealous'], [75, 'in love with ' + userName + ', shows it in small ways']]));
+    parts.push(band(n.attraction, [[0, 'not attracted'], [20, 'noticing ' + userName], [40, 'attracted'], [65, 'wants ' + userName + ' badly'], [85, 'can barely keep their hands off ' + userName]]));
+    if (n.lust >= 20) parts.push(band(n.lust, [[20, 'warm, a little flushed'], [45, 'aroused: flushed, distracted, looks for touch'], [70, 'very aroused: breathless, initiates, hard to refuse'], [90, 'desperate with need: it shows in body and voice']]));
+    parts.push(band(n.openness, [[0, 'shy and inexperienced with ' + userName + ': hesitant about new things, needs warming up, embarrassed'], [35, 'getting comfortable: will try things they trust'], [60, 'uninhibited: bold, suggests and asks for what they want'], [85, 'shameless: eager to explore anything']]));
+    const done = INTIMACY.filter(x => n.firsts[x.id]).map(x => x.id);
+    if (done.length) parts.push(`has done with ${userName}: ${done.join(', ')}${n.orgasms ? ` (${n.orgasms} orgasms so far)` : ''}`);
+    if (n.likes.length) parts.push(`known turn-ons: ${n.likes.join(', ')}`);
+    if (n.spots.length) parts.push(`weak spots (strong reaction when touched): ${n.spots.join(', ')}`);
+    if (n.limits.length) parts.push(`limits they have set: ${n.limits.join(', ')}`);
+    return `${parts.join('; ')}; #${n.color}`;
+}
+
 export function narratorBlock(state, { record = null, events = [], userName = '{{user}}' } = {}) {
     const lines = ['[GAME ENGINE — ground truth for this reply. Never mention dice, numbers, clocks, stats or any mechanics in prose; show them only through the fiction.]'];
     const threats = state.clocks.filter(c => c.kind === 'threat' && c.filled < c.size).map(c => `${c.name} ${c.filled}/${c.size}`);
@@ -530,8 +670,8 @@ export function narratorBlock(state, { record = null, events = [], userName = '{
     if (traits) lines.push(traits);
     const present = Object.values(state.npcs).filter(n => n.present);
     if (present.length) {
-        lines.push('NPCs present (relationship tier gates closeness; dialogue colour): ' + present.slice(0, 5)
-            .map(n => `${n.name} — ${tierOf(n.trust).en}${n.attraction >= 40 ? ', attracted' : ''}, #${n.color}`).join('; '));
+        lines.push(`Characters present (how they feel about ${userName} right now; let it drive their behaviour; dialogue colour):`);
+        for (const n of present.slice(0, 4)) lines.push(`- ${npcLine(n, userName)}`);
     }
     if (record) {
         const o = OUTCOMES[record.outcome];
@@ -560,7 +700,7 @@ export function stateSummary(state) {
     const skills = Object.entries(state.skills).map(([k, v]) => `${k} ${v}`).join(', ');
     const clocks = state.clocks.map(c => `${c.name} (${c.kind}) ${c.filled}/${c.size}`).join('; ') || 'none';
     const goals = state.goals.filter(g => g.status === 'active').map(g => g.title).join('; ') || 'none';
-    const npcs = Object.values(state.npcs).slice(-8).map(n => `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, attraction ${n.attraction})`).join('; ') || 'none';
+    const npcs = Object.values(state.npcs).slice(-8).map(n => { ensureNpc(n); return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}${INTIMACY.some(x => n.firsts[x.id]) ? `, done: ${INTIMACY.filter(x => n.firsts[x.id]).map(x => x.id).join('/')}` : ''})`; }).join('; ') || 'none';
     return `Time: ${timeEn(state.time)}. Location: ${state.location || '?'}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills: ${skills}. Money: ${state.money}. Items: ${state.items.join(', ') || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}\nNPCs: ${npcs}`;
 }
 
@@ -586,7 +726,7 @@ ${String(action || '').slice(0, 1200)}
 
 Reply with ONE line of minified JSON and nothing else.
 If no check: {"check":false}
-If a check: {"check":true,"skill":"might|finesse|insight|charm|resolve|lore","action_en":"verb phrase, e.g. pick the lock","label_ru":"короткое название по-русски","position":"controlled|risky|desperate","effect":"limited|standard|great","dc":6-12,"success_en":"what success gives","cost_en":"what a near miss costs","fail_en":"what failure brings","threat":"name of the danger clock this feeds, e.g. Guards alerted (or empty)","threat_size":4|6|8}
+If a check: {"check":true,"skill":"might|finesse|insight|charm|resolve|lore","action_en":"verb phrase, e.g. pick the lock","label_ru":"короткое название по-русски","position":"controlled|risky|desperate","effect":"limited|standard|great","dc":6-12,"success_en":"what success gives","cost_en":"what a near miss costs","fail_en":"what failure brings","threat":"name of the danger clock this feeds, e.g. Guards alerted (or empty)","target":"name of the character the action is aimed at or contested with, or empty","threat_size":4|6|8}
 dc: 6 easy, 8 standard, 10 hard, 12 very hard. Position: controlled = safe retry possible, risky = default, desperate = serious danger. Reuse existing clock names when they fit.`;
 }
 
@@ -608,12 +748,12 @@ ${String(reply || '').slice(0, 3500)}
 
 Reply with ONE line of minified JSON, nothing else:
 {"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"${MOOD_IDS.join('|')}","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
-"npcs":[{"name":"","present":bool,"trust":-6..6,"attraction":-5..5,"why_ru":"коротко"}],
+"npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"intimacy":["kiss"|"touch"|"oral"|"sex"],"her_orgasm":0..3,"likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
 "harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[],"items_lost":[],
 "goals":[{"title_ru":"","status":"new|done|failed"}],
 "clocks":[{"name":"","kind":"progress|threat","tick":1|2,"size":4|6|8}]}
 
-Rules: trust/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
+Rules: start_* only for a character who is NOT in the game state yet: where their feelings toward ${user} stand already, from the card and the story so far (a stranger ~0, an old friend trust 30+, a character who secretly wants ${user} attraction 40+; openness 20 for an average person, lower for shy or innocent, higher for bold or experienced ones). trust/affection/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. trust = how safe the character feels with ${user}; affection = emotional attachment, love; attraction = physical desire for ${user}. lust = the character's arousal change in this exchange (flirting +5..10, making out +15..25, sex +25..40, cold shower or interruption −20..−40). openness: +1..3 only when the character willingly tried something new or bolder with ${user}. intimacy: acts that physically happened between ${user} and that character in THIS exchange. her_orgasm: how many times that character climaxed in this exchange. likes_ru / weak_spots_ru / limits_ru: ONLY newly revealed things in Russian, 1-4 words (a turn-on they showed or said; a body spot that made them react strongly; something they refused or set as a boundary). harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
 }
 
 export function parseJsonLine(text) {

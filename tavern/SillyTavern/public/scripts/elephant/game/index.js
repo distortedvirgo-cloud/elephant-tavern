@@ -11,7 +11,7 @@
  * State is snapshotted on every message (message.extra.elephant_game.state = state AFTER
  * that message), so swipes, edits and deletions roll the game back for free.
  */
-import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast } from '../stage/helper.js';
+import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter } from '../stage/helper.js';
 import * as E from './engine.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
@@ -363,6 +363,7 @@ function ensureSheets() {
         <section id="eg-check" class="eg-sheet" aria-live="polite"></section>
         <section id="eg-state" class="eg-sheet"><div class="eg-grip"></div><div class="eg-tabs"></div><div class="eg-sheet-body"></div></section>
         <section id="eg-setup" class="eg-sheet"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
+        <section id="eg-card" class="eg-sheet"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
         <div id="eg-toasts"></div>
         <div id="eg-banner"></div>`);
     $('#eg-scrim').on('click', () => { if (!$('#eg-check').hasClass('eg-open')) closeEgSheets(); });
@@ -387,7 +388,8 @@ function showCheckCard(state, v) {
     return new Promise((resolve) => {
         const skill = E.SKILLS[v.skill] ? v.skill : 'insight';
         const pos = E.POSITIONS[v.position] ? v.position : 'risky';
-        const dc = E.effectiveDc(state, v.dc);
+        const dc = E.effectiveDc(state, v.dc, { ...v, skill });
+        const bond = E.bondModifier(state, { ...v, skill });
         const baseMod = E.modifier(state, skill);
         const canPush = state.stress < E.STRESS_MAX;
         let push = false;
@@ -407,6 +409,7 @@ function showCheckCard(state, v) {
                 <div class="eg-badges">
                     <span class="eg-badge eg-pos-${pos}">${E.POSITIONS[pos].ru}</span>
                     <span class="eg-badge">Сложность ${dc}</span>
+                    ${bond.why.map(w => `<span class="eg-badge eg-badge-bond">💞 ${escapeHtml(w)}</span>`).join('')}
                     <span class="eg-badge">+ ${nearPct}% успех ценой</span>
                     ${v.threat ? `<span class="eg-badge eg-badge-threat">⏳ ${escapeHtml(v.threat)}</span>` : ''}
                 </div>
@@ -484,10 +487,21 @@ function showNotes(notes = []) {
             case 'rel': {
                 const parts = [];
                 if (n.trust) parts.push(`${n.trust > 0 ? '+' : ''}${n.trust} 🛡`);
-                if (n.attraction) parts.push(`${n.attraction > 0 ? '+' : ''}${n.attraction} ♥`);
-                out.push({ text: `${n.name}: ${parts.join(' ')}`, sub: n.why, tone: n.trust + n.attraction >= 0 ? 'good' : 'bad' });
+                if (n.affection) parts.push(`${n.affection > 0 ? '+' : ''}${n.affection} 💞`);
+                if (n.attraction) parts.push(`${n.attraction > 0 ? '+' : ''}${n.attraction} 💘`);
+                out.push({ text: `${n.name}: ${parts.join(' ')}`, sub: n.why, tone: n.trust + n.attraction + (n.affection || 0) >= 0 ? 'good' : 'bad' });
                 break;
             }
+            case 'first': {
+                const a = E.INTIMACY.find(x => x.id === n.act);
+                out.push({ text: `${a?.icon || '💗'} Впервые: ${(a?.ru || n.act).toLowerCase()} с ${n.name}`, tone: 'gold' });
+                break;
+            }
+            case 'orgasm': out.push({ text: `💦 ${n.name}: оргазм${n.n > 1 ? ` ×${n.n}` : ''}`, tone: 'gold' }); break;
+            case 'lust': if (n.delta >= 20) out.push({ text: `🔥 ${n.name} возбуждается`, tone: 'info' }); break;
+            case 'like': out.push({ text: `💗 ${n.name} любит: ${n.text}`, tone: 'info' }); break;
+            case 'spot': out.push({ text: `✨ Чувствительное место ${n.name}: ${n.text}`, tone: 'info' }); break;
+            case 'limit': out.push({ text: `🚫 ${n.name}: граница — ${n.text}`, tone: 'warn' }); break;
             case 'tier': out.push({ text: `${n.name} — ${E.TIERS.find(t => t.id === n.to)?.ru}`, tone: 'gold' }); break;
             case 'npc_new': out.push({ text: `Новое знакомство: ${n.name}`, tone: 'info' }); break;
             case 'clock': out.push({ text: `${n.name} ${n.to}/${n.size}`, tone: 'warn' }); break;
@@ -533,7 +547,8 @@ function openStateSheet(tab = 'hero') {
     if (tab === 'people') $b.html(peopleHtml(s));
     if (tab === 'goals') $b.html(goalsHtml(s));
     if (tab === 'log') $b.html(logHtml(s));
-    $b.off('click').on('click', '[data-spend]', async function () {
+    $b.off('click').on('click', '[data-card]', function () { openCard(this.dataset.card); })
+        .on('click', '[data-spend]', async function () {
         const idx = (ctx().chat?.length ?? 1) - 1;
         const next = E.spendPoint(currentState(), this.dataset.spend);
         writeSnapshot(idx, { state: next });
@@ -584,17 +599,80 @@ function heroHtml(s) {
 }
 
 function peopleHtml(s) {
-    const list = Object.values(s.npcs).sort((a, b) => (b.present - a.present) || (b.seen - a.seen));
+    const list = Object.values(s.npcs).map(n => E.ensureNpc(E.clone(n))).sort((a, b) => (b.present - a.present) || (b.seen - a.seen));
     if (!list.length) return '<p class="eg-muted">Пока никого. Знакомства появятся по ходу истории.</p>';
-    return list.map(n => {
-        const tier = E.tierOf(n.trust);
-        const trustPct = Math.round((n.trust + 100) / 2);
-        return `<div class="eg-npc" style="--c:#${n.color}">
-            <div class="eg-npc-head"><b>${escapeHtml(n.name)}</b>${n.present ? '<span class="eg-here">рядом</span>' : ''}<span class="eg-tier eg-tier-${tier.id}">${tier.ru}</span></div>
-            <div class="eg-meter"><small>🛡 Доверие ${n.trust}</small><div class="eg-track eg-track-trust"><i style="width:${trustPct}%"></i></div></div>
-            <div class="eg-meter"><small>♥ Влечение ${n.attraction}</small><div class="eg-track eg-track-attr"><i style="width:${n.attraction}%"></i></div></div>
-        </div>`;
-    }).join('');
+    return list.map(n => `
+        <button class="eg-npc eg-npc-btn" style="--c:#${n.color}" data-card="${escapeHtml(n.name)}">
+            <div class="eg-npc-head"><b>${escapeHtml(n.name)}</b>${n.present ? '<span class="eg-here">рядом</span>' : ''}<span class="eg-status">${escapeHtml(E.loveStatus(n))}</span></div>
+            <div class="eg-mini">
+                <span title="Доверие">🛡 ${n.trust}</span><span title="Привязанность">💞 ${n.affection}</span><span title="Влечение">💘 ${n.attraction}</span>
+                ${n.lust >= 20 ? `<span title="Возбуждение">🔥 ${n.lust}</span>` : ''}
+                ${E.INTIMACY.filter(x => n.firsts[x.id]).map(x => `<span title="${x.ru}">${x.icon}</span>`).join('')}
+            </div>
+        </button>`).join('') + '<p class="eg-muted">Нажми на персонажа, чтобы открыть карточку.</p>';
+}
+
+// ------------------------------------------------------------------ UI: character card (eroge-style)
+
+function findNpc(state, name) {
+    const q = String(name || '').trim().toLowerCase();
+    if (!q) return null;
+    const all = Object.values(state.npcs || {});
+    return state.npcs?.[q] ?? all.find(n => n.name.toLowerCase() === q)
+        ?? all.find(n => q.includes(n.name.toLowerCase()) || n.name.toLowerCase().includes(q.split(/\s+/)[0]));
+}
+
+function bar(label, icon, value, { min = 0, max = 100, cls = '' } = {}) {
+    const pct = Math.round((value - min) / (max - min) * 100);
+    return `<div class="eg-cbar ${cls}"><div class="eg-cbar-top"><span>${icon} ${label}</span><b>${value}</b></div><div class="eg-cbar-track"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div></div>`;
+}
+
+function cardHtml(state, name) {
+    const raw = findNpc(state, name);
+    const ch = currentCharacter();
+    const isMain = ch && !ch.group && (!raw || raw.name.toLowerCase().includes(String(ch.name).toLowerCase().split(/\s+/)[0]) || String(ch.name).toLowerCase().includes((raw?.name || '').toLowerCase()));
+    const n = raw ? E.ensureNpc(E.clone(raw)) : E.ensureNpc({ name: name || ch?.name || '?', color: 'c3a6ff' });
+    const avatar = isMain && ch?.avatarUrl ? `<img class="eg-card-ava" src="${ch.avatarUrl}" alt="">` : `<div class="eg-card-ava eg-card-ini" style="--c:#${n.color}">${escapeHtml(n.name.slice(0, 1).toUpperCase())}</div>`;
+    const tier = E.tierOf(n.trust);
+    const fmt = (iso) => { try { return E.timeRu(iso).split(',').slice(0, 2).join(','); } catch { return ''; } };
+    const chips = (list, cls, empty) => list.length ? list.map(t => `<span class="eg-chip ${cls}">${escapeHtml(t)}</span>`).join('') : `<span class="eg-muted">${empty}</span>`;
+    return `
+        <div class="eg-card-hero" style="--c:#${n.color}">
+            ${avatar}
+            <div class="eg-card-who">
+                <h3>${escapeHtml(n.name)}</h3>
+                <div class="eg-card-tags"><span class="eg-status eg-status-big">${escapeHtml(raw ? E.loveStatus(n) : 'Ещё не знакомы')}</span><span class="eg-tier eg-tier-${tier.id}">${tier.ru}</span>${n.present ? '<span class="eg-here">рядом</span>' : ''}</div>
+            </div>
+        </div>
+        <h4 class="eg-h eg-h-love">💗 Отношения</h4>
+        ${bar('Доверие', '🛡', n.trust, { min: -100, cls: 'eg-c-trust' })}
+        ${bar('Привязанность', '💞', n.affection, { cls: 'eg-c-aff' })}
+        ${bar('Влечение', '💘', n.attraction, { cls: 'eg-c-attr' })}
+        <h4 class="eg-h eg-h-nsfw">🔞 Близость</h4>
+        ${bar('Возбуждение', '🔥', n.lust, { cls: `eg-c-lust ${n.lust >= 70 ? 'eg-hot' : ''}` })}
+        ${bar('Раскрепощённость', '🔓', n.openness, { cls: 'eg-c-open' })}
+        <div class="eg-firsts">${E.INTIMACY.map(x => `<div class="eg-first ${n.firsts[x.id] ? 'eg-got' : ''}"><span>${n.firsts[x.id] ? x.icon : '🔒'}</span><b>${x.ru}</b><small>${n.firsts[x.id] ? fmt(n.firsts[x.id]) : 'ещё нет'}</small></div>`).join('')}</div>
+        <div class="eg-orgasms">💦 Оргазмов с тобой: <b>${n.orgasms}</b></div>
+        <h4 class="eg-h">💗 Нравится</h4><div class="eg-chips">${chips(n.likes, 'eg-chip-like', 'узнаешь по ходу истории')}</div>
+        <h4 class="eg-h">✨ Чувствительные места</h4><div class="eg-chips">${chips(n.spots, 'eg-chip-spot', 'ещё не найдены')}</div>
+        <h4 class="eg-h">🚫 Границы</h4><div class="eg-chips">${chips(n.limits, 'eg-chip-limit', 'пока не обозначены')}</div>
+        <p class="eg-muted eg-card-note">Шкалы растут от сцен и меняют поведение персонажа: кто тебе доверяет и хочет тебя, ведёт себя смелее, а уговорить его проще. Возбуждение остывает, если его не поддерживать.</p>
+        ${isMain ? '<button class="menu_button eg-card-edit" data-card-edit="1"><i class="fa-solid fa-pen"></i> Карточка персонажа</button>' : ''}`;
+}
+
+export function openCard(name) {
+    ensureSheets();
+    const c = ctx();
+    const state = currentState();
+    const who = name || c.name2;
+    const $b = $('#eg-card .eg-sheet-body').html(cardHtml(state, who));
+    $b.find('[data-card-edit]').on('click', () => {
+        closeEgSheets();
+        $('#rightNavHolder .drawer-content').hasClass('openDrawer') || $('#rightNavHolder .drawer-toggle').first().trigger('click');
+        setTimeout(() => $('#rm_button_selected_ch').trigger('click'), 60);
+    });
+    openEgSheet('eg-card');
+    haptic('tick');
 }
 
 function goalsHtml(s) {
@@ -788,7 +866,7 @@ export async function init() {
     ensureSheets();
     addHubTile();
     setTimeout(() => { addHubTile(); patchBack(); }, 1500);
-    globalThis.ElephantGame = { isActive, ownsScene: isActive, currentState, openSetup, openStateSheet, engine: E };
+    globalThis.ElephantGame = { isActive, ownsScene: isActive, currentState, openSetup, openStateSheet, openCard, engine: E };
     refresh();
     log('game mode ready');
 }
