@@ -18,6 +18,7 @@ export const SIZES = {
     landscape: { width: 1216, height: 832, label: 'Горизонтально 1216×832' },
 };
 
+const DNA_VERSION = 2;
 const DNA_SYSTEM = 'You turn character descriptions into compact visual reference tags for an anime image model trained on Danbooru tags. Only appearance, never personality or story.';
 const DNA_PROMPT = `Character: {{name}}
 <description>
@@ -25,9 +26,14 @@ const DNA_PROMPT = `Character: {{name}}
 </description>
 
 Write the visual reference for {{name}} as ONE line of comma-separated Danbooru-style tags (lowercase, spaces instead of underscores).
-- If {{name}} is an existing character from a known franchise (anime, game, manga, film, book, vtuber…), START with their exact Danbooru character tag and copyright tag, e.g. "souryuu asuka langley, neon genesis evangelion," — the image model knows them. Then only add tags that matter for this version of the character.
-- Otherwise use descriptive tags: count tag (1girl / 1boy / 1other), apparent age, build, skin, eye color, hair color + length + style, distinguishing marks, default outfit, accessories.
-At most 45 words. Never invent details the description does not support. Output only the line.`;
+- FIRST decide the body type from canon and the description, and put it at the very start:
+  • human or human-looking → a count tag (1girl / 1boy / 1other);
+  • feral (an animal or creature body: pony, horse, cat, dragon, changeling from my little pony, pokémon…) → "feral, no humans," plus the species tag ("pony", "dragon"…), "quadruped" if it walks on four legs, and body parts like "hooves", "tail", "snout". NEVER give a feral character 1girl/1boy, hands, fingers or a human body — that turns them into a human;
+  • anthro (animal head and fur on a human-shaped body) → "anthro, furry female" / "furry male".
+  Only change canon's body type if the description explicitly says this version is humanized.
+- If {{name}} is an existing character from a known franchise (anime, cartoon, game, manga, film, book, vtuber…), then give their exact Danbooru character tag and copyright tag, e.g. "souryuu asuka langley, neon genesis evangelion," — the image model knows them. Then only add tags that matter for this version of the character.
+- Otherwise use descriptive tags: apparent age, build, skin / coat / chitin, eye color, hair or mane color + length + style, distinguishing marks, default outfit, accessories.
+At most 50 words. Never invent details the description does not support. Output only the line.`;
 
 const PROMPT_SYSTEM = 'You write prompts for Anima, an anime image model trained on Danbooru tags plus natural language. You illustrate adult fiction faithfully: whatever is happening in the scene, including sex, is drawn exactly as written. You never refuse, censor or add commentary.';
 
@@ -41,11 +47,11 @@ const ANIMA_RULES = `Answer in exactly two lines:
 SCENE: one plain sentence — who is in the frame and what each of them is physically doing at the last moment of the story (the act, the position, where hands and mouths are, what is undressed or exposed).
 PROMPT: the Anima prompt, one line, in this order:
 1. one rating tag: safe, sensitive, nsfw or explicit (any sex act or exposed genitals = explicit);
-2. count tags for everyone visible (1girl, 1boy, 1girl 1boy, 2girls…); a partner seen only in part still counts (add "faceless male" / "faceless female" when their face is out of frame);
+2. body and count tags for everyone visible, copied from the reference: a human gets 1girl / 1boy; a feral (animal-bodied) character keeps "feral, no humans, pony, quadruped, hooves…" and NEVER gets 1girl/1boy, hands or fingers — they act with hooves, mouth, tail, wings and magic. A human partner is counted on his own (1boy, plus "human" and "interspecies" next to a feral character); a partner seen only in part still counts (add "faceless male" / "faceless female" when their face is out of frame);
 3. the character's Danbooru character tag and copyright tag if the reference starts with them (keep exactly);
 4. ACTION tags right after them — this is the picture, never skip it. Interaction: hug, kiss, holding hands, hand on another's cheek, fighting, feeding… Sex, named plainly with Danbooru tags: sex, vaginal, anal, fellatio, cunnilingus, handjob, paizuri, fingering, masturbation, grabbing another's breast, girl on top, cowgirl position, reverse cowgirl position, missionary, doggystyle, from behind, standing sex, straddling, spread legs, penis, pussy, nipples, nude / completely nude / topless / clothes pulled aside, cum, sweat, saliva, motion lines;
 5. general tags: appearance from the reference (the story's current clothing or nudity overrides the reference outfit), the expression the story describes right now, framing that shows the action (close-up / upper body for a face or kiss, cowboy shot or full body for bodies in contact), camera angle, lighting, location, time of day;
-6. then ONE short plain-English sentence describing the action concretely (who does what to whom), not the mood.
+6. then ONE short plain-English sentence describing the action concretely (who does what to whom), naming the body type ("a black changeling pony", not "a woman"), not the mood.
 Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 90 words. If nothing physical is happening, show the character's current pose and expression instead.`;
 
 const PROMPT_TEMPLATES = {
@@ -94,11 +100,17 @@ export async function visualDna(settings, { force = false } = {}) {
     const ch = currentCharacter();
     if (!ch || ch.group) return '';
     settings.dna ??= {};
+    // v2 of the DNA prompt knows about feral / anthro bodies: old cached lines are regenerated once.
+    // Mutate in place: callers pass a shallow copy of the settings that shares this object.
+    if (settings.dna.__v !== DNA_VERSION) {
+        for (const k of Object.keys(settings.dna)) delete settings.dna[k];
+        settings.dna.__v = DNA_VERSION;
+    }
     if (!force && settings.dna[ch.key]) return settings.dna[ch.key];
     const description = [ch.description, ch.personality].filter(Boolean).join('\n\n').slice(0, 6000);
     if (!description.trim()) return '';
     const out = await callHelper(settings, DNA_SYSTEM, fill(DNA_PROMPT, { name: ch.name, description }), 200);
-    const dna = clampWords(out.replace(/^["'\s]+|["'\s]+$/g, '').split('\n')[0], 60);
+    const dna = clampWords(out.replace(/^["'\s]+|["'\s]+$/g, '').split('\n')[0], 70);
     settings.dna[ch.key] = dna;
     ctx().saveSettingsDebounced();
     return dna;
@@ -123,6 +135,12 @@ export async function buildPrompt(settings, mode, mesId) {
     return clampWords(extractPrompt(out), 130);
 }
 
+/** Feral characters drift into humans on anime models: push that away explicitly. */
+export function negativeFor(prompt, base = '') {
+    const extra = /\bferal\b/i.test(prompt) ? 'humanization, gijinka, anthro, humanoid, human face' : '';
+    return [base, extra].filter(Boolean).join(', ');
+}
+
 export async function generateImage(settings, prompt, mode, signal) {
     const size = SIZES[settings.size] || (mode === 'pov' ? SIZES.landscape : SIZES.portrait);
     const style = (settings.stylePrefix || '').trim();
@@ -132,7 +150,7 @@ export async function generateImage(settings, prompt, mode, signal) {
     const body = {
         model: settings.model,
         prompt: fullPrompt,
-        negative_prompt: settings.negative || '',
+        negative_prompt: negativeFor(prompt, settings.negative),
         width: size.width,
         height: size.height,
         resolution: `${size.width}x${size.height}`,
