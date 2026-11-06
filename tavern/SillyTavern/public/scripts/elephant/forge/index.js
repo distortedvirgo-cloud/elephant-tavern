@@ -10,7 +10,7 @@
  */
 import { oai_settings } from '../../openai.js';
 import { ctx, toast, haptic, log } from '../stage/helper.js';
-import { DNA_VERSION } from '../stage/imagegen.js';
+import { DNA_VERSION, stylePrefixFor, negativeFor } from '../stage/imagegen.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 
@@ -76,15 +76,16 @@ function parseCard(text) {
 async function drawAvatar(card) {
     const stage = ctx().extensionSettings?.elephant_stage ?? {};
     const model = stage.images?.model || 'anima/text-to-image';
-    const prefix = stage.images?.stylePrefix || 'masterpiece, best quality';
+    const prefix = stylePrefixFor(stage.images ?? { style: 'anime' });
     const prompt = `${prefix}, safe, ${card.danbooru_tags}, upper body, looking at viewer, portrait, detailed face, simple background`;
+    const hires = stage.images?.hires !== false;
     const res = await fetch('/api/sd/nanogpt/generate', {
         method: 'POST',
         headers: ctx().getRequestHeaders(),
         body: JSON.stringify({
             model, prompt,
-            negative_prompt: stage.images?.negative || 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, bad anatomy, bad hands',
-            width: 832, height: 1216, resolution: '832x1216', nImages: 1, showExplicitContent: true,
+            negative_prompt: negativeFor(prompt, stage.images?.negative || 'worst quality, low quality, artist name, blurry, bad anatomy, bad hands, 3d, photorealistic'),
+            width: hires ? 1080 : 832, height: hires ? 1584 : 1216, resolution: hires ? '1080x1584' : '832x1216', nImages: 1, showExplicitContent: true,
         }),
     });
     if (!res.ok) {

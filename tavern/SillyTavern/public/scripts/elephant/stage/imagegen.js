@@ -50,9 +50,9 @@ PROMPT: the Anima prompt, one line, in this order:
 2. count tags for everyone visible, together: humans as 1girl / 1boy / 2girls / 1boy 2girls…; feral (animal-bodied) characters are not counted as girls or boys — they get "feral" plus their species ("pony", "dragon"…), "quadruped", "hooves". Several characters: also "multiple girls" / "multiple boys" or "duo" / "group". A partner seen only in part still counts ("faceless male" / "faceless female" when the face is out of frame); add "no humans" only when no human is visible at all; a human next to a feral character adds "human, interspecies". Feral characters never get 1girl/1boy, hands or fingers;
 3. the Danbooru character tag (and copyright tag) of EVERY known canon character in the frame, {{char}} first, exactly as Danbooru writes them (the reference gives {{char}}'s). Never invent a tag for an original character (no "name (original)"): they are drawn from appearance tags only. A disguised character is tagged as the one they look like right now, plus a hint of the tell (e.g. "glowing green eyes"), not as their true self;
 4. ACTION tags right after them — this is the picture, never skip it. Interaction: hug, kiss, holding hands, hand on another's cheek, fighting, arguing, pointing, feeding, eye contact, back-to-back… Sex, named plainly: sex, vaginal, anal, fellatio, cunnilingus, handjob, paizuri, fingering, masturbation, grabbing another's breast, girl on top, cowgirl position, reverse cowgirl position, missionary, doggystyle, from behind, standing sex, straddling, threesome, spread legs, penis, pussy, nipples, nude / completely nude / topless / clothes pulled aside, cum, sweat, saliva, motion lines;
-5. general tags: {{char}}'s appearance from the reference (the story's current clothing or nudity overrides it); a canon character needs only a few tags beyond their name; an original side character gets 2–4 key tags (hair colour, outfit) — keep each character's tags short so their looks don't blend; the expressions the story describes right now; framing that fits everyone and the action (close-up / upper body for one face or a kiss, cowboy shot or full body for bodies in contact or several characters), camera angle, lighting, location, time of day;
-6. then one or two short plain-English sentences that place and describe each visible character by name and body type — who is where (left, right, foreground, behind) and who does what to whom ("on the left a black changeling pony queen corners a purple unicorn pony who backs against the wall") — not the mood.
-Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 110 words. If nothing physical is happening, show the characters' current poses and expressions instead.`;
+5. appearance in per-character blocks, so looks don't blend: right after each character's name tag (or, for an original character, as one group) put that character's own look — {{char}}'s from the reference (the story's current clothing or nudity overrides it), a canon side character only their 2–4 most telling tags (coat/hair colours, outfit), an original side character 2–4 key tags; then the expressions the story describes right now; then framing (close-up / upper body for one face or a kiss, cowboy shot or full body for bodies in contact, wide shot for several characters), camera angle, lighting, location, time of day. Keep only tags that matter: about 30–45 tags in all;
+6. then one or two short plain-English sentences that start with the exact number of characters ("Two characters:", "One character:") and place each by body type and colours — who is where (left, right, foreground, behind) and who does what to whom ("Two characters: on the left a black changeling pony queen corners a small lavender unicorn pony who backs against the wall") — not the mood.
+Lowercase tags, spaces instead of underscores, no quality or style tags (the app adds them), no weights, max 90 words. If nothing physical is happening, show the characters' current poses and expressions instead.`;
 
 const HEAD = `Character visual reference — {{char}}: {{dna}}
 Other characters: their canon look if they are known characters, otherwise exactly what the story says about them.
@@ -104,6 +104,9 @@ export function fixTags(prompt) {
     const human = tags.some(t => /^(\d(girl|boy)s?|multiple (girls|boys)|human|faceless (male|female)|pov hands)$/.test(t.toLowerCase()));
     if (human) tags = tags.filter(t => t.toLowerCase() !== 'no humans');
     tags = tags.filter(t => !/\(original\)$/i.test(t));
+    // Duplicates only add weight to one thing and crowd out the rest.
+    const seen = new Set();
+    tags = tags.filter((t) => { const k = t.toLowerCase(); if (t.split(/\s+/).length > 6) return true; if (seen.has(k)) return false; seen.add(k); return true; });
     return tags.join(', ');
 }
 
@@ -165,9 +168,12 @@ export async function buildPrompt(settings, mode, mesId) {
     log('image prompt draft', out);
     const frame = mode === 'auto' ? extractFrame(out) : mode;
     let prompt = fixTags(extractPrompt(out));
+    // An original character has no Danbooru tag: a bare name tag would only confuse the image model.
+    const nameTag = String(c.name2 || '').trim().toLowerCase();
+    if (nameTag && dna && !dna.toLowerCase().includes(nameTag)) prompt = prompt.split(',').map(t => t.trim()).filter(t => t.toLowerCase() !== nameTag).join(', ');
     // A wide shot without the player: drop first-person tags the helper may have left.
     if (frame === 'scene') prompt = prompt.split(',').map(t => t.trim()).filter(t => !/^(pov|pov hands|first-person view|first person view)$/i.test(t)).join(', ');
-    return { prompt: clampWords(prompt, 150), mode: frame };
+    return { prompt: clampWords(prompt, 120), mode: frame };
 }
 
 /** Feral characters drift into humans on anime models: push that away explicitly. */
@@ -178,9 +184,26 @@ export function negativeFor(prompt, base = '') {
     return [base, extra, noText].filter(Boolean).join(', ');
 }
 
+/* Style presets (research: Anima's default look is neutral; era and source tags give it a real anime look,
+   "anime coloring" keeps it from glossy AI slop). */
+export const STYLES = {
+    anime: 'masterpiece, best quality, newest, anime screenshot, anime coloring',
+    art: 'masterpiece, best quality, newest, highres, official art',
+};
+
+export function stylePrefixFor(settings) {
+    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.anime);
+    const artist = String(settings.artist || '').trim();
+    const at = artist ? (artist.startsWith('@') ? artist : `@${artist}`) : '';
+    return [base.trim(), at].filter(Boolean).join(', ');
+}
+
 export async function generateImage(settings, prompt, mode, signal) {
-    const size = SIZES[settings.size] || (mode === 'pov' ? SIZES.landscape : SIZES.portrait);
-    const style = (settings.stylePrefix || '').trim();
+    const base = SIZES[settings.size] || (mode === 'pov' ? SIZES.landscape : SIZES.portrait);
+    // 1.5K: the server picks NanoGPT's "1.5k" resolution for sizes over ~1300 px.
+    const k = settings.hires ? 1.3 : 1;
+    const size = { width: Math.round(base.width * k / 8) * 8, height: Math.round(base.height * k / 8) * 8 };
+    const style = stylePrefixFor(settings);
     const povTag = mode === 'pov' && !/\bpov\b|first[- ]person/i.test(prompt) ? 'pov' : '';
     // Anima reads "[quality] [safety] [count] [character] [series] [general]": the style prefix carries the quality tags.
     const fullPrompt = [style, povTag, prompt].filter(Boolean).join(', ');

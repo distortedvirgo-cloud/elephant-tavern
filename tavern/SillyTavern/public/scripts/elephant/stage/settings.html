@@ -72,7 +72,18 @@
                 <option value="landscape">Горизонтально 1216×832</option>
             </select>
         </label>
-        <label class="et-field">Стиль (добавляется в начало промпта)
+        <label class="et-field">Стиль картинок
+            <select class="text_pole" data-et-key="images.style">
+                <option value="anime">Аниме-кадр — как кадр из сериала, без ИИ-глянца</option>
+                <option value="art">Иллюстрация — как официальный арт</option>
+                <option value="custom">Свой — из поля ниже</option>
+            </select>
+        </label>
+        <label class="et-field">Художник (необязательно, например @hiten — стиль конкретного автора с Danbooru)
+            <input type="text" class="text_pole" data-et-key="images.artist" placeholder="@имя художника">
+        </label>
+        <label class="et-check"><input type="checkbox" data-et-key="images.hires"><span>Высокое качество 1.5K: чётче детали и анатомия ($0.02 за картинку вместо $0.01)</span></label>
+        <label class="et-field">Свой стиль (для «Свой»: добавляется в начало промпта)
             <textarea class="text_pole" rows="2" data-et-key="images.stylePrefix"></textarea>
         </label>
         <label class="et-field">Негативный промпт

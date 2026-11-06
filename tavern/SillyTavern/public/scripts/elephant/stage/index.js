@@ -17,6 +17,10 @@ import { SIZES, loadModels, visualDna, buildPrompt, generateImage, attachToMessa
 
 const $ = (...a) => globalThis.jQuery(...a);
 
+const NEGATIVE_V1 = 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, bad anatomy, bad hands, extra digits, watermark';
+/* Anima on NanoGPT is the tuned/fast build: score_* tags push it into "slop"; anatomy and 3D words do the work. */
+const NEGATIVE_V2 = 'worst quality, low quality, artist name, blurry, jpeg artifacts, chromatic aberration, bad anatomy, bad hands, extra digits, fused fingers, extra limbs, deformed, 3d, photorealistic, watermark';
+
 const DEFAULTS = {
     shell: true,
     effects: true,
@@ -38,8 +42,11 @@ const DEFAULTS = {
         every: 8,
         mode: 'auto',  // auto (pov when the player is in the action, else a wide shot) | pov | scene | portrait
         size: 'auto',
+        style: 'anime',     // anime | art | custom (stylePrefix)
+        artist: '',         // optional "@artist" for a specific look
+        hires: true,        // 1.5K output: sharper details and anatomy
         stylePrefix: 'masterpiece, best quality',
-        negative: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, bad anatomy, bad hands, extra digits, watermark',
+        negative: NEGATIVE_V2,
         steps: '',
         scale: '',
     },
@@ -58,6 +65,9 @@ export function S() {
             for (const [k2, v2] of Object.entries(v)) if (s[k][k2] === undefined) s[k][k2] = structuredClone(v2);
         }
     }
+    // 0.9.3: style presets and the anatomy-aware negative.
+    if (s.images.negative === NEGATIVE_V1) s.images.negative = NEGATIVE_V2;
+    if (s.images.style === undefined) s.images.style = !s.images.stylePrefix || s.images.stylePrefix === 'masterpiece, best quality' ? 'anime' : 'custom';
     // 0.9: "alternate" (POV/portrait in turns) became "auto" (the frame follows the scene).
     if (s.images.mode === 'alternate') s.images.mode = 'auto';
     // 0.5: Anima is the default image model — move untouched old defaults over.
