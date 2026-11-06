@@ -81,7 +81,11 @@ async function drawAvatar(card) {
             width: 832, height: 1216, resolution: '832x1216', nImages: 1, showExplicitContent: true,
         }),
     });
-    if (!res.ok) throw new Error(`Картинка не получилась (${res.status})`);
+    if (!res.ok) {
+        if (res.status === 400) throw new Error('Нет ключа NanoGPT');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `NanoGPT вернул ошибку (${res.status})`);
+    }
     const data = await res.json();
     if (!data?.image) throw new Error('Картинка не получилась');
     return data.image;

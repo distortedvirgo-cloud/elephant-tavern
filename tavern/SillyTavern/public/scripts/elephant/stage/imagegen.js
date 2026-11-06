@@ -134,7 +134,11 @@ export async function generateImage(settings, prompt, mode, signal) {
         body: JSON.stringify(body),
         signal,
     });
-    if (!res.ok) throw new Error(res.status === 400 ? 'Нет ключа NanoGPT' : `NanoGPT вернул ошибку (${res.status}) — проверьте модель и баланс`);
+    if (!res.ok) {
+        if (res.status === 400) throw new Error('Нет ключа NanoGPT');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `NanoGPT вернул ошибку (${res.status})`);
+    }
     const data = await res.json();
     if (!data?.image) throw new Error('NanoGPT не вернул картинку');
     return { base64: data.image, prompt: fullPrompt };

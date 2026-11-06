@@ -1437,34 +1437,68 @@ nanogpt.post('/generate', async (request, response) => {
         }
 
         console.debug('NanoGPT request:', request.body);
+        const base = process.env.ELEPHANT_NANOGPT_IMAGE_URL || 'https://nano-gpt.com/api';
+        const headers = { 'x-api-key': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
 
-        const result = await fetch('https://nano-gpt.com/api/generate-image', {
-            method: 'POST',
-            body: JSON.stringify(request.body),
-            headers: {
-                'x-api-key': key,
-                'Content-Type': 'application/json',
-            },
-        });
+        /** Pulls the image out of either response shape (b64_json or a signed url). */
+        const extract = async (data) => {
+            const item = data?.data?.[0] ?? data?.images?.[0] ?? null;
+            if (item?.b64_json) return item.b64_json;
+            const url = item?.url || (typeof item === 'string' ? item : null);
+            if (!url) return null;
+            if (url.startsWith('data:')) return url.split(',')[1];
+            const img = await fetch(url);
+            if (!img.ok) return null;
+            return Buffer.from(await img.arrayBuffer()).toString('base64');
+        };
+        const errorText = async (res) => {
+            const text = await res.text().catch(() => '');
+            try {
+                const j = JSON.parse(text);
+                return String(j?.error?.message || j?.error || j?.message || text).slice(0, 300);
+            } catch {
+                return text.slice(0, 300) || `HTTP ${res.status}`;
+            }
+        };
 
-        if (!result.ok) {
-            console.warn('NanoGPT returned an error.');
-            return response.sendStatus(500);
+        // 1) Legacy route, used by SillyTavern since forever.
+        const legacy = await fetch(`${base}/generate-image`, { method: 'POST', body: JSON.stringify(request.body), headers });
+        let firstError = '';
+        if (legacy.ok) {
+            const image = await extract(await legacy.json().catch(() => null));
+            if (image) return response.send({ image });
+            firstError = 'empty response';
+        } else {
+            firstError = `${legacy.status}: ${await errorText(legacy)}`;
         }
 
-        /** @type {any} */
-        const data = await result.json();
-
-        const image = data?.data?.[0]?.b64_json;
-        if (!image) {
+        // 2) Normalized Image API — newer models (e.g. anima/text-to-image) live here.
+        const b = request.body || {};
+        const width = Number(b.width) || 1024;
+        const height = Number(b.height) || 1024;
+        const body = {
+            model: b.model,
+            prompt: b.prompt,
+            resolution: b.resolution || `${width}x${height}`,
+            n: 1,
+            response_format: 'b64_json',
+        };
+        if (b.negative_prompt) body.negative_prompt = b.negative_prompt;
+        if (b.num_steps) body.num_steps = b.num_steps;
+        if (b.scale) body.guidance_scale = b.scale;
+        const modern = await fetch(`${base}/v1/images`, { method: 'POST', body: JSON.stringify(body), headers });
+        if (modern.ok) {
+            const image = await extract(await modern.json().catch(() => null));
+            if (image) return response.send({ image });
             console.warn('NanoGPT returned invalid data.');
-            return response.sendStatus(500);
+            return response.status(502).send({ error: `NanoGPT: пустой ответ (${firstError})` });
         }
-
-        return response.send({ image });
+        const secondError = `${modern.status}: ${await errorText(modern)}`;
+        console.warn('NanoGPT image error:', firstError, '|', secondError);
+        return response.status(502).send({ error: `NanoGPT: ${secondError} (старый API: ${firstError})` });
     } catch (error) {
         console.error(error);
-        return response.sendStatus(500);
+        return response.status(500).send({ error: String(error?.message || error) });
     }
 });
 
