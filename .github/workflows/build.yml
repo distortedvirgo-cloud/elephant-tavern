@@ -76,8 +76,10 @@ jobs:
           path: elephant-tavern-*.apk
           compression-level: 0
 
-      - name: Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Only builds signed with the release key may become a Release: a throwaway-key APK
+      # would not install over the previous version.
+      - name: Release (tags only, release key only)
+        if: startsWith(github.ref, 'refs/tags/v') && env.ET_KEYSTORE != ''
         uses: softprops/action-gh-release@v2
         with:
           files: elephant-tavern-*.apk
