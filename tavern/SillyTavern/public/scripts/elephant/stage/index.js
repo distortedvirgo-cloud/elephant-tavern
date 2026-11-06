@@ -732,6 +732,7 @@ function refreshSettings($root) {
     $root.find('#et_dna_name').text(ch?.name || '');
     $root.find('#et_dna').val(ch && !ch.group ? (s.dna[ch.key] || '') : '');
     fillModels($root, false);
+    document.dispatchEvent(new CustomEvent('et-settings-refresh'));
 }
 
 async function fillModels($root, force) {

@@ -29,6 +29,8 @@ class AppPaths(context: Context) {
     val logs = File(files, "logs")
     val log = File(logs, "server.log")
     val status = File(files, "status.json")
+    val outbox = File(files, "outbox")              // messages the server wrote on its own → notifications
+    val proactiveFlag = File(files, "proactive.on") // someone may write first → start the server at boot
     val tmp = File(context.cacheDir, "tmp")
     val compileCache = File(context.cacheDir, "node-compile-cache")
 }

@@ -93,6 +93,8 @@ class NodeService : Service() {
                 "ET_DATA", paths.data.absolutePath,
                 "ET_PORT", port.toString(),
                 "ET_LOG", paths.log.absolutePath,
+                "ET_OUTBOX", paths.outbox.absolutePath,
+                "TZ", java.util.TimeZone.getDefault().id,
                 "ET_APP_VERSION", BuildConfigCompat.versionName(this),
             )
             val args = arrayOf("node", File(st, "elephant-boot.mjs").absolutePath)
@@ -125,6 +127,7 @@ class NodeService : Service() {
             if (Net.ping(port)) {
                 status(ServerStatus(ServerStatus.READY, 1f, port, "Готово"))
                 updateNotification("Сервер работает")
+                Thread({ watchOutbox() }, "elephant-outbox").start()
                 return
             }
             val line = LogTail.lastLine(paths.log)
@@ -132,6 +135,26 @@ class NodeService : Service() {
             Thread.sleep(400)
         }
         status(ServerStatus(ServerStatus.FAILED, port = port, message = "Сервер не ответил за 5 минут"))
+    }
+
+    /** Messages the server wrote on its own (a character writing first) become notifications. */
+    private fun watchOutbox() {
+        paths.outbox.mkdirs()
+        while (true) {
+            try {
+                paths.outbox.listFiles { f -> f.name.endsWith(".json") }?.sortedBy { it.lastModified() }?.forEach { f ->
+                    try {
+                        MessageNotifier.show(this, org.json.JSONObject(f.readText()))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "bad outbox item ${f.name}", e)
+                    }
+                    f.delete()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "outbox", e)
+            }
+            Thread.sleep(15_000)
+        }
     }
 
     /** A backup restore is staged by the UI; it is swapped in before node touches the data folder. */

@@ -9,13 +9,23 @@
  *   POST /api/elephant/complete  { model, messages, max_tokens?, temperature?, json? }
  *   POST /api/elephant/models    → [{ id, name, input, output }] (USD per 1M tokens)
  *   GET  /api/elephant/health
+ *   POST /api/elephant/proactive/get     { key }            → entry + global model
+ *   POST /api/elephant/proactive/set     { key, enabled?, frequency?, quietFrom?, quietTo?, model? }
+ *   POST /api/elephant/proactive/touch   { key, lastActivity?, snapshot }  (chat is alive; the user answered)
+ *   POST /api/elephant/proactive/now     { key }            → write a message immediately (test)
+ *   POST /api/elephant/inbox             → pending messages
+ *   POST /api/elephant/inbox/ack         { ids }
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import fetch from 'node-fetch';
 
 import { readSecret, SECRET_KEYS } from '../endpoints/secrets.js';
+import { loadConfig, saveConfig, loadInbox, reachOut, startScheduler, FREQUENCY } from './proactive.js';
 
 export const router = express.Router();
+startScheduler();
 
 // Overridable for tests.
 const NANOGPT = process.env.ELEPHANT_NANOGPT_URL || 'https://nano-gpt.com/api/v1';
@@ -114,4 +124,80 @@ router.post('/models', async (_request, response) => {
         console.error('[Elephant Core] models error:', error);
         return response.json(modelsCache.list);
     }
+});
+
+// ------------------------------------------------------------------ proactive messages
+
+const cleanKey = (k) => String(k || '').slice(0, 300);
+
+router.post('/proactive/get', (request, response) => {
+    const cfg = loadConfig(request.user.directories);
+    const entry = cfg.characters[cleanKey(request.body?.key)] ?? null;
+    response.json({ entry: entry ? { ...entry, snapshot: undefined } : null, model: cfg.model, frequencies: FREQUENCY });
+});
+
+router.post('/proactive/set', (request, response) => {
+    const key = cleanKey(request.body?.key);
+    if (!key) return response.status(400).json({ error: 'no-key' });
+    const cfg = loadConfig(request.user.directories);
+    const b = request.body ?? {};
+    if (typeof b.model === 'string') cfg.model = b.model.slice(0, 200);
+    const entry = cfg.characters[key] ??= { key, enabled: false, frequency: 'normal', quietFrom: 23, quietTo: 9, unanswered: 0 };
+    if (typeof b.enabled === 'boolean') entry.enabled = b.enabled;
+    if (FREQUENCY[b.frequency]) entry.frequency = b.frequency;
+    for (const k of ['quietFrom', 'quietTo']) if (Number.isFinite(Number(b[k]))) entry[k] = Math.max(0, Math.min(23, Number(b[k])));
+    if (typeof b.entryModel === 'string') entry.model = b.entryModel.slice(0, 200);
+    saveConfig(request.user.directories, cfg);
+    response.json({ entry: { ...entry, snapshot: undefined }, model: cfg.model });
+});
+
+router.post('/proactive/touch', (request, response) => {
+    const key = cleanKey(request.body?.key);
+    if (!key) return response.status(400).json({ error: 'no-key' });
+    const cfg = loadConfig(request.user.directories);
+    const entry = cfg.characters[key];
+    if (!entry) return response.json({ ok: true, tracked: false });
+    const snap = request.body?.snapshot;
+    if (snap && typeof snap === 'object') {
+        entry.snapshot = {
+            charName: String(snap.charName || '').slice(0, 80),
+            userName: String(snap.userName || '').slice(0, 80),
+            chatFile: String(snap.chatFile || '').slice(0, 300),
+            card: String(snap.card || '').slice(0, 4000),
+            state: String(snap.state || '').slice(0, 4000),
+            messages: (Array.isArray(snap.messages) ? snap.messages : []).slice(-8)
+                .map(m => ({ name: String(m.name || '').slice(0, 80), is_user: Boolean(m.is_user), mes: String(m.mes || '').slice(0, 800) })),
+        };
+    }
+    if (request.body?.userActive) {
+        entry.lastActivity = Date.now();
+        entry.unanswered = 0;
+    }
+    saveConfig(request.user.directories, cfg);
+    response.json({ ok: true, tracked: true });
+});
+
+router.post('/proactive/now', async (request, response) => {
+    try {
+        const cfg = loadConfig(request.user.directories);
+        const entry = cfg.characters[cleanKey(request.body?.key)];
+        if (!entry?.snapshot) return response.status(400).json({ error: 'no-snapshot', message: 'Откройте чат с персонажем, чтобы он запомнил разговор.' });
+        if (!readSecret(request.user.directories, SECRET_KEYS.NANOGPT)) return response.status(400).json({ error: 'no-key', message: 'Нет ключа NanoGPT.' });
+        if (!(entry.model || cfg.model)) return response.status(400).json({ error: 'no-model', message: 'Не выбрана модель.' });
+        const item = await reachOut(request.user.directories, cfg, entry);
+        return item ? response.json(item) : response.status(502).json({ error: 'empty', message: 'Модель не ответила.' });
+    } catch (e) {
+        return response.status(502).json({ error: 'upstream', message: String(e.message || e) });
+    }
+});
+
+router.post('/inbox', (request, response) => {
+    response.json(loadInbox(request.user.directories).filter(x => !x.delivered));
+});
+
+router.post('/inbox/ack', (request, response) => {
+    const ids = new Set((request.body?.ids || []).map(String));
+    const inbox = loadInbox(request.user.directories).map(x => (ids.has(x.id) ? { ...x, delivered: Date.now() } : x));
+    fs.writeFileSync(path.join(request.user.directories.root, 'elephant', 'inbox.json'), JSON.stringify(inbox.slice(-50), null, 1));
+    response.json({ ok: true });
 });

@@ -92,6 +92,30 @@ class MainActivity : Activity() {
         WebView.setWebContentsDebuggingEnabled(true)
         askNotificationPermission()
         NodeService.start(this)
+        takeOpenRequest(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeOpenRequest(intent)
+    }
+
+    /** A tap on "Ilse wrote to you": open that chat once the page and core are up. */
+    private var pendingOpen: Pair<String, String>? = null
+
+    private fun takeOpenRequest(intent: Intent?) {
+        val key = intent?.getStringExtra(MessageNotifier.EXTRA_KEY) ?: return
+        pendingOpen = key to (intent.getStringExtra(MessageNotifier.EXTRA_CHAT) ?: "")
+        intent.removeExtra(MessageNotifier.EXTRA_KEY)
+        if (pageReady) flushOpenRequest()
+    }
+
+    private fun flushOpenRequest() {
+        val (key, chat) = pendingOpen ?: return
+        pendingOpen = null
+        val js = "(function f(n){if(window.ElephantCore&&ElephantCore.openChat){ElephantCore.openChat(${JSONObject.quote(key)},${JSONObject.quote(chat)});}" +
+            "else if(n<120){setTimeout(function(){f(n+1)},500);}})(0)"
+        webView?.evaluateJavascript(js, null)
     }
 
     override fun onResume() {
@@ -271,6 +295,7 @@ class MainActivity : Activity() {
                 pageReady = true
                 view.evaluateJavascript(PAGE_SHIM, null)
                 pushInsetsToPage()
+                flushOpenRequest()
                 splash.animate().alpha(0f).setDuration(350).withEndAction {
                     splash.visibility = View.GONE
                     splash.alpha = 1f

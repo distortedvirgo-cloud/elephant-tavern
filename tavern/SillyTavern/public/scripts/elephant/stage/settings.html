@@ -94,5 +94,31 @@
         </div>
     </div>
 
+    <div class="et-group" id="et_pa_block">
+        <h4 class="et-h">📩 Пишет первым</h4>
+        <p class="et-note">Персонаж сам напишет тебе, пока приложение закрыто: подхватит незакрытую нить, обещание или просто соскучится. Придёт уведомление, а сообщение появится в чате.</p>
+        <p class="et-note et-pa-none" style="display:none">Откройте чат с персонажем, чтобы настроить.</p>
+        <div class="et-pa-body">
+            <label class="et-check"><input type="checkbox" id="et_pa_enabled"><span><b id="et_pa_name"></b> может писать первым</span></label>
+            <label class="et-field">Как часто
+                <select id="et_pa_freq" class="text_pole">
+                    <option value="rare">Редко — после суток тишины</option>
+                    <option value="normal">Иногда — после ~8 часов</option>
+                    <option value="often">Часто — после ~3 часов</option>
+                </select>
+            </label>
+            <div class="et-inline">
+                <label class="et-field">Тихие часы с <input id="et_pa_qfrom" type="number" min="0" max="23" class="text_pole"></label>
+                <label class="et-field">до <input id="et_pa_qto" type="number" min="0" max="23" class="text_pole"></label>
+            </div>
+            <label class="et-field">Модель для сообщений
+                <select id="et_pa_model" class="text_pole"></select>
+            </label>
+            <p class="et-note">Не больше двух сообщений подряд без ответа. Работает, пока в шторке висит «Сервер работает».</p>
+            <button class="menu_button" id="et_pa_now"><i class="fa-solid fa-paper-plane"></i> Написать сейчас (проверка)</button>
+            <div class="et-note" id="et_pa_status"></div>
+        </div>
+    </div>
+
     <p class="et-note">Команды: <code>/stage-pov</code>, <code>/stage-portrait</code>, <code>/stage-mood romance|auto</code>, <code>/stage-fx hit</code></p>
 </div>
