@@ -8,11 +8,18 @@
  */
 import { oai_settings } from '../../openai.js';
 import { writeSecret, secret_state, readSecretState, SECRET_KEYS } from '../../secrets.js';
+import { getPresetManager } from '../../preset-manager.js';
+import { allowPresetScripts } from '../../extensions/regex/engine.js';
 import { ctx, loadHelperModels, log } from '../stage/helper.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 
-export const DEFAULT_TEXT_MODEL = 'xiaomi/mimo-v2.6-pro';
+export const DEFAULT_TEXT_MODEL = 'z-ai/glm-5.3';
+export const DEFAULT_HELPER_MODEL = 'deepseek/deepseek-v4.1-flash-1017';
+const OLD_TEXT_MODEL = 'xiaomi/mimo-v2.6-pro';
+/** Bump when preset.json changes: it is (re)installed once per version. */
+const PRESET_VERSION = '4';
+const PRESET_NAME = 'Elephant Tavern';
 export const DEFAULT_IMAGE_MODEL = 'anima/text-to-image';
 
 const hasKey = () => Array.isArray(secret_state?.[SECRET_KEYS.NANOGPT]) ? secret_state[SECRET_KEYS.NANOGPT].length > 0 : Boolean(secret_state?.[SECRET_KEYS.NANOGPT]);
@@ -38,7 +45,7 @@ function html(name, withName) {
                     <input id="ew_text" type="text" class="text_pole" value="${DEFAULT_TEXT_MODEL}" list="ew_models" autocomplete="off">
                 </label>
                 <label class="ew-field"><span>Служебная (сцена, игра, память, промпты картинок) — пусто = как рассказчик</span>
-                    <input id="ew_helper" type="text" class="text_pole" value="" list="ew_models" placeholder="например, дешёвая flash-модель" autocomplete="off">
+                    <input id="ew_helper" type="text" class="text_pole" value="${DEFAULT_HELPER_MODEL}" list="ew_models" placeholder="например, дешёвая flash-модель" autocomplete="off">
                 </label>
                 <label class="ew-field"><span>Картинки</span>
                     <input id="ew_image" type="text" class="text_pole" value="${DEFAULT_IMAGE_MODEL}" autocomplete="off">
@@ -81,7 +88,57 @@ async function connectNanoGpt(model) {
         $('#openai_max_tokens').val(1200).trigger('input');
     }
     ctx().saveSettingsDebounced();
+    await installPreset();
     setTimeout(() => $('#api_button_openai').trigger('click'), 300);
+}
+
+/** Installs the bundled Elephant Tavern preset and selects it (once per PRESET_VERSION). */
+export async function installPreset({ force = false } = {}) {
+    if (!force && localStorage.getItem('et-preset-installed') === PRESET_VERSION) return false;
+    try {
+        const res = await fetch('scripts/elephant/welcome/preset.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`preset ${res.status}`);
+        const preset = await res.json();
+        const pm = getPresetManager('openai');
+        if (!pm) throw new Error('no preset manager');
+        await pm.savePreset(PRESET_NAME, preset);
+        allowPresetScripts('openai', PRESET_NAME);
+        const value = pm.findPreset(PRESET_NAME);
+        if (value !== undefined) await pm.selectPreset(value);
+        localStorage.setItem('et-preset-installed', PRESET_VERSION);
+        ctx().saveSettingsDebounced();
+        return true;
+    } catch (e) {
+        log('preset install failed', e);
+        return false;
+    }
+}
+
+/** The story runs in English (best quality); the helper model translates both ways. */
+function enableTranslation() {
+    const es = ctx().extensionSettings;
+    es.elephant_memory ??= {};
+    es.elephant_memory.translateEnabled = true;
+    es.elephant_memory.translateTarget ||= 'Russian';
+    es.elephant_memory.translateInternal ||= 'English';
+}
+
+/** Existing installs: move the old default model to the new defaults, once. */
+async function migrateDefaults() {
+    if (localStorage.getItem('et-defaults') === '2') return;
+    const es = ctx().extensionSettings;
+    es.elephant_stage ??= {};
+    const st = es.elephant_stage;
+    if (!st.helperModel || st.helperModel === OLD_TEXT_MODEL) st.helperModel = DEFAULT_HELPER_MODEL;
+    if (!oai_settings.nanogpt_model || oai_settings.nanogpt_model === OLD_TEXT_MODEL) {
+        oai_settings.nanogpt_model = DEFAULT_TEXT_MODEL;
+        const $sel = $('#model_nanogpt_select');
+        if (!$sel.find(`option[value="${CSS.escape(DEFAULT_TEXT_MODEL)}"]`).length) $sel.append($('<option>').val(DEFAULT_TEXT_MODEL).text(DEFAULT_TEXT_MODEL));
+        $sel.val(DEFAULT_TEXT_MODEL);
+    }
+    enableTranslation();
+    localStorage.setItem('et-defaults', '2');
+    ctx().saveSettingsDebounced();
 }
 
 /**
@@ -121,6 +178,7 @@ export function showWelcome({ name = 'User', withName = true } = {}) {
                 es.elephant_stage.helperModel = helper || text;
                 es.elephant_stage.images ??= {};
                 if (image) es.elephant_stage.images.model = image;
+                enableTranslation();
                 await connectNanoGpt(text);
                 localStorage.setItem('et-welcome-done', '1');
                 $('#ew-overlay').addClass('ew-out');
@@ -150,6 +208,9 @@ export async function init() {
             await readSecretState();
             if (!hasKey() && !localStorage.getItem('et-welcome-done') && !document.getElementById('ew-overlay')) {
                 await showWelcome({ withName: false });
+            } else if (hasKey()) {
+                await migrateDefaults();
+                await installPreset();
             }
         } catch (e) {
             log('welcome check failed', e);
