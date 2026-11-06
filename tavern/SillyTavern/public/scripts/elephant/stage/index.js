@@ -42,7 +42,7 @@ const DEFAULTS = {
         every: 8,
         mode: 'auto',  // auto (pov when the player is in the action, else a wide shot) | pov | scene | portrait
         size: 'auto',
-        style: 'western',   // western | comic | semireal | anime | art | custom (stylePrefix)
+        style: 'glossy',    // glossy | glossy_plump | glossy_soft | western | comic | semireal | anime | art | custom
         artist: '',         // optional "@artist" for a specific look
         hires: true,        // 1.5K output: sharper details and anatomy
         stylePrefix: 'masterpiece, best quality',
@@ -70,6 +70,8 @@ export function S() {
     if (s.images.style === undefined) s.images.style = !s.images.stylePrefix || s.images.stylePrefix === 'masterpiece, best quality' ? 'western' : 'custom';
     // 0.9.6: the anime default gave way to the western digital-art look (once; a later choice stays).
     if (!s.images.westernMigrated) { if (s.images.style === 'anime') s.images.style = 'western'; s.images.westernMigrated = true; }
+    // 0.9.7: the glossy look from the user's references became the default.
+    if (!s.images.glossyMigrated) { if (['anime', 'western'].includes(s.images.style)) s.images.style = 'glossy'; s.images.glossyMigrated = true; }
     // 0.9: "alternate" (POV/portrait in turns) became "auto" (the frame follows the scene).
     if (s.images.mode === 'alternate') s.images.mode = 'auto';
     // 0.5: Anima is the default image model — move untouched old defaults over.

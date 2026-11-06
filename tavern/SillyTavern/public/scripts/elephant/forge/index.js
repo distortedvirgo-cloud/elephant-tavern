@@ -76,7 +76,7 @@ function parseCard(text) {
 async function drawAvatar(card) {
     const stage = ctx().extensionSettings?.elephant_stage ?? {};
     const model = stage.images?.model || 'anima/text-to-image';
-    const prefix = stylePrefixFor(stage.images ?? { style: 'western' });
+    const prefix = stylePrefixFor(stage.images ?? { style: 'glossy' });
     const prompt = `${prefix}, safe, ${card.danbooru_tags}, upper body, looking at viewer, portrait, detailed face, simple background`;
     const hires = stage.images?.hires !== false;
     const res = await fetch('/api/sd/nanogpt/generate', {

@@ -187,6 +187,10 @@ export function negativeFor(prompt, base = '') {
 /* Style presets (research: Anima's default look is neutral; era and source tags give it a real anime look,
    "anime coloring" keeps it from glossy AI slop). */
 export const STYLES = {
+    // Glossy modern fan-art look (picked from the user's references): thick clean outlines, shiny skin, warm vivid colour.
+    glossy: 'masterpiece, best quality, newest, @novenine, shiny skin, thick outlines, cel shading, vibrant colors',
+    glossy_plump: 'masterpiece, best quality, newest, @novenine, @zankuro, shiny skin, thick outlines, cel shading, vibrant colors',
+    glossy_soft: 'masterpiece, best quality, newest, @novenine, @kenron toqueen, shiny skin, thick outlines, cel shading, vibrant colors',
     // Western digital art: thin lineart, flat shading with glossy highlights, muted colours, realistic proportions.
     western: 'masterpiece, best quality, newest, realistic proportions, lineart, flat shading, shiny skin, muted colors, realistic background, photo background',
     comic: 'masterpiece, best quality, newest, western comics (style), realistic, thin lineart, cel shading, shiny skin, muted colors, detailed background',
@@ -195,11 +199,12 @@ export const STYLES = {
     art: 'masterpiece, best quality, newest, highres, official art',
 };
 /** Pushes the non-anime styles away from the anime look the model defaults to. */
-const STYLE_NEGATIVE = { western: 'anime screenshot, anime coloring, chibi', comic: 'anime screenshot, anime coloring, chibi', semireal: 'anime screenshot, chibi' };
+const NO_SIGN = 'signature, artist name, twitter username, patreon username, watermark, logo';
+const STYLE_NEGATIVE = { glossy: NO_SIGN, glossy_plump: NO_SIGN, glossy_soft: NO_SIGN, western: 'anime screenshot, anime coloring, chibi', comic: 'anime screenshot, anime coloring, chibi', semireal: 'anime screenshot, chibi' };
 export const styleNegative = (settings) => STYLE_NEGATIVE[settings?.style] || '';
 
 export function stylePrefixFor(settings) {
-    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.western);
+    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.glossy);
     const artist = String(settings.artist || '').trim();
     const at = artist ? (artist.startsWith('@') ? artist : `@${artist}`) : '';
     return [base.trim(), at].filter(Boolean).join(', ');
