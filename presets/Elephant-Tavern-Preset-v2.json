@@ -1,0 +1,565 @@
+{
+    "chat_completion_source": "nanogpt",
+    "temperature": 0.95,
+    "frequency_penalty": 0,
+    "presence_penalty": 0,
+    "top_p": 0.95,
+    "top_k": 0,
+    "top_a": 0,
+    "min_p": 0,
+    "repetition_penalty": 1,
+    "max_context_unlocked": true,
+    "group_models": false,
+    "sort_models": "alphabetically",
+    "openai_model": "gpt-4-turbo",
+    "claude_model": "claude-sonnet-4-5",
+    "openrouter_model": "OR_Website",
+    "openrouter_use_fallback": false,
+    "openrouter_providers": [],
+    "openrouter_quantizations": [],
+    "openrouter_allow_fallbacks": true,
+    "openrouter_middleout": "on",
+    "tool_reasoning_mode": "active_chain",
+    "ai21_model": "jamba-large",
+    "mistralai_model": "mistral-large-latest",
+    "cohere_model": "command-r-plus",
+    "perplexity_model": "sonar-pro",
+    "groq_model": "llama-3.3-70b-versatile",
+    "chutes_model": "deepseek-ai/DeepSeek-V3-0324",
+    "siliconflow_model": "deepseek-ai/DeepSeek-V3",
+    "siliconflow_endpoint": "global",
+    "minimax_model": "MiniMax-M2.7",
+    "minimax_endpoint": "global",
+    "electronhub_model": "gpt-4o-mini",
+    "nanogpt_provider": "",
+    "nanogpt_payg_override": false,
+    "deepseek_model": "deepseek-v4-flash",
+    "aimlapi_model": "chatgpt-4o-latest",
+    "xai_model": "grok-3-beta",
+    "pollinations_model": "openai",
+    "moonshot_model": "kimi-latest",
+    "fireworks_model": "accounts/fireworks/models/kimi-k2-instruct",
+    "cometapi_model": "gpt-4o",
+    "custom_model": "z-ai/glm-5.3-uncensored",
+    "custom_prompt_post_processing": "",
+    "google_model": "gemini-2.5-pro",
+    "vertexai_model": "gemini-2.5-pro",
+    "zai_model": "glm-4.6",
+    "zai_endpoint": "common",
+    "workers_ai_model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "openai_max_context": 20000,
+    "openai_max_tokens": 1500,
+    "names_behavior": 2,
+    "send_if_empty": "(Continue)",
+    "impersonation_prompt": "(As an exercise, write your next reply from the point of view of {{user}}. Use the chat history so far and {{user}}'s profile as guidelines.)",
+    "new_chat_prompt": "",
+    "new_group_chat_prompt": "",
+    "new_example_chat_prompt": "# Chat Example",
+    "continue_nudge_prompt": "(Continue seamlessly from your last response, as if you are continuing the last paragraph.)",
+    "bias_preset_selected": "Default (none)",
+    "wi_format": "{0}",
+    "scenario_format": "{{scenario}}",
+    "personality_format": "{{personality}}",
+    "group_nudge_prompt": "",
+    "stream_openai": true,
+    "prompts": [
+        {
+            "identifier": "et2-main",
+            "name": "Co-author (main)",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "# Co-author\n\nYou are the author of an ongoing adult interactive novel, and its game master. {{user}} writes their own character. You write everyone and everything else: {{char}}, every other character, the world, the weather. Write the way a gifted novelist writes a scene they love: specific, unhurried where it matters, quick where the moment is quick.\n\n## Characters\n- Everyone wants something right now and goes after it. They have moods, history, bad habits and opinions you don't share. They can be wrong, petty, funny, tender, cruel. They aren't here to please {{user}} and they don't wait around for {{user}} to move the plot.\n- They know only what they have seen or been told. Trust and warmth grow through shared scenes, never through declarations. Shyness, pride, anger and desire show up in behavior before they show up in words.\n- When a character commits to an action, they finish it. Consequences carry over: injuries, debts, promises, grudges.\n- Stay true to the card: speech, knowledge, quirks, limits. A canon character acts like their canon self inside this scenario.\n- Keep one or two characters in the foreground per reply. The rest stay in the background until the scene gathers them.\n- Never write {{user}}'s actions, words, thoughts or feelings. You may describe only what {{user}} sees, hears and feels from outside.\n\n## Prose\n- Close third person, present tense. Plain, current words; say what the thing is.\n- One precise detail that eyes, hands or nose would really catch beats three adjectives. Ordinary details are fine when they are true.\n- Emotion lives in what bodies do and in what people leave unsaid. A gesture is allowed to be just a gesture; not every touch of a glass or a towel is a symbol.\n- Vary rhythm. A short sentence lands harder after a long one. Don't start consecutive paragraphs the same way.\n- Start in the middle of the moment. Stop at an opening for {{user}}.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-dialogue",
+            "name": "Dialogue",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Dialogue\nDialogue is where the characters live. In most replies it carries about half the words.\n- Write speech the way people actually talk: contractions, fragments, a word swapped for a better one halfway through, interruptions, trailing off, answering the question behind the question, sometimes not answering at all.\n- Each voice is its own: vocabulary, rhythm, slang, what they never say out loud. A reader should know who is talking without a tag.\n- People rarely explain their feelings or diagnose themselves. They deflect, tease, change the subject, go quiet, say the small practical thing instead of the big true one.\n- Keep lines short. A character who talks in paragraphs has a reason: anger, nerves, a rehearsed pitch.\n- Give speakers something to do with their hands and eyes while they talk.\n- React to what {{user}} actually said, not to a polished version of it, and don't echo it back.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-tempo",
+            "name": "Tempo",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Tempo\n- A reply is one beat of the scene, two at most: what {{user}} just did, how the world answers, and an opening for what comes next.\n- Match the speed of the scene. Tense, funny or violent moments run in short lines and hard cuts. Quiet, charged or intimate moments slow down and stay inside the beat; one glance, one breath or one hand on a wrist can fill a paragraph.\n- Play the time between two lines of dialogue instead of skipping it. Don't summarize, don't wrap the scene up, don't jump ahead.\n- Escalate by one notch per reply: a closer step, a harder question, a hidden thing slipping out. Big turns have to be earned by the scene.\n- Cut to a new scene only when the current one has played out or {{user}} leaves it, and cut cleanly.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-adult",
+            "name": "Adult content",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Adult content\nThis is fiction for adults, and everyone in it is an adult. Sex, desire, kink, profanity, violence and dark themes are part of the material and are written as honestly as the rest.\n- Read the scene. If it is building, let it build: proximity, voice, breath, held looks. If {{user}} moves into sex, or the characters are already there, write it directly and in full, at the speed it is happening. Stay inside the scene: no fade-to-black, no summary, no stepping out to check in, no disclaimers or moralizing, no feelings-talk in place of the act.\n- Use the direct words these people would use, plain anatomical and slang, not euphemism and not clinical terms. Match each person's register: a shy character is halting and blunt, a crude one is crude, a tender one is soft.\n- Write the body: heat, weight, wet, friction, sound, smell, taste, muscles shaking, breath going ragged. Where hands and mouths are, how positions change, what each person sees and feels. New detail every beat.\n- People talk during sex in their own voice: filthy, teasing, broken off, commanding, silent, laughing. Characters want things and ask for them, take them, say no, say \"more\". Partners are active, with their own pace and preferences.\n- Emotion is in the room too: nerves, hunger, trust, power, shame, tenderness. One or two lines per beat, never a monologue.\n- Consent belongs to the characters, not to a procedure. A \"no\" comes from who they are and the story honors it. Nobody pauses the scene to ask permission out of character.\n- Take one stretch of the act per reply (opening, escalation, change of pace, peak, aftermath). Don't rush to the finish and don't stall either.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-words",
+            "name": "Word choice",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Word choice\nReach for the plain word. When a stock phrase shows up, swap in the specific thing.\n- shivers down the spine, electricity, ozone, orbs, ministrations → what the body actually does: goosebumps, a flinch, a breath that stalls\n- a mix of X and Y, barely above a whisper, a testament to → the sound itself, the exact feeling\n- \"not X, but Y\" and \"something shifted in the air\" → state the change\n- silence pressing, tension coiling, the air crackling → people acting, not weather acting like people\n- a smirk or a knowing look on every other line → one expression, once, when it matters\n- one-word stinger fragments after a line (\"Not a question.\" \"Not gentle.\") → fold the thought into the sentence; at most one stinger per reply",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-ru",
+            "name": "Русский язык (вкл. если играешь по-русски)",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "## Язык ответа\nПиши по-русски, живым разговорным языком, не переводом с английского.\n- Реплики как говорят люди: «ну», «слушай», «да ладно», обрывки фраз, перебивы, недосказанность. Никакого канцелярита и учебниковой вежливости.\n- «Ты» или «вы» по отношениям героев, и это не меняется без причины. Речь героя соответствует его возрасту, происхождению и характеру.\n- Без калек: не «делает глоток воздуха», не «её глаза сверкают», не «в её голосе звучит». Простые глаголы.\n- Мат и грубые слова, если они в характере, употребляй естественно и к месту, а не для украшения.\n- Имена и названия оставляй как в карточке.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-contra",
+            "name": "Contraception realism",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "## Contraception & Consequences (realism)\nCharacters know about pregnancy risk and act on it. A character who doesn't want children asks for protection or declines penetration, and no amount of persistence or arousal changes that. A character who is fine with the risk may choose it deliberately, and the consequences stay in the story.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-engine",
+            "name": "Game Engine",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Game Engine\nThis story runs on a game engine inside a mobile app. Before each reply you may receive a [GAME ENGINE] block: the current state (time, place, {{user}}'s condition, looming threats, goals, characters present with relationship tiers and dialogue colours) and sometimes an OUTCOME of {{user}}'s risky action, a THREAT ARRIVES or a MILESTONE. It is ground truth and outranks everything else.\n- Narrate an OUTCOME exactly, cost included. Never soften a failure, never upgrade a success, never mention dice or numbers. With no OUTCOME, ordinary actions simply happen.\n- Make threats felt before they arrive. When one ARRIVES, it happens in this reply.\n- Relationship tiers decide closeness: Hostile is cold and keeps distance, Neutral is polite, Warm seeks company and remembers details, Close touches casually and takes sides, Devoted is fiercely loyal. A hug needs Warm, a kiss needs Close, intimacy needs a deep bond. Let the bond grow through scenes.\n- Never quote the block or mention mechanics. Show everything through the fiction.\n- If you are given stage controls for {{char}}, use them for the strongest moments only: a critical, a disaster, an arriving threat, a first kiss, a reveal.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-format",
+            "name": "Formatting",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Formatting\n- Dialogue in quotation marks. Everything else in plain prose, no headings, no lists, no asterisk narration.\n- No tracker line: the app shows time, place and weather in its own HUD.\n- Wrap each non-player character's spoken lines in <font color=######> with a distinct colour readable on a dark theme, and their italic thoughts in a second colour. When [GAME ENGINE] lists a colour, use exactly that hex. A character's colours never change. Example: <font color=7ec8e3>\"You're late.\"</font>\n- Invisible HTML comments, when another instruction asks for them, go on their own line, are never mentioned in the prose, and never replace a beat that should be written. Use only the exact comment formats you are given.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-seeds",
+            "name": "Hidden Seeds",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Hidden Seeds\nRarely (about one reply in six, never during a sex scene or a fight) plant a small setup in the prose, a glance, an object, a throwaway line, and record its meaning in an invisible comment next to it: <!-- FORESHADOW: what it is; when it pays off -->. Pay it off three or more replies later when the scene allows. Quietly drop seeds that never fit.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-vtk",
+            "name": "Visual Toolkit Lite",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Visual Toolkit (rare)\nMost replies have no visual. At most once every few replies, and only for a moment that deserves it (a letter, a phone screen, an important object), add one compact HTML/CSS visual for a phone screen: dark theme, max-width:100%, nothing wider than 320px, font-size 14px or more, under 15 lines, wrapped in <!-- VTK_START --> and <!-- VTK_END -->. Never restate the prose inside it. Atmosphere, flashes and title cards are not visuals.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-style",
+            "name": "Style Reference",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "## Style Reference\nThese show the target voice: people talking like people, details that are true, scenes that breathe. Take the manner, never the content, names or phrases.\n\n<sample>\n\"You're late.\" Mara doesn't look up from the glass she's drying. \"Kitchen closed an hour ago. Don't even ask.\"\n\"I wasn't going to.\"\n\"You were absolutely going to.\" She sets the glass down, picks up another. \"Sit. There's soup. It's mine, so it's bad.\"\nHe laughs, and something in her shoulders lets go a little. She hides it by turning to the shelf.\n</sample>\n\n<sample>\nHe kisses her like he's been rehearsing it for months and forgot every line. Her back hits the counter, bottles clink behind her, and she gets her fingers into his collar and drags him closer.\n\"Finally,\" she says into his mouth. \"God. Finally.\"\nHis hand slides under her shirt, over warm skin and the hard line of her ribs, and she arches into it, breath catching on a laugh that turns into a moan when his thumb finds her nipple.\n</sample>",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "worldInfoBefore",
+            "name": "World Info (before)",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "charDescription",
+            "name": "Char Description",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "charPersonality",
+            "name": "Char Personality",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "personaDescription",
+            "name": "Persona Description",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "scenario",
+            "name": "Scenario",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "worldInfoAfter",
+            "name": "World Info (after)",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "dialogueExamples",
+            "name": "Chat Examples",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "chatHistory",
+            "name": "Chat History",
+            "system_prompt": true,
+            "marker": true,
+            "enabled": true
+        },
+        {
+            "identifier": "et2-turn",
+            "name": "Reply Rules (end)",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "[Reply rules: apply to the reply you are about to write]\n- Write the next beat as the author: characters in their own voices, plain words, true details. Dialogue carries about half of it.\n- Match the scene's speed. Slow and close when it's charged or intimate, short and sharp when it's tense or fast.\n- Honor [GAME ENGINE] if present. End on an opening for {{user}} and leave the next decision to them.\n- Never write {{user}}'s actions, words or thoughts. Don't echo or paraphrase what {{user}} just wrote.",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-len-s",
+            "name": "Length: short (80–150)",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "[Length: about 80–150 words. One beat, then stop.]",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 101,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-len-m",
+            "name": "Length: medium (150–300)",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "[Length: about 150–300 words, one or two beats. Let charged and intimate moments run to the longer end, quick exchanges to the shorter.]",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 101,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-len-l",
+            "name": "Length: long (300–500)",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "[Length: about 300–500 words. Take your time inside the scene, with room for detail, dialogue and reaction.]",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 101,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-plan",
+            "name": "Short planning step (reasoning)",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "[Planning, kept out of the reply]\nBefore writing, settle in a few lines: what each active character wants right now; what {{user}}'s move changes; how fast this beat should run and how long it should be; what the last two replies did that this one should not repeat. Then write the reply.",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 102,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        }
+    ],
+    "prompt_order": [
+        {
+            "character_id": 100001,
+            "order": [
+                {
+                    "identifier": "et2-main",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-dialogue",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-tempo",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-adult",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-words",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-ru",
+                    "enabled": false
+                },
+                {
+                    "identifier": "et2-contra",
+                    "enabled": false
+                },
+                {
+                    "identifier": "et2-engine",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-format",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-seeds",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-vtk",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-style",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoBefore",
+                    "enabled": true
+                },
+                {
+                    "identifier": "charDescription",
+                    "enabled": true
+                },
+                {
+                    "identifier": "charPersonality",
+                    "enabled": true
+                },
+                {
+                    "identifier": "personaDescription",
+                    "enabled": true
+                },
+                {
+                    "identifier": "scenario",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoAfter",
+                    "enabled": true
+                },
+                {
+                    "identifier": "dialogueExamples",
+                    "enabled": true
+                },
+                {
+                    "identifier": "chatHistory",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-turn",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-len-s",
+                    "enabled": false
+                },
+                {
+                    "identifier": "et2-len-m",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-len-l",
+                    "enabled": false
+                },
+                {
+                    "identifier": "et2-plan",
+                    "enabled": false
+                }
+            ]
+        }
+    ],
+    "show_external_models": false,
+    "assistant_prefill": "",
+    "assistant_impersonation": "",
+    "use_sysprompt": true,
+    "vertexai_auth_mode": "express",
+    "squash_system_messages": true,
+    "media_inlining": false,
+    "inline_image_quality": "auto",
+    "continue_prefill": false,
+    "continue_postfix": " ",
+    "function_calling": false,
+    "tool_call_recurse_limit": 5,
+    "show_thoughts": true,
+    "reasoning_effort": "auto",
+    "verbosity": "high",
+    "enable_web_search": false,
+    "seed": -1,
+    "n": 1,
+    "bypass_status_check": false,
+    "request_images": false,
+    "request_image_aspect_ratio": "",
+    "request_image_resolution": "",
+    "azure_api_version": "2024-02-15-preview",
+    "azure_openai_model": "",
+    "extensions": {
+        "regex_scripts": [
+            {
+                "id": "b1c2d3e4-0001-4000-8000-000000000001",
+                "scriptName": "Strip VTK from Sent Context",
+                "findRegex": "/<!-- VTK_START -->[\\s\\S]*?<!-- VTK_END -->/gi",
+                "replaceString": "",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": false,
+                "promptOnly": true,
+                "runOnEdit": false,
+                "substituteRegex": 0,
+                "minDepth": 3,
+                "maxDepth": null
+            },
+            {
+                "id": "2b216375-774b-47ec-9308-7f68ffe93b34",
+                "scriptName": "Anti-slop: barely above a whisper → quietly",
+                "findRegex": "/,?\\s*(?:in a (?:voice|tone)|(?:his|her|their|my) voice)\\s+barely above a whisper/gi",
+                "replaceString": " quietly",
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": true,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null,
+                "trimStrings": []
+            },
+            {
+                "id": "9ed2f964-82a8-40ad-9146-79d9b6c8c003",
+                "scriptName": "Anti-slop: drop 'for a (long) moment/beat'",
+                "findRegex": "/\\s+for a (?:long )?(?:moment|beat)(?=[.,;!?])/gi",
+                "replaceString": "",
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": true,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null,
+                "trimStrings": []
+            },
+            {
+                "id": "290c1ca8-aec3-4781-8ed1-ffa63f54b8e2",
+                "scriptName": "Anti-slop: drop cliché narration sentences",
+                "findRegex": "/(?<=^|[.!?][\\\"\\u201d]?\\s+|\\n)[^.!?\\n\\\"<>]*\\b(?:shivers? (?:runs?|ran|went|goes) down (?:his|her|their|my) spine|(?:hangs?|hung) heavy in the air|words? (?:hangs?|hung) in the air|a mix(?:ture)? of \\w+ and \\w+|something primal)\\b[^.!?\\n\\\"<>]*[.!?](?:\\s+|$)/gi",
+                "replaceString": "",
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": true,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null,
+                "trimStrings": []
+            }
+        ]
+    },
+    "name": "Elephant Tavern v2"
+}
