@@ -5,7 +5,10 @@
  *   stage  — mobile shell, living scene, NanoGPT art;
  *   game   — referee, dice, HUD, bonds, goals;
  *   proactive — characters write first (with the server scheduler);
- *   chat   — gestures, long-press actions, reply ideas.
+ *   chat   — gestures, long-press actions, reply ideas;
+ *   welcome — first-run setup (name, NanoGPT key, models);
+ *   power  — the character controls the app (scene, colours, title cards, glitch, whispers);
+ *   forge  — character generator (canon-aware cards + Anima avatars).
  * Generation calls globalThis.ElephantCore.beforeGenerate (see
  * runGenerationInterceptors): memory first, then the game engine.
  */
@@ -14,6 +17,9 @@ import { init as initStage } from './stage/index.js';
 import { init as initGame, beforeGenerate as gameBeforeGenerate } from './game/index.js';
 import { init as initProactive } from './proactive/index.js';
 import { init as initChat } from './chat/index.js';
+import { init as initWelcome } from './welcome/index.js';
+import { init as initPower } from './power/index.js';
+import { init as initForge } from './forge/index.js';
 
 async function beforeGenerate(chat, contextSize, abort, type) {
     let stop = false;
@@ -28,7 +34,7 @@ async function beforeGenerate(chat, contextSize, abort, type) {
 
 export async function initElephantCore() {
     globalThis.ElephantCore = { version: 2, beforeGenerate };
-    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat]]) {
+    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['power', initPower], ['forge', initForge]]) {
         try {
             await init();
         } catch (e) {

@@ -7884,8 +7884,10 @@ export function setUserName(value, { toastPersonaNameChange = true } = {}) {
 }
 
 async function doOnboarding(avatarId) {
-    const template = $('#onboarding_template .onboarding');
-    let userName = await callGenericPopup(template, POPUP_TYPE.INPUT, currentUser?.name || name1, { wider: true, cancelButton: false });
+    // Elephant Core: one setup screen (name + NanoGPT key + models) instead of the name popup.
+    let userName = typeof globalThis.ElephantCore?.onboarding === 'function'
+        ? await globalThis.ElephantCore.onboarding({ name: currentUser?.name || name1 })
+        : await callGenericPopup($('#onboarding_template .onboarding'), POPUP_TYPE.INPUT, currentUser?.name || name1, { wider: true, cancelButton: false });
 
     if (userName) {
         userName = String(userName).replace('\n', ' ');

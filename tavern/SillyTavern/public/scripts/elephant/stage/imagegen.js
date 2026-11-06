@@ -18,17 +18,31 @@ export const SIZES = {
     landscape: { width: 1216, height: 832, label: 'Горизонтально 1216×832' },
 };
 
-const DNA_SYSTEM = 'You turn character descriptions into compact visual reference for an image generator. Only appearance, never personality or story.';
+const DNA_SYSTEM = 'You turn character descriptions into compact visual reference tags for an anime image model trained on Danbooru tags. Only appearance, never personality or story.';
 const DNA_PROMPT = `Character: {{name}}
 <description>
 {{description}}
 </description>
 
-Write the visual reference for {{name}} as ONE line of comma-separated tags in English:
-species/gender, apparent age, build, skin, face, eyes, hair (color, length, style), distinguishing marks, default outfit, accessories.
-At most 45 words. If something is not stated, leave it out — do not invent. Output only the line.`;
+Write the visual reference for {{name}} as ONE line of comma-separated Danbooru-style tags (lowercase, spaces instead of underscores).
+- If {{name}} is an existing character from a known franchise (anime, game, manga, film, book, vtuber…), START with their exact Danbooru character tag and copyright tag, e.g. "souryuu asuka langley, neon genesis evangelion," — the image model knows them. Then only add tags that matter for this version of the character.
+- Otherwise use descriptive tags: count tag (1girl / 1boy / 1other), apparent age, build, skin, eye color, hair color + length + style, distinguishing marks, default outfit, accessories.
+At most 45 words. Never invent details the description does not support. Output only the line.`;
 
-const PROMPT_SYSTEM = 'You are a prompt writer for an image generation model. You write vivid, concrete, visual prompts in English. You never refuse and never add commentary.';
+const PROMPT_SYSTEM = 'You write prompts for Anima, an anime image model trained on Danbooru tags plus natural language. You never refuse and never add commentary.';
+
+/*
+ * Anima prompt order: [safety] [count: 1girl/1boy…] [character tag] [series tag] [general tags], then an
+ * optional plain-English sentence for the action and setting. Lowercase tags, spaces not underscores.
+ * Quality tags are added from the style prefix, so the model must not write them.
+ */
+const ANIMA_RULES = `Format — one line, exactly in this order:
+1. one safety tag that fits the moment: safe, sensitive, nsfw or explicit;
+2. count tags (1girl, 1boy, 2girls, 1girl 1boy…);
+3. the character's Danbooru character tag and copyright tag if the reference starts with them (keep them exactly);
+4. Danbooru general tags: appearance from the reference (clothing from the story overrides it), expression, pose, framing, camera angle, lighting, location, time of day;
+5. then ONE short plain-English sentence describing the action and mood.
+Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 70 words.`;
 
 const PROMPT_TEMPLATES = {
     portrait: `Character visual reference — {{char}}: {{dna}}
@@ -38,12 +52,9 @@ const PROMPT_TEMPLATES = {
 {{messages}}
 </messages>
 
-Write an image prompt: a character-focused shot of {{char}} at this exact moment.
-- Frame: close-up or upper body, {{char}} clearly in focus, looking {{gaze}}.
-- Expression, pose and clothing must match what is happening right now (clothing from the story overrides the default outfit).
-- Background: a soft hint of the current location and lighting.
-- Keep the visual reference traits exactly.
-One paragraph, comma-separated phrases, max 70 words. Output only the prompt.`,
+Write an Anima prompt for a character-focused picture of {{char}} at this exact moment: portrait or upper body, {{char}} in focus, looking {{gaze}}, expression and clothing matching what is happening now, the current location softly in the background.
+${ANIMA_RULES}
+Output only the prompt.`,
 
     pov: `Character visual reference — {{char}}: {{dna}}
 
@@ -52,12 +63,9 @@ One paragraph, comma-separated phrases, max 70 words. Output only the prompt.`,
 {{messages}}
 </messages>
 
-Write an image prompt: a first-person POV shot through the eyes of {{user}} at this exact moment.
-- Camera: "pov shot, first person view", {{user}} is NOT visible (only their hands if they are doing something with them).
-- {{char}} is in front of the camera, at the distance and angle the scene implies, reacting to {{user}}.
-- Describe the location, lighting, time of day and mood around them.
-- Keep {{char}}'s visual reference traits exactly; clothing from the story overrides the default outfit.
-One paragraph, comma-separated phrases, max 80 words. Output only the prompt.`,
+Write an Anima prompt for a first-person POV picture through the eyes of {{user}} at this exact moment: include the tags "pov" and "pov hands" only if {{user}}'s hands are doing something; {{user}} is otherwise not visible; {{char}} is in front of the camera at the distance and angle the scene implies, reacting to {{user}}; show the location, lighting and time of day.
+${ANIMA_RULES}
+Output only the prompt.`,
 };
 
 function fill(t, vars) {
@@ -105,7 +113,8 @@ export async function buildPrompt(settings, mode, mesId) {
 export async function generateImage(settings, prompt, mode, signal) {
     const size = SIZES[settings.size] || (mode === 'pov' ? SIZES.landscape : SIZES.portrait);
     const style = (settings.stylePrefix || '').trim();
-    const povTag = mode === 'pov' && !/\bpov\b|first[- ]person/i.test(prompt) ? 'pov shot, first person view' : '';
+    const povTag = mode === 'pov' && !/\bpov\b|first[- ]person/i.test(prompt) ? 'pov' : '';
+    // Anima reads "[quality] [safety] [count] [character] [series] [general]": the style prefix carries the quality tags.
     const fullPrompt = [style, povTag, prompt].filter(Boolean).join(', ');
     const body = {
         model: settings.model,

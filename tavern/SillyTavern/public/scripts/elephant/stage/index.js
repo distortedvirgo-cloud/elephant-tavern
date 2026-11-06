@@ -33,13 +33,13 @@ const DEFAULTS = {
     backdropDim: 0.55,
     images: {
         enabled: false,
-        model: '',
+        model: 'anima/text-to-image',
         auto: 'scene',      // off | scene | every
         every: 8,
         mode: 'alternate',  // pov | portrait | alternate
         size: 'auto',
-        stylePrefix: 'masterpiece, best quality, cinematic lighting, highly detailed',
-        negative: 'lowres, bad anatomy, bad hands, extra fingers, text, watermark, signature, blurry',
+        stylePrefix: 'masterpiece, best quality',
+        negative: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, bad anatomy, bad hands, extra digits, watermark',
         steps: '',
         scale: '',
     },
@@ -57,6 +57,13 @@ export function S() {
         else if (v && typeof v === 'object' && !Array.isArray(v)) {
             for (const [k2, v2] of Object.entries(v)) if (s[k][k2] === undefined) s[k][k2] = structuredClone(v2);
         }
+    }
+    // 0.5: Anima is the default image model — move untouched old defaults over.
+    if (!s.images.animaMigrated) {
+        if (!s.images.model) s.images.model = 'anima/text-to-image';
+        if (s.images.stylePrefix === 'masterpiece, best quality, cinematic lighting, highly detailed') s.images.stylePrefix = DEFAULTS.images.stylePrefix;
+        if (s.images.negative === 'lowres, bad anatomy, bad hands, extra fingers, text, watermark, signature, blurry') s.images.negative = DEFAULTS.images.negative;
+        s.images.animaMigrated = true;
     }
     return s;
 }
@@ -417,17 +424,27 @@ function setVars(m) {
 let lastMood = null;
 
 function applyScene(next, { events = true } = {}) {
+    // A character with powers may have set this moment's scene itself (see elephant/power).
+    const override = globalThis.ElephantCore?.sceneOverride;
+    if (typeof override === 'function') next = override(next) || next;
     scene = next;
     const s = S();
     const moodId = s.lockMood || scene.mood;
     const m = MOODS[moodId] || MOODS.calm;
     setVars(m);
+    if (scene.tint && /^#[0-9a-f]{3,8}$/i.test(scene.tint)) {
+        document.documentElement.style.setProperty('--et-accent', scene.tint);
+        document.documentElement.style.setProperty('--et-accent-2', scene.tint);
+    }
     document.body.dataset.etMood = moodId;
     document.body.dataset.etTime = scene.time;
     document.body.dataset.etWeather = scene.weather;
     try { globalThis.ElephantApp?.setBarColor(m.bgA); } catch { /* */ }
 
-    if (s.effects) effects.setAmbient(ambientFor({ ...scene, mood: moodId }), s.intensity * (0.6 + (scene.intensity ?? 0.5) * 0.6));
+    if (s.effects) {
+        const layers = scene.particles ? (scene.particles === 'none' ? [] : [scene.particles]) : ambientFor({ ...scene, mood: moodId });
+        effects.setAmbient(layers, s.intensity * (0.6 + (scene.intensity ?? 0.5) * 0.6));
+    }
     if (moodId !== lastMood) {
         if (lastMood && s.haptics && m.haptic) haptic(m.haptic);
         lastMood = moodId;
@@ -744,6 +761,7 @@ async function fillModels($root, force) {
         const models = await loadModels();
         $m.empty().append('<option value="">— выберите модель —</option>');
         for (const x of models) $m.append($('<option>').val(x.value).text(x.text));
+        if (current && !models.some(x => x.value === current)) $m.append($('<option>').val(current).text(current));
         $m.val(current);
         $m.data('loaded', true);
     } catch (e) {
@@ -878,7 +896,7 @@ export async function init() {
     if (et.STREAM_TOKEN_RECEIVED) ev.on(et.STREAM_TOKEN_RECEIVED, onStreamToken);
     for (const e of [et.CHARACTER_PAGE_LOADED, et.CHARACTER_EDITED, et.SETTINGS_UPDATED]) if (e) ev.on(e, () => updateHeader());
 
-    globalThis.ElephantStage = { handleBack, openSheet, closeSheets, applyScene, externalScene, playEvents, generateFor, effects, presets: AMBIENT_PRESETS, sizes: SIZES };
+    globalThis.ElephantStage = { handleBack, openSheet, closeSheets, applyScene, externalScene, playEvents, generateFor, effects, shake, flash, getScene: () => scene, presets: AMBIENT_PRESETS, sizes: SIZES };
     window.addEventListener('et-insets', () => effects.resize());
     onChatChanged();
     log('loaded', shellOn ? '(mobile shell)' : '(desktop)');
