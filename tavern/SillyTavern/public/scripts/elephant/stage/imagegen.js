@@ -18,7 +18,7 @@ export const SIZES = {
     landscape: { width: 1216, height: 832, label: 'Горизонтально 1216×832' },
 };
 
-const DNA_VERSION = 2;
+export const DNA_VERSION = 2;
 const DNA_SYSTEM = 'You turn character descriptions into compact visual reference tags for an anime image model trained on Danbooru tags. Only appearance, never personality or story.';
 const DNA_PROMPT = `Character: {{name}}
 <description>

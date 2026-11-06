@@ -10,6 +10,7 @@
  */
 import { oai_settings } from '../../openai.js';
 import { ctx, toast, haptic, log } from '../stage/helper.js';
+import { DNA_VERSION } from '../stage/imagegen.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 
@@ -27,15 +28,17 @@ Rules:
 - description: 250–450 words — appearance; background; abilities; current situation; how {{char}} talks (2–3 sample lines); likes, dislikes; a secret or hidden motive.
 - personality: one line of comma-separated traits.
 - scenario: 2–4 sentences — where and when the story starts and who {{user}} is to {{char}}.
-- first_mes: the opening scene. Close third person, present tense, 120–220 words, dialogue-driven, starts in the middle of a moment, ends on a hook that hands the turn to {{user}}. Never write {{user}}'s actions, words or thoughts.
+- first_mes: the opening scene. Close third person, present tense, 120–220 words, dialogue-driven, starts in the middle of a moment, ends on {{char}}'s own move or line, not on a question or an instruction to {{user}}. Never write {{user}}'s actions, words or thoughts.
 - alternate_greetings: two different opening scenes with the same rules, 80–160 words each.
 - mes_example: two short example exchanges, each starting with <START>, lines prefixed with {{user}}: and {{char}}:.
+- abilities: 4–8 signature abilities, powers, tricks, resources or social weapons {{char}} can really use, each as "Name: what it does; when it makes a good scene (deception, seduction, protection, humor, escape, pressure…)". Faithful to canon for existing characters; no powers they don't have.
+- agenda: 2–3 of {{char}}'s own motives or plans they would pursue without being asked, one sentence each.
 - tags: 4–8 short lowercase tags (genre, mood, and the franchise if any).
-- danbooru_tags: appearance tags for an anime image model, lowercase, spaces not underscores. For an existing character START with their exact Danbooru character tag and copyright tag (e.g. "souryuu asuka langley, neon genesis evangelion"), then the outfit/look of this version. For an original character: count tag (1girl/1boy/1other), hair, eyes, build, outfit, accessories. Max 40 words.
+- danbooru_tags: appearance tags for an anime image model, lowercase, spaces not underscores. For an existing character START with their exact Danbooru character tag and copyright tag (e.g. "souryuu asuka langley, neon genesis evangelion"), then the outfit/look of this version. For an original character: body type first, then hair (or mane), eyes, build, outfit, accessories. Body type: a human or human-looking character gets a count tag (1girl / 1boy / 1other); a feral, animal-bodied character (pony, dragon, cat, changeling…) gets "feral, no humans, <species>, quadruped, hooves/paws, tail" and never 1girl/1boy; an anthro gets "anthro, furry female/male". Canon characters keep their canon body type. Max 45 words.
 - summary_ru: two sentences in Russian — who this is and how the story begins.
 
 Reply with ONE JSON object:
-{"name":"","is_canon":true,"franchise":"","danbooru_tags":"","description":"","personality":"","scenario":"","first_mes":"","alternate_greetings":["",""],"mes_example":"","tags":[],"summary_ru":""}`;
+{"name":"","is_canon":true,"franchise":"","danbooru_tags":"","description":"","personality":"","scenario":"","first_mes":"","alternate_greetings":["",""],"mes_example":"","abilities":[""],"agenda":[""],"tags":[],"summary_ru":""}`;
 
 let draft = null;
 
@@ -64,6 +67,9 @@ function parseCard(text) {
     o.alternate_greetings = (Array.isArray(o.alternate_greetings) ? o.alternate_greetings : []).filter(x => typeof x === 'string' && x.trim()).slice(0, 3);
     o.tags = (Array.isArray(o.tags) ? o.tags : String(o.tags || '').split(',')).map(x => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 8);
     o.danbooru_tags = String(o.danbooru_tags || '').replace(/_/g, ' ').trim();
+    const lines = (v) => (Array.isArray(v) ? v : String(v || '').split('\n')).map(x => String(x).replace(/^[-*\s]+/, '').trim()).filter(Boolean);
+    o.abilities = lines(o.abilities).slice(0, 8);
+    o.agenda = lines(o.agenda).slice(0, 3);
     return o;
 }
 
@@ -106,7 +112,11 @@ async function createCharacter(card, avatarB64) {
     fd.append('talkativeness', '0.5');
     fd.append('fav', 'false');
     for (const g of card.alternate_greetings) fd.append('alternate_greetings', g);
-    fd.append('extensions', JSON.stringify({ elephant: { danbooru_tags: card.danbooru_tags, canon: Boolean(card.is_canon), franchise: card.franchise || '' } }));
+    // The Director reads arsenal/agenda as the character's toolbox.
+    fd.append('extensions', JSON.stringify({ elephant: {
+        danbooru_tags: card.danbooru_tags, canon: Boolean(card.is_canon), franchise: card.franchise || '',
+        arsenal: card.abilities.map(x => `- ${x}`).join('\n'), agenda: card.agenda.map(x => `- ${x}`).join('\n'),
+    } }));
     if (avatarB64) {
         const bin = Uint8Array.from(atob(avatarB64), ch => ch.charCodeAt(0));
         fd.append('avatar', new File([bin], 'avatar.png', { type: avatarB64.startsWith('/9j/') ? 'image/jpeg' : 'image/png' }));
@@ -117,7 +127,13 @@ async function createCharacter(card, avatarB64) {
     await c.getCharacters();
     // The image model learns this character's look once — Stage keeps it consistent later.
     const stage = c.extensionSettings.elephant_stage;
-    if (stage && card.danbooru_tags) { stage.dna ??= {}; stage.dna[avatar] = card.danbooru_tags; c.saveSettingsDebounced(); }
+    if (stage && card.danbooru_tags) {
+        stage.dna ??= {};
+        // Same cache versioning as stage/imagegen.js (DNA v2 knows feral/anthro bodies).
+        if (stage.dna.__v !== DNA_VERSION) { for (const k of Object.keys(stage.dna)) delete stage.dna[k]; stage.dna.__v = DNA_VERSION; }
+        stage.dna[avatar] = card.danbooru_tags;
+        c.saveSettingsDebounced();
+    }
     const idx = c.characters.findIndex(x => x.avatar === avatar);
     if (idx >= 0) await c.selectCharacterById(idx);
     return avatar;
@@ -208,6 +224,7 @@ function renderPreview() {
         <div class="ef-tags">${card.tags.map(t => `<span>${escapeHtml(t)}</span>`).join('')}</div>
         <details class="ef-sec" open><summary>Первая сцена</summary><div class="ef-text">${escapeHtml(card.first_mes)}</div></details>
         <details class="ef-sec"><summary>Описание</summary><div class="ef-text">${escapeHtml(card.description)}</div></details>
+        ${card.abilities.length ? `<details class="ef-sec"><summary>Способности и цели</summary><div class="ef-text">${card.abilities.map(x => '• ' + escapeHtml(x)).join('\n')}${card.agenda.length ? '\n\n<b>Цели:</b>\n' + card.agenda.map(x => '• ' + escapeHtml(x)).join('\n') : ''}</div></details>` : ''}
         <details class="ef-sec"><summary>Сценарий и характер</summary><div class="ef-text"><b>Сценарий:</b> ${escapeHtml(card.scenario)}\n\n<b>Характер:</b> ${escapeHtml(card.personality)}</div></details>
         ${card.alternate_greetings.length ? `<details class="ef-sec"><summary>Другие начала (${card.alternate_greetings.length})</summary><div class="ef-text">${card.alternate_greetings.map(escapeHtml).join('\n\n———\n\n')}</div></details>` : ''}
         <details class="ef-sec"><summary>Теги для картинок</summary><div class="ef-text">${escapeHtml(card.danbooru_tags)}</div></details>
