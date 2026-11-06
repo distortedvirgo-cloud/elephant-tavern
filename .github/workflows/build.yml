@@ -28,7 +28,12 @@ jobs:
           node-version: '22'
 
       - name: Android SDK, NDK and CMake
-        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+        run: |
+          SDKM="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
+          echo "Using $SDKM (ANDROID_HOME=$ANDROID_HOME)"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Node.js for Android (nodejs-mobile)
         run: ./scripts/fetch-libnode.sh
