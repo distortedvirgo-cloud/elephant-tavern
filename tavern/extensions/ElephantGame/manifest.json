@@ -1,0 +1,13 @@
+{
+    "display_name": "Elephant Game",
+    "loading_order": 96,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "generate_interceptor": "elephantGameInterceptor",
+    "author": "Elephant Tavern",
+    "version": "0.1.0",
+    "minimum_client_version": "1.13.0",
+    "homePage": "https://github.com/distortedvirgo-cloud/elephant-tavern"
+}

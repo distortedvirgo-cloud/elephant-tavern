@@ -522,6 +522,11 @@ async function readScene(mesId, { force = false } = {}) {
 
     const s = S();
     let changed = false;
+    // Elephant Game reads the scene in its own per-turn report and hands it over (externalScene).
+    if (globalThis.ElephantGame?.ownsScene?.()) {
+        if (data) { data.scene = scene; c.saveMetadataDebounced?.(); }
+        return;
+    }
     if (s.sceneLLM && (helperProfileId(s) || s.allowMainModel)) {
         const seq = ++sceneSeq;
         try {
@@ -544,6 +549,22 @@ async function readScene(mesId, { force = false } = {}) {
         c.saveMetadataDebounced?.();
     }
     if (!force) maybeAutoImage(mesId, changed || scene.mood !== before.mood);
+}
+
+/** A scene read by someone else (Elephant Game's reporter) for message mesId. */
+function externalScene(raw, mesId) {
+    const before = scene;
+    const parsed = parseSceneJson(JSON.stringify(raw));
+    if (!parsed) return;
+    const changed = parsed.changed || (parsed.location && parsed.location !== before.location);
+    applyScene(parsed, { events: false });
+    playEvents(parsed.events, mesId);
+    const data = chatData();
+    if (data) {
+        data.scene = scene;
+        ctx().saveMetadataDebounced?.();
+    }
+    maybeAutoImage(mesId, changed || scene.mood !== before.mood);
 }
 
 function onStreamToken(text) {
@@ -835,7 +856,7 @@ async function init() {
     if (et.STREAM_TOKEN_RECEIVED) ev.on(et.STREAM_TOKEN_RECEIVED, onStreamToken);
     for (const e of [et.CHARACTER_PAGE_LOADED, et.CHARACTER_EDITED, et.SETTINGS_UPDATED]) if (e) ev.on(e, () => updateHeader());
 
-    globalThis.ElephantStage = { handleBack, openSheet, closeSheets, applyScene, playEvents, generateFor, effects, presets: AMBIENT_PRESETS, sizes: SIZES };
+    globalThis.ElephantStage = { handleBack, openSheet, closeSheets, applyScene, externalScene, playEvents, generateFor, effects, presets: AMBIENT_PRESETS, sizes: SIZES };
     window.addEventListener('et-insets', () => effects.resize());
     onChatChanged();
     log('loaded', shellOn ? '(mobile shell)' : '(desktop)');
