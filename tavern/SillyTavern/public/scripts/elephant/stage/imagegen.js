@@ -46,7 +46,7 @@ const PROMPT_SYSTEM = 'You write prompts for Anima, an anime image model trained
 const ANIMA_RULES = `Answer in exactly two lines:
 SCENE: who is visible in the frame at the last moment of the story — {{char}} and anyone else physically present and in view (at most 3 characters besides the viewer) — and for each: body type, where they are in the frame, what they are doing right now (the act, the position, where hands and mouths are, what is undressed). Draw what the eye sees: a disguised or transformed character is drawn in their current form.
 PROMPT: the Anima prompt, one line, in this order:
-1. one rating tag by what is visible now: safe (nothing sexual), sensitive (suggestive, underwear), nsfw (nudity), explicit (a sex act or exposed genitals);
+1. one rating tag by what is visible now: safe (nothing sexual), sensitive (a kiss, an embrace, suggestive poses, underwear), nsfw (nudity), explicit (a sex act or exposed genitals);
 2. count tags for everyone visible, together: humans as 1girl / 1boy / 2girls / 1boy 2girls…; feral (animal-bodied) characters are not counted as girls or boys — they get "feral" plus their species ("pony", "dragon"…), "quadruped", "hooves". Several characters: also "multiple girls" / "multiple boys" or "duo" / "group". A partner seen only in part still counts ("faceless male" / "faceless female" when the face is out of frame); add "no humans" only when no human is visible at all; a human next to a feral character adds "human, interspecies". Feral characters never get 1girl/1boy, hands or fingers;
 3. the Danbooru character tag (and copyright tag) of EVERY known canon character in the frame, {{char}} first, exactly as Danbooru writes them (the reference gives {{char}}'s). Never invent a tag for an original character (no "name (original)"): they are drawn from appearance tags only. A disguised character is tagged as the one they look like right now, plus a hint of the tell (e.g. "glowing green eyes"), not as their true self;
 4. ACTION tags right after them — this is the picture, never skip it. Interaction: hug, kiss, holding hands, hand on another's cheek, fighting, arguing, pointing, feeding, eye contact, back-to-back… Sex, named plainly: sex, vaginal, anal, fellatio, cunnilingus, handjob, paizuri, fingering, masturbation, grabbing another's breast, girl on top, cowgirl position, reverse cowgirl position, missionary, doggystyle, from behind, standing sex, straddling, threesome, spread legs, penis, pussy, nipples, nude / completely nude / topless / clothes pulled aside, cum, sweat, saliva, motion lines;
@@ -54,29 +54,49 @@ PROMPT: the Anima prompt, one line, in this order:
 6. then one or two short plain-English sentences that place and describe each visible character by name and body type — who is where (left, right, foreground, behind) and who does what to whom ("on the left a black changeling pony queen corners a purple unicorn pony who backs against the wall") — not the mood.
 Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 110 words. If nothing physical is happening, show the characters' current poses and expressions instead.`;
 
-const PROMPT_TEMPLATES = {
-    portrait: `Character visual reference — {{char}}: {{dna}}
+const HEAD = `Character visual reference — {{char}}: {{dna}}
 Other characters: their canon look if they are known characters, otherwise exactly what the story says about them.
 
 {{state}}Recent story (the last lines are the moment to draw):
 <messages>
 {{messages}}
 </messages>
+`;
 
+const FRAME_POV = `a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}} appears only as the body parts the viewer would see (pov hands, a penis, legs, "1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; a kiss toward the viewer is "incoming kiss" (no faceless male for a kiss or a hug: only pov hands if hands show); other characters present appear where they stand relative to the viewer; show the location, lighting and time of day.`;
+
+const FRAME_SCENE = `a third-person shot of the scene, like a film still: {{user}} is NOT in the frame (no pov, no viewer's hands, no faceless partner standing for {{user}}); show {{char}} and everyone else present, what they are doing and what is being done to them, in their surroundings — full body, cowboy shot or a wide shot, whatever fits everyone and the action; the location, lighting and time of day.`;
+
+const PROMPT_TEMPLATES = {
+    portrait: `${HEAD}
 Draw {{char}} at this exact moment, {{char}} in focus. If {{char}} is doing something with someone (talking face to face, kissing, fighting, having sex), show that interaction and everyone involved, as much as the framing needs; frame it so the action and every visible character fit. If not, a portrait or upper body looking {{gaze}}, with the expression and clothing of this moment and the location softly behind.
 ${ANIMA_RULES}`,
 
-    pov: `Character visual reference — {{char}}: {{dna}}
-Other characters: their canon look if they are known characters, otherwise exactly what the story says about them.
+    pov: `${HEAD}
+Draw this exact moment as ${FRAME_POV}
+${ANIMA_RULES}`,
 
-{{state}}Recent story (the last lines are the moment to draw):
-<messages>
-{{messages}}
-</messages>
+    scene: `${HEAD}
+Draw this exact moment as ${FRAME_SCENE}
+${ANIMA_RULES}`,
 
-Draw this exact moment as a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}} appears only as the body parts the viewer would see (pov hands, a penis, legs, "1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; other characters present appear where they stand relative to the viewer; show the location, lighting and time of day.
+    // The helper picks the frame: the player's eyes when they are in the action, a wide shot otherwise.
+    auto: `${HEAD}
+First decide the FRAME for the last moment of the story:
+- pov — {{user}} is directly involved with a character right now: touching or being touched, kissing, sex, fighting, being held, or face to face with a character who speaks to or looks at {{user}}.
+- scene — {{user}} is not directly involved: the moment is about other characters, what they do to each other or what happens to them, or {{user}} only watches from aside or is elsewhere.
+Then draw it:
+- pov: ${FRAME_POV}
+- scene: ${FRAME_SCENE}
+Start your answer with one extra line before the others: FRAME: pov or FRAME: scene.
 ${ANIMA_RULES}`,
 };
+
+/** The frame the helper chose in "auto" (defaults to scene). */
+export function extractFrame(out) {
+    const m = String(out ?? '').match(/FRAME\s*:\s*(pov|scene)/i);
+    return m ? m[1].toLowerCase() : 'scene';
+}
 
 /** Contradictions the helper keeps making, fixed in code: "no humans" next to a human, invented "(original)" tags. */
 export function fixTags(prompt) {
@@ -136,14 +156,18 @@ export async function buildPrompt(settings, mode, mesId) {
         user: c.name1,
         dna: dna || '(see story)',
         state: state ? `Story state:\n<state>\n${state.slice(0, 3000)}\n</state>\n\n` : '',
-        messages: recentMessages(mode === 'pov' ? 3 : 2, mesId),
+        messages: recentMessages(mode === 'portrait' ? 2 : 3, mesId),
         gaze: mode === 'portrait' ? 'at the viewer' : 'at the camera',
     };
     const custom = settings.prompts?.[mode];
-    const template = custom && /PROMPT:/.test(custom) ? custom : PROMPT_TEMPLATES[mode];
+    const template = custom && /PROMPT:/.test(custom) ? custom : (PROMPT_TEMPLATES[mode] || PROMPT_TEMPLATES.auto);
     const out = await callHelper(settings, PROMPT_SYSTEM, fill(template, vars), 800);
     log('image prompt draft', out);
-    return clampWords(fixTags(extractPrompt(out)), 150);
+    const frame = mode === 'auto' ? extractFrame(out) : mode;
+    let prompt = fixTags(extractPrompt(out));
+    // A wide shot without the player: drop first-person tags the helper may have left.
+    if (frame === 'scene') prompt = prompt.split(',').map(t => t.trim()).filter(t => !/^(pov|pov hands|first-person view|first person view)$/i.test(t)).join(', ');
+    return { prompt: clampWords(prompt, 150), mode: frame };
 }
 
 /** Feral characters drift into humans on anime models: push that away explicitly. */

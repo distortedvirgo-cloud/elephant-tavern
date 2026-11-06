@@ -48,7 +48,7 @@ mood=${MOODS.join('|')} · weather=${WEATHER.join('|')} · time=${TIMES.join('|'
 fx=${FX.join(',')} (comma-separated, things that physically happen now)
 tint=#rrggbb (recolours the whole interface for this scene) · particles=${PARTICLES.join('|')}
 title="short title card" (a new chapter, a place, a turning point) · glitch=1-3 (the screen distorts — for the uncanny, the supernatural, a lie unravelling) · dark=1-5 (seconds of blackout)
-whisper="one short line ${char} says straight to the reader, outside the story" (breaking the fourth wall — rare, eerie or intimate)${level === 'full' ? '\nimage=pov|portrait (illustrate this exact moment — at most once per scene)' : ''}`;
+whisper="one short line ${char} says straight to the reader, outside the story" (breaking the fourth wall — rare, eerie or intimate)${level === 'full' ? '\nimage=auto|pov|scene|portrait (illustrate this exact moment — at most once per scene; auto picks the frame)' : ''}`;
 }
 
 function updatePrompt() {
@@ -78,7 +78,7 @@ export function parseStage(text) {
     if (out.whisper) cmd.whisper = out.whisper.slice(0, 160);
     if (out.glitch) cmd.glitch = Math.max(1, Math.min(3, Number(out.glitch) || 1));
     if (out.dark) cmd.dark = Math.max(1, Math.min(5, Number(out.dark) || 2));
-    if (['pov', 'portrait'].includes(out.image)) cmd.image = out.image;
+    if (['auto', 'pov', 'scene', 'portrait'].includes(out.image)) cmd.image = out.image;
     return Object.keys(cmd).length ? cmd : null;
 }
 

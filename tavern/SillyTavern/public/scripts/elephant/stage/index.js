@@ -36,7 +36,7 @@ const DEFAULTS = {
         model: 'anima/text-to-image',
         auto: 'scene',      // off | scene | every
         every: 8,
-        mode: 'alternate',  // pov | portrait | alternate
+        mode: 'auto',  // auto (pov when the player is in the action, else a wide shot) | pov | scene | portrait
         size: 'auto',
         stylePrefix: 'masterpiece, best quality',
         negative: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, bad anatomy, bad hands, extra digits, watermark',
@@ -58,6 +58,8 @@ export function S() {
             for (const [k2, v2] of Object.entries(v)) if (s[k][k2] === undefined) s[k][k2] = structuredClone(v2);
         }
     }
+    // 0.9: "alternate" (POV/portrait in turns) became "auto" (the frame follows the scene).
+    if (s.images.mode === 'alternate') s.images.mode = 'auto';
     // 0.5: Anima is the default image model — move untouched old defaults over.
     if (!s.images.animaMigrated) {
         if (!s.images.model) s.images.model = 'anima/text-to-image';
@@ -195,8 +197,9 @@ function buildSceneSheet() {
                     <div class="et-scene-meta"></div>
                 </div>
                 <div class="et-row">
-                    <button class="et-btn" data-et-act="gen" data-mode="pov"><i class="fa-solid fa-eye"></i> POV-кадр</button>
-                    <button class="et-btn" data-et-act="gen" data-mode="portrait"><i class="fa-solid fa-image-portrait"></i> Портрет</button>
+                    <button class="et-btn" data-et-act="gen" data-mode="auto"><i class="fa-solid fa-clapperboard"></i> Кадр</button>
+                    <button class="et-btn" data-et-act="gen" data-mode="pov"><i class="fa-solid fa-eye"></i> POV</button>
+                    <button class="et-btn" data-et-act="gen" data-mode="scene"><i class="fa-solid fa-panorama"></i> Общий план</button>
                 </div>
                 <div class="et-row">
                     <button class="et-btn et-btn-ghost" data-et-act="rescene"><i class="fa-solid fa-rotate"></i> Перечитать сцену</button>
@@ -706,9 +709,7 @@ function onStreamToken(text) {
 
 function pickMode() {
     const im = S().images;
-    if (im.mode !== 'alternate') return im.mode;
-    const data = chatData();
-    return (data?.imageCount ?? 0) % 2 === 0 ? 'pov' : 'portrait';
+    return ['pov', 'scene', 'portrait', 'auto'].includes(im.mode) ? im.mode : 'auto';
 }
 
 function maybeAutoImage(mesId, sceneChanged) {
@@ -745,7 +746,8 @@ async function generateFor(mesId, mode, { auto = false } = {}) {
     imageBusy = controller;
     updateHeader();
     const $mes = $(`#chat .mes[mesid="${mesId}"]`);
-    const $pending = $(`<div class="et-img-pending"><div class="et-shimmer"></div><span>${mode === 'pov' ? '🎥 Рисую сцену твоими глазами…' : '🖼️ Рисую портрет…'}</span><button class="et-x" title="Отмена">✕</button></div>`);
+    const label = { pov: '🎥 Рисую сцену твоими глазами…', scene: '🎬 Рисую общий план…', portrait: '🖼️ Рисую портрет…' }[mode] || '🎬 Выбираю кадр и рисую…';
+    const $pending = $(`<div class="et-img-pending"><div class="et-shimmer"></div><span>${label}</span><button class="et-x" title="Отмена">✕</button></div>`);
     $pending.find('.et-x').on('click', () => controller.abort());
     $mes.find('.mes_block').append($pending);
     const chatEl = document.getElementById('chat');
@@ -755,18 +757,20 @@ async function generateFor(mesId, mode, { auto = false } = {}) {
 
     const data = chatData();
     try {
-        const prompt = await buildPrompt({ ...s, ...im, dna: s.dna, helperProfile: s.helperProfile, allowMainModel: s.allowMainModel }, mode, mesId);
+        const built = await buildPrompt({ ...s, ...im, dna: s.dna, helperProfile: s.helperProfile, allowMainModel: s.allowMainModel }, mode, mesId);
+        const prompt = built.prompt;
+        mode = built.mode; // "auto" resolves to pov or scene here
         if (controller.signal.aborted) throw new DOMException('aborted', 'AbortError');
-        const size = im.size === 'auto' ? (mode === 'pov' ? 'landscape' : 'portrait') : im.size;
+        const size = im.size === 'auto' ? (mode === 'portrait' ? 'portrait' : 'landscape') : im.size;
         const result = await generateImage({ ...im, size }, prompt, mode, controller.signal);
         const url = await attachToMessage(mesId, result.base64, result.prompt, mode);
         if (data) {
             data.lastImageAt = mesId;
             data.imageCount = (data.imageCount ?? 0) + 1;
-            if (url && mode === 'pov') data.sceneImage = url;
+            if (url && mode !== 'portrait') data.sceneImage = url;
             ctx().saveMetadataDebounced?.();
         }
-        if (url && mode === 'pov') setBackdrop(url);
+        if (url && mode !== 'portrait') setBackdrop(url);
         if (s.haptics) haptic('tick');
     } catch (e) {
         if (e.name === 'AbortError') toast().info('Генерация отменена');

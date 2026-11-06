@@ -109,8 +109,9 @@ function openActions(id) {
         ['edit', 'fa-pen', 'Редактировать'],
         isChar && isLast && ['continue', 'fa-forward', 'Продолжить ответ'],
         isChar && isLast && ['swipe', 'fa-shuffle', 'Другой вариант'],
-        isChar && globalThis.ElephantStage && ['pov', 'fa-eye', 'POV-кадр этой сцены'],
-        isChar && globalThis.ElephantStage && ['portrait', 'fa-image-portrait', 'Портрет персонажа'],
+        isChar && globalThis.ElephantStage && ['frame', 'fa-clapperboard', 'Кадр этой сцены'],
+        isChar && globalThis.ElephantStage && ['pov', 'fa-eye', 'POV-кадр'],
+        isChar && globalThis.ElephantStage && ['scene', 'fa-panorama', 'Общий план'],
         $mes.find('.em_tr_toggle').length && ['translate', 'fa-globe', 'Перевод ⇄ оригинал'],
         ['branch', 'fa-code-branch', 'Ветка отсюда'],
         ['checkpoint', 'fa-flag', 'Чекпоинт'],
@@ -136,6 +137,8 @@ async function runAction(act, id, $mes, text) {
         case 'edit': $mes.find('.mes_edit').first().trigger('click'); break;
         case 'continue': await c.executeSlashCommandsWithOptions('/continue'); break;
         case 'swipe': $mes.find('.swipe_right').first().trigger('click'); break;
+        case 'frame': globalThis.ElephantStage?.generateFor(id, 'auto'); break;
+        case 'scene': globalThis.ElephantStage?.generateFor(id, 'scene'); break;
         case 'pov': globalThis.ElephantStage?.generateFor(id, 'pov'); break;
         case 'portrait': globalThis.ElephantStage?.generateFor(id, 'portrait'); break;
         case 'translate': $mes.find('.em_tr_toggle').first().trigger('click'); break;
