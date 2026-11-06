@@ -12,13 +12,14 @@
  * Levels per character: off · effects · full (effects + illustrations).
  */
 import { ctx, currentCharacter, haptic, log } from '../stage/helper.js';
+import { MOOD_IDS } from '../stage/scene.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 const MODULE = 'elephant_power';
 const PROMPT_KEY = 'elephant_power';
 const DEFAULTS = { defaultLevel: 'effects', perChar: {} };
 
-const MOODS = ['calm', 'cozy', 'joy', 'romance', 'tension', 'combat', 'mystery', 'horror', 'sad', 'epic'];
+const MOODS = MOOD_IDS;
 const WEATHER = ['clear', 'rain', 'storm', 'snow', 'fog', 'ash'];
 const TIMES = ['day', 'night', 'dusk', 'dawn'];
 const FX = ['hit', 'blood', 'explosion', 'lightning', 'kiss', 'magic', 'heartbeat', 'shake'];

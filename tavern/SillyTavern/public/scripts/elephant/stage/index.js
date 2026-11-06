@@ -12,7 +12,7 @@
  */
 import { MODULE, ctx, toast, log, listProfiles, helperProfileId, hasHelper, callHelper, loadHelperModels, memoryState, currentCharacter, haptic, inApp } from './helper.js';
 import { Effects, AMBIENT_PRESETS } from './effects.js';
-import { MOODS, heuristicScene, scenePrompt, parseSceneJson, ambientFor, describeScene } from './scene.js';
+import { MOODS, MOOD_IDS, heuristicScene, scenePrompt, parseSceneJson, ambientFor, describeScene } from './scene.js';
 import { SIZES, loadModels, visualDna, buildPrompt, generateImage, attachToMessage } from './imagegen.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
@@ -122,7 +122,7 @@ function buildShell() {
                 <div class="et-ava-wrap"><img class="et-ava" alt=""><span class="et-ava-ring"></span></div>
                 <div class="et-who-text">
                     <div class="et-name">Elephant Tavern</div>
-                    <div class="et-sub"><span class="et-mood" data-et-act="scene"></span><span class="et-scene"></span></div>
+                    <div class="et-sub" data-et-act="scene"><span class="et-scene"></span></div>
                 </div>
             </div>
             <button class="et-hb et-hb-cam" data-et-act="image" aria-label="Картинка сцены"><i class="fa-solid fa-camera-retro"></i></button>
@@ -134,11 +134,14 @@ function buildShell() {
     $('body').append(buildHub());
     $('body').append(buildSceneSheet());
     $('body').append('<section class="et-sheet" id="et-sheet-stage"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
+    $('body').append('<section class="et-sheet et-sheet-tall" id="et-sheet-chars"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
     $('body').append(buildAppSheet());
 
     $(document).on('click', '[data-et-act]', onAction);
     $('#et-scrim').on('click', closeSheets);
     enableSheetSwipe();
+    // Track SillyTavern's panels: the menu button turns into a close button while one is open.
+    new MutationObserver(syncDrawerState).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
 }
 
 const SECTIONS = [
@@ -168,7 +171,11 @@ function buildHub() {
                 <div class="et-hub-quick">
                     <button class="et-pill" data-et-act="newchat"><i class="fa-solid fa-plus"></i> Новый чат</button>
                     <button class="et-pill" data-et-act="chatlist"><i class="fa-solid fa-clock-rotate-left"></i> Чаты</button>
-                    <button class="et-pill" data-et-act="options"><i class="fa-solid fa-ellipsis"></i> Ещё</button>
+                    <button class="et-pill" data-et-act="stopt" data-opt="option_continue"><i class="fa-solid fa-forward"></i> Продолжить</button>
+                    <button class="et-pill" data-et-act="stopt" data-opt="option_regenerate"><i class="fa-solid fa-rotate"></i> Заново</button>
+                    <button class="et-pill" data-et-act="stopt" data-opt="option_impersonate"><i class="fa-solid fa-user-pen"></i> Написать за меня</button>
+                    <button class="et-pill" data-et-act="stopt" data-opt="option_delete_mes"><i class="fa-solid fa-trash-can"></i> Удалить сообщения</button>
+                    <button class="et-pill" data-et-act="stopt" data-opt="option_toggle_AN"><i class="fa-solid fa-note-sticky"></i> Заметка автора</button>
                 </div>
                 <div class="et-tiles">${tiles}</div>
             </div>
@@ -231,6 +238,7 @@ function openSheet(name) {
     if (name === 'scene') renderSceneSheet();
     if (name === 'app') renderAppSheet();
     if (name === 'hub') markHub();
+    if (name === 'chars') renderCharsSheet();
     el.classList.add('et-open');
     document.body.classList.add('et-sheet-open');
     haptic('tick');
@@ -275,6 +283,58 @@ function openDrawer(selector, then) {
     const $content = $d.find('.drawer-content').first();
     if (!$content.hasClass('openDrawer')) $d.find('.drawer-toggle').first().trigger('click');
     if (then) setTimeout(() => $(then).trigger('click'), 60);
+}
+
+/** Closes every open SillyTavern panel (they have no visible close button in the app shell). */
+function closeDrawers() {
+    $('.drawer-content.openDrawer').each(function () {
+        $(this).closest('.drawer').find('.drawer-toggle').first().trigger('click');
+    });
+    setTimeout(syncDrawerState, 350);
+}
+
+let drawerSyncQueued = false;
+function syncDrawerState() {
+    if (drawerSyncQueued) return;
+    drawerSyncQueued = true;
+    requestAnimationFrame(() => {
+        drawerSyncQueued = false;
+        const open = document.querySelector('.drawer-content.openDrawer') !== null;
+        if (document.body.classList.contains('et-drawer-open') !== open) document.body.classList.toggle('et-drawer-open', open);
+    });
+}
+
+/** Our own character picker: big rows, search, recent first. */
+function renderCharsSheet() {
+    const c = ctx();
+    const list = (c.characters ?? []).map((ch, idx) => ({ ch, idx }))
+        .sort((a, b) => (Number(b.ch.date_last_chat) || 0) - (Number(a.ch.date_last_chat) || 0));
+    const esc = (t) => String(t ?? '').replace(/[&<>"']/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]));
+    const blurb = (ch) => {
+        const notes = String(ch.data?.creator_notes || ch.creatorcomment || '').split('\n').find(l => l.trim() && !/^Создано в Elephant/.test(l)) || '';
+        const src = notes || String(ch.description || ch.data?.description || '');
+        return src.replace(/\{\{char\}\}/g, ch.name).replace(/\s+/g, ' ').slice(0, 90);
+    };
+    const rows = list.map(({ ch, idx }) => `
+        <div class="et-char ${String(c.characterId) === String(idx) ? 'et-on' : ''}" data-et-act="pickchar" data-idx="${idx}" data-name="${esc(ch.name.toLowerCase())}">
+            <img src="${ch.avatar && ch.avatar !== 'none' ? c.getThumbnailUrl('avatar', ch.avatar) : 'img/ai4.png'}" alt="" loading="lazy">
+            <div class="et-char-text"><b>${esc(ch.name)}</b><small>${esc(blurb(ch))}</small></div>
+            <button class="et-char-edit" data-et-act="editchar" data-idx="${idx}" aria-label="Редактировать"><i class="fa-solid fa-pen"></i></button>
+        </div>`).join('');
+    const body = document.querySelector('#et-sheet-chars .et-sheet-body');
+    body.innerHTML = `
+        <h4 class="et-h">Персонажи</h4>
+        <div class="et-row">
+            <button class="et-btn" data-et-act="newchar"><i class="fa-solid fa-wand-magic-sparkles"></i> Создать</button>
+            <button class="et-btn et-btn-ghost" data-et-act="importchar"><i class="fa-solid fa-file-import"></i> Импорт</button>
+        </div>
+        ${list.length > 6 ? '<input class="text_pole et-char-search" type="search" placeholder="Поиск">' : ''}
+        <div class="et-chars">${rows || '<p class="et-note">Пока никого. Создай персонажа или импортируй карточку.</p>'}</div>
+        <button class="et-btn et-btn-ghost et-chars-more" data-et-act="allchars"><i class="fa-solid fa-sliders"></i> Теги, папки и группы</button>`;
+    $(body).find('.et-char-search').on('input', function () {
+        const q = this.value.trim().toLowerCase();
+        $(body).find('.et-char').each(function () { this.style.display = !q || this.dataset.name.includes(q) ? '' : 'none'; });
+    });
 }
 
 function openMemory() {
@@ -327,18 +387,39 @@ function markHub() {
 
 async function onAction(e) {
     const el = e.currentTarget;
-    const act = el.dataset.etAct;
+    let act = el.dataset.etAct;
+    // While a SillyTavern panel is open, the menu button is its close button.
+    if (act === 'hub' && document.body.classList.contains('et-drawer-open')) act = 'closedrawers';
     switch (act) {
         case 'hub': return document.getElementById('et-sheet-hub').classList.contains('et-open') ? closeSheets() : openSheet('hub');
         case 'scene': e.stopPropagation(); return openSheet('scene');
         case 'char':
-            if (e.target.closest('.et-mood')) return;
-            if (!ctx().characterId && !ctx().groupId) return openDrawer('#rightNavHolder', '#rm_button_characters');
+            if (e.target.closest('.et-sub')) return; // the scene line has its own action
+            if (ctx().characterId === undefined && !ctx().groupId) return openSheet('chars');
             return openDrawer('#rightNavHolder', '#rm_button_selected_ch');
-        case 'chars': return openDrawer('#rightNavHolder', '#rm_button_characters');
+        case 'chars': return openSheet('chars');
+        case 'pickchar': {
+            const idx = Number(el.dataset.idx);
+            closeSheets(true);
+            closeDrawers();
+            if (String(ctx().characterId) !== String(idx)) await ctx().selectCharacterById(idx);
+            return;
+        }
+        case 'editchar': {
+            e.stopPropagation();
+            const idx = Number(el.dataset.idx);
+            closeSheets(true);
+            if (String(ctx().characterId) !== String(idx)) await ctx().selectCharacterById(idx);
+            return openDrawer('#rightNavHolder', '#rm_button_selected_ch');
+        }
+        case 'newchar': closeSheets(true); return globalThis.ElephantCore?.forge?.open?.();
+        case 'importchar': closeSheets(true); return $('#character_import_file').trigger('click');
+        case 'allchars': closeSheets(true); return openDrawer('#rightNavHolder', '#rm_button_characters');
+        case 'closedrawers': return closeDrawers();
         case 'image': return quickImage();
         case 'section': {
             const sec = SECTIONS.find(s => s.id === el.dataset.etSection);
+            if (sec?.id === 'chars') return openSheet('chars');
             closeSheets(true);
             if (sec?.action) return sec.action();
             if (sec?.drawer) return openDrawer(sec.drawer, sec.then);
@@ -347,6 +428,8 @@ async function onAction(e) {
         case 'newchat': closeSheets(true); return $('#option_start_new_chat').trigger('click');
         case 'chatlist': closeSheets(true); return $('#option_select_chat').trigger('click');
         case 'options': closeSheets(true); return $('#options_button').trigger('click');
+        // SillyTavern's ≡ menu items, run directly (the ≡ button itself is hidden in the shell).
+        case 'stopt': closeSheets(true); return $(`#${el.dataset.opt}`).trigger('click');
         case 'lockmood':
             S().lockMood = el.dataset.mood || '';
             save();
@@ -384,9 +467,6 @@ function updateHeader() {
     if (ch?.avatarUrl) { if ($ava.attr('src') !== ch.avatarUrl) $ava.attr('src', ch.avatarUrl); $ava.show(); }
     else $ava.removeAttr('src').hide();
     $h.toggleClass('et-no-char', !ch);
-    const moodId = S().lockMood || scene.mood;
-    const m = MOODS[moodId] || MOODS.calm;
-    $h.find('.et-mood').text(`${m.icon} ${m.label}${S().lockMood ? ' 🔒' : ''}`).toggle(Boolean(ch));
     $h.find('.et-scene').text(ch ? describeScene(scene) : '');
     $h.find('.et-hb-cam').toggleClass('et-busy', Boolean(imageBusy)).toggle(Boolean(ch));
 }
@@ -809,6 +889,9 @@ function onSettingChanged(key) {
 
 function onChatChanged() {
     playedEvents.clear();
+    // Picking a character in SillyTavern's own list leaves its panel open over the chat.
+    const $nav = $('#rightNavHolder .drawer-content.openDrawer');
+    if ($nav.length && shellOn) $('#rightNavHolder .drawer-toggle').first().trigger('click');
     document.body.classList.toggle('et-group-chat', Boolean(ctx().groupId));
     const data = chatData();
     const stored = data?.scene;
@@ -845,7 +928,7 @@ function registerCommands() {
     }));
     add('stage-pov', 'Elephant Stage: POV-кадр последней сцены.', async () => { await generateFor(lastCharMessageId(), 'pov'); return ''; });
     add('stage-portrait', 'Elephant Stage: портрет персонажа.', async () => { await generateFor(lastCharMessageId(), 'portrait'); return ''; });
-    add('stage-mood', 'Elephant Stage: закрепить настроение (calm, cozy, joy, romance, tension, combat, mystery, horror, sad, epic) или "auto".', async (_a, value) => {
+    add('stage-mood', `Elephant Stage: закрепить настроение (${MOOD_IDS.join(', ')}) или "auto".`, async (_a, value) => {
         const v = String(value || '').trim();
         S().lockMood = MOODS[v] ? v : '';
         save();

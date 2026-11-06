@@ -68,3 +68,5 @@ body.ec-sheet-open #ec-scrim { opacity: 1; pointer-events: auto; }
 .ec-idea:active { transform: scale(0.97); }
 @keyframes ec-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }
 #ec-ideas-btn { color: #ffd58a; }
+#ec-ideas { touch-action: pan-x; overscroll-behavior-x: contain; }
+.ec-idea { touch-action: pan-x; }

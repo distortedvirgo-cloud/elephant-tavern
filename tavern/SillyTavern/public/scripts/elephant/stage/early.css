@@ -781,3 +781,48 @@ body.et-shell #extensionsMenu {
 }
 
 body.et-shell #toast-container { top: calc(var(--topBarBlockSize) + 6px) !important; }
+
+/* ------------------------------------------------------------- panels & characters */
+
+/* While a SillyTavern panel is open, the menu button closes it. */
+body.et-shell.et-drawer-open #et-header [data-et-act="hub"] i::before { content: "\f00d"; }
+body.et-shell.et-drawer-open #et-header [data-et-act="hub"] { background: rgba(255, 255, 255, 0.08); }
+
+#et-header .et-sub { cursor: pointer; }
+
+.et-sheet-tall .et-sheet-body { max-height: 82dvh; }
+.et-chars { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.et-char {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--et-line);
+    cursor: pointer;
+    transition: background 0.15s, transform 0.12s;
+}
+.et-char:active { transform: scale(0.985); background: rgba(255, 255, 255, 0.08); }
+.et-char.et-on { border-color: color-mix(in srgb, var(--et-accent) 55%, transparent); background: color-mix(in srgb, var(--et-accent) 10%, transparent); }
+.et-char img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex: 0 0 48px; }
+.et-char-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.et-char-text b { font-size: 16px; color: var(--et-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.et-char-text small { font-size: 12.5px; color: var(--et-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.et-char-edit {
+    flex: 0 0 auto;
+    width: 38px; height: 38px;
+    border-radius: 12px;
+    border: 0;
+    background: transparent;
+    color: var(--et-muted);
+}
+.et-char-edit:active { background: rgba(255, 255, 255, 0.08); }
+.et-char-search { width: 100%; margin-top: 10px; }
+.et-chars-more { width: 100%; }
+
+/* The ≡ and ✦ buttons of SillyTavern's input bar: their actions live in our long-press
+   sheet and the hub ("Ещё"), and their pop-up menus don't fit the phone shell. */
+body.et-shell #options_button,
+body.et-shell #extensionsMenuButton { display: none !important; }
+.et-hub-quick { flex-wrap: wrap; overflow-x: visible; }

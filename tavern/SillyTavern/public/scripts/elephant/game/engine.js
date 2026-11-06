@@ -6,6 +6,7 @@
  * (extractor); the engine validates, clamps and applies. The narrator receives
  * the result as ground truth.
  */
+import { MOOD_IDS } from '../stage/scene.js';
 
 export const SKILLS = {
     might:   { ru: 'Сила',     icon: '💪', en: 'Might' },
@@ -543,7 +544,7 @@ ${String(reply || '').slice(0, 3500)}
 </reply>
 
 Reply with ONE line of minified JSON, nothing else:
-{"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"calm|cozy|joy|romance|tension|combat|mystery|horror|sad|epic","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
+{"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"${MOOD_IDS.join('|')}","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
 "npcs":[{"name":"","present":bool,"trust":-6..6,"attraction":-5..5,"why_ru":"коротко"}],
 "harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[],"items_lost":[],
 "goals":[{"title_ru":"","status":"new|done|failed"}],

@@ -20,7 +20,16 @@ export const MOODS = {
     horror:   { label: 'Жуть',        icon: '🩸', accent: '#c23b3b', accent2: '#6b7a8f', bgA: '#0a0a0c', bgB: '#120a0b', glow: 0.2, haptic: 'heartbeat' },
     sad:      { label: 'Грусть',      icon: '🌧️', accent: '#8fb0d9', accent2: '#7b86a8', bgA: '#0d1118', bgB: '#10141d', glow: 0.15, haptic: null },
     epic:     { label: 'Эпично',      icon: '🔥', accent: '#ffcf5a', accent2: '#ff6b3d', bgA: '#170f08', bgB: '#1f1309', glow: 0.35, haptic: 'rumble' },
+    passion:  { label: 'Страсть',     icon: '💋', accent: '#ff4f7a', accent2: '#ff9a5c', bgA: '#1c0a10', bgB: '#270c15', glow: 0.38, haptic: 'heartbeat' },
+    playful:  { label: 'Игриво',      icon: '😏', accent: '#ff9ad5', accent2: '#ffd36e', bgA: '#17101a', bgB: '#1e1221', glow: 0.28, haptic: 'tick' },
+    dream:    { label: 'Грёзы',       icon: '🌙', accent: '#b9a8ff', accent2: '#ffb3e6', bgA: '#100f1f', bgB: '#17122b', glow: 0.32, haptic: null },
+    gloom:    { label: 'Мрачно',      icon: '🌑', accent: '#8a93a6', accent2: '#4d5566', bgA: '#09090c', bgB: '#0e0f13', glow: 0.12, haptic: null },
+    uncanny:  { label: 'Странно',     icon: '👁️', accent: '#7dffb2', accent2: '#c47dff', bgA: '#07110c', bgB: '#0e0a15', glow: 0.3, haptic: 'heartbeat' },
+    festive:  { label: 'Праздник',    icon: '🎉', accent: '#ffd166', accent2: '#ff6fb5', bgA: '#18120c', bgB: '#1e1311', glow: 0.32, haptic: 'tick' },
 };
+
+/** "calm|cozy|…" for prompts: every module asks for the same list. */
+export const MOOD_IDS = Object.keys(MOODS);
 
 export const WEATHER = { clear: '☀️', rain: '🌧️', storm: '⛈️', snow: '❄️', fog: '🌫️', ash: '🌋' };
 export const TIMES = { day: 'день', night: 'ночь', dusk: 'сумерки', dawn: 'рассвет' };
@@ -38,8 +47,20 @@ const KEYWORDS = {
         'странн', 'древн', 'тайн', 'загадк', 'магия', 'заклин', 'руна', 'пророч'],
     sad: ['tears', 'cry', 'sob', 'grief', 'mourn', 'lonely', 'loss', 'funeral', 'sorrow', 'regret',
         'слёз', 'слез', 'плач', 'горе', 'одинок', 'потер', 'похорон', 'печал', 'сожал'],
-    joy: ['laugh', 'grin', 'cheer', 'celebrat', 'giggle', 'smile wide', 'dance', 'festival', 'party', 'joke',
-        'смех', 'смеёт', 'улыб', 'праздн', 'танц', 'шутк', 'веселье'],
+    joy: ['laugh', 'grin', 'cheer', 'smile wide', 'dance', 'joke', 'delight',
+        'смех', 'смеёт', 'улыб', 'танц', 'шутк', 'веселье', 'радост'],
+    festive: ['festival', 'party', 'feast', 'fireworks', 'celebrat', 'toast to', 'parade', 'banquet',
+        'праздн', 'пир', 'фейерверк', 'ярмарк', 'тост', 'банкет'],
+    passion: ['moan', 'naked', 'nude', 'thrust', 'cock', 'pussy', 'nipple', 'grind', 'arches her back', 'arches his back', 'orgasm', 'fuck',
+        'стон', 'голая', 'голый', 'член', 'киск', 'трах', 'сосок', 'соск', 'кончил', 'кончи'],
+    playful: ['tease', 'wink', 'smirk', 'giggle', 'poke', 'mischie', 'flirt', 'pout', 'playful',
+        'дразн', 'подмиг', 'хихик', 'шалов', 'флирт', 'игрив', 'надул'],
+    dream: ['dream', 'floating', 'starlight', 'ethereal', 'surreal', 'drifting', 'weightless',
+        'сон ', 'грёз', 'грез', 'сновиден', 'парит', 'невесом', 'призрачн'],
+    gloom: ['grim', 'bleak', 'despair', 'ruins', 'gloomy', 'hopeless', 'decay', 'abandoned',
+        'угрюм', 'мрачн', 'руин', 'безысход', 'заброшен', 'гнил'],
+    uncanny: ['wrong', 'glitch', 'impossible', 'twisted', 'unnatural', 'does not blink', "doesn't blink", 'too wide', 'mirror',
+        'неправильн', 'искаж', 'неестественн', 'не моргает', 'зеркал'],
     cozy: ['fireplace', 'hearth', 'blanket', 'tea', 'warm', 'candle', 'tavern', 'inn', 'cozy', 'soup', 'bed',
         'камин', 'очаг', 'плед', 'чай', 'тепл', 'свеч', 'таверн', 'уют'],
     epic: ['army', 'dragon', 'roar', 'legend', 'thunderous', 'throne', 'kingdom', 'titan', 'ascend', 'destiny',
@@ -137,7 +158,7 @@ ${message}
 </message>
 
 Answer with ONE line of minified JSON, nothing else:
-{"mood":"calm|cozy|joy|romance|tension|combat|mystery|horror|sad|epic","intensity":0.0-1.0,"weather":"clear|rain|storm|snow|fog|ash","time":"day|night|dusk|dawn","indoor":true|false,"location":"2-4 words","events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"changed":true|false}
+{"mood":"${MOOD_IDS.join('|')}","intensity":0.0-1.0,"weather":"clear|rain|storm|snow|fog|ash","time":"day|night|dusk|dawn","indoor":true|false,"location":"2-4 words in Russian","events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"changed":true|false}
 "changed" = the location or situation clearly changed compared to the previous scene. "events" = only things that physically happen in THIS message (usually empty). Keep weather/time from the previous scene unless the message changes them.`;
 }
 
@@ -184,6 +205,12 @@ export function ambientFor(scene) {
         case 'epic': layers.push('embers'); break;
         case 'horror': layers.push('fog'); break;
         case 'sad': if (!layers.length) layers.push('dust'); break;
+        case 'passion': layers.push('embers'); break;
+        case 'playful': layers.push('sparkles'); break;
+        case 'dream': layers.push('fireflies'); break;
+        case 'gloom': layers.push(scene.indoor ? 'dust' : 'ash'); break;
+        case 'uncanny': layers.push('fog'); break;
+        case 'festive': layers.push('sparkles'); break;
         default: if (scene.indoor && !layers.length) layers.push('dust');
     }
     return [...new Set(layers)].slice(0, 2);

@@ -232,11 +232,26 @@ function renderIdeas(options) {
     for (const o of options) {
         const [icon, label] = TONE[o.tone] || ['✨', ''];
         const $b = $(`<button class="ec-idea" data-tone="${escapeHtml(o.tone)}"><small>${icon} ${label}</small><span>${escapeHtml(o.ru || o.en)}</span></button>`);
+        // A scroll through the bar must never pick an idea: only a still tap sends, a still hold edits.
         let held = false;
+        let moved = false;
         let t = null;
-        $b.on('touchstart mousedown', () => { held = false; t = setTimeout(() => { held = true; useIdea(o, false); haptic('tick'); }, 500); })
-            .on('touchend mouseup mouseleave', () => clearTimeout(t))
-            .on('click', () => { if (!held) useIdea(o, true); });
+        let x0 = 0;
+        let y0 = 0;
+        const pos = (e) => (e.touches?.[0] ?? e.changedTouches?.[0] ?? e);
+        $b.on('touchstart mousedown', (e) => {
+            const p = pos(e.originalEvent ?? e);
+            x0 = p.clientX; y0 = p.clientY;
+            held = false; moved = false;
+            clearTimeout(t);
+            t = setTimeout(() => { if (!moved) { held = true; useIdea(o, false); haptic('tick'); } }, 550);
+        })
+            .on('touchmove mousemove', (e) => {
+                const p = pos(e.originalEvent ?? e);
+                if (Math.abs(p.clientX - x0) > 8 || Math.abs(p.clientY - y0) > 8) { moved = true; clearTimeout(t); }
+            })
+            .on('touchend mouseup mouseleave touchcancel', () => clearTimeout(t))
+            .on('click', (e) => { if (held || moved) { e.preventDefault(); return; } useIdea(o, true); });
         $bar.append($b);
     }
 }

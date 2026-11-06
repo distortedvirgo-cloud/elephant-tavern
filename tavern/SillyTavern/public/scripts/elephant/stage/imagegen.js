@@ -44,37 +44,48 @@ const PROMPT_SYSTEM = 'You write prompts for Anima, an anime image model trained
  * Anima prompt order: [safety] [count] [character + series tags] [ACTION tags] [general tags] + one sentence.
  */
 const ANIMA_RULES = `Answer in exactly two lines:
-SCENE: one plain sentence — who is in the frame and what each of them is physically doing at the last moment of the story (the act, the position, where hands and mouths are, what is undressed or exposed).
+SCENE: who is visible in the frame at the last moment of the story — {{char}} and anyone else physically present and in view (at most 3 characters besides the viewer) — and for each: body type, where they are in the frame, what they are doing right now (the act, the position, where hands and mouths are, what is undressed). Draw what the eye sees: a disguised or transformed character is drawn in their current form.
 PROMPT: the Anima prompt, one line, in this order:
-1. one rating tag: safe, sensitive, nsfw or explicit (any sex act or exposed genitals = explicit);
-2. body and count tags for everyone visible, copied from the reference: a human gets 1girl / 1boy; a feral (animal-bodied) character keeps "feral, no humans, pony, quadruped, hooves…" and NEVER gets 1girl/1boy, hands or fingers — they act with hooves, mouth, tail, wings and magic. A human partner is counted on his own (1boy, plus "human" and "interspecies" next to a feral character); a partner seen only in part still counts (add "faceless male" / "faceless female" when their face is out of frame);
-3. the character's Danbooru character tag and copyright tag if the reference starts with them (keep exactly);
-4. ACTION tags right after them — this is the picture, never skip it. Interaction: hug, kiss, holding hands, hand on another's cheek, fighting, feeding… Sex, named plainly with Danbooru tags: sex, vaginal, anal, fellatio, cunnilingus, handjob, paizuri, fingering, masturbation, grabbing another's breast, girl on top, cowgirl position, reverse cowgirl position, missionary, doggystyle, from behind, standing sex, straddling, spread legs, penis, pussy, nipples, nude / completely nude / topless / clothes pulled aside, cum, sweat, saliva, motion lines;
-5. general tags: appearance from the reference (the story's current clothing or nudity overrides the reference outfit), the expression the story describes right now, framing that shows the action (close-up / upper body for a face or kiss, cowboy shot or full body for bodies in contact), camera angle, lighting, location, time of day;
-6. then ONE short plain-English sentence describing the action concretely (who does what to whom), naming the body type ("a black changeling pony", not "a woman"), not the mood.
-Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 90 words. If nothing physical is happening, show the character's current pose and expression instead.`;
+1. one rating tag by what is visible now: safe (nothing sexual), sensitive (suggestive, underwear), nsfw (nudity), explicit (a sex act or exposed genitals);
+2. count tags for everyone visible, together: humans as 1girl / 1boy / 2girls / 1boy 2girls…; feral (animal-bodied) characters are not counted as girls or boys — they get "feral" plus their species ("pony", "dragon"…), "quadruped", "hooves". Several characters: also "multiple girls" / "multiple boys" or "duo" / "group". A partner seen only in part still counts ("faceless male" / "faceless female" when the face is out of frame); add "no humans" only when no human is visible at all; a human next to a feral character adds "human, interspecies". Feral characters never get 1girl/1boy, hands or fingers;
+3. the Danbooru character tag (and copyright tag) of EVERY known canon character in the frame, {{char}} first, exactly as Danbooru writes them (the reference gives {{char}}'s). Never invent a tag for an original character (no "name (original)"): they are drawn from appearance tags only. A disguised character is tagged as the one they look like right now, plus a hint of the tell (e.g. "glowing green eyes"), not as their true self;
+4. ACTION tags right after them — this is the picture, never skip it. Interaction: hug, kiss, holding hands, hand on another's cheek, fighting, arguing, pointing, feeding, eye contact, back-to-back… Sex, named plainly: sex, vaginal, anal, fellatio, cunnilingus, handjob, paizuri, fingering, masturbation, grabbing another's breast, girl on top, cowgirl position, reverse cowgirl position, missionary, doggystyle, from behind, standing sex, straddling, threesome, spread legs, penis, pussy, nipples, nude / completely nude / topless / clothes pulled aside, cum, sweat, saliva, motion lines;
+5. general tags: {{char}}'s appearance from the reference (the story's current clothing or nudity overrides it); a canon character needs only a few tags beyond their name; an original side character gets 2–4 key tags (hair colour, outfit) — keep each character's tags short so their looks don't blend; the expressions the story describes right now; framing that fits everyone and the action (close-up / upper body for one face or a kiss, cowboy shot or full body for bodies in contact or several characters), camera angle, lighting, location, time of day;
+6. then one or two short plain-English sentences that place and describe each visible character by name and body type — who is where (left, right, foreground, behind) and who does what to whom ("on the left a black changeling pony queen corners a purple unicorn pony who backs against the wall") — not the mood.
+Lowercase tags, spaces instead of underscores, no quality tags, no weights, max 110 words. If nothing physical is happening, show the characters' current poses and expressions instead.`;
 
 const PROMPT_TEMPLATES = {
     portrait: `Character visual reference — {{char}}: {{dna}}
+Other characters: their canon look if they are known characters, otherwise exactly what the story says about them.
 
 {{state}}Recent story (the last lines are the moment to draw):
 <messages>
 {{messages}}
 </messages>
 
-Draw {{char}} at this exact moment, {{char}} in focus. If {{char}} is doing something with someone (talking face to face, kissing, fighting, having sex), show that interaction and the other person as much as the framing needs; frame it so the action is visible. If not, a portrait or upper body looking {{gaze}}, with the expression and clothing of this moment and the location softly behind.
+Draw {{char}} at this exact moment, {{char}} in focus. If {{char}} is doing something with someone (talking face to face, kissing, fighting, having sex), show that interaction and everyone involved, as much as the framing needs; frame it so the action and every visible character fit. If not, a portrait or upper body looking {{gaze}}, with the expression and clothing of this moment and the location softly behind.
 ${ANIMA_RULES}`,
 
     pov: `Character visual reference — {{char}}: {{dna}}
+Other characters: their canon look if they are known characters, otherwise exactly what the story says about them.
 
 {{state}}Recent story (the last lines are the moment to draw):
 <messages>
 {{messages}}
 </messages>
 
-Draw this exact moment as a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}} appears only as the body parts the viewer would see (pov hands, a penis, legs, "1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; show the location, lighting and time of day.
+Draw this exact moment as a first-person POV picture through the eyes of {{user}}: tag "pov"; {{user}} appears only as the body parts the viewer would see (pov hands, a penis, legs, "1boy" plus "faceless male" if {{user}} is male and his body is in frame); {{char}} is in front of the camera at the distance and angle the act implies (looking down from on top, kneeling between the viewer's legs, lying beneath, facing away…), doing exactly what the story says; other characters present appear where they stand relative to the viewer; show the location, lighting and time of day.
 ${ANIMA_RULES}`,
 };
+
+/** Contradictions the helper keeps making, fixed in code: "no humans" next to a human, invented "(original)" tags. */
+export function fixTags(prompt) {
+    let tags = String(prompt).split(',').map(t => t.trim()).filter(Boolean);
+    const human = tags.some(t => /^(\d(girl|boy)s?|multiple (girls|boys)|human|faceless (male|female)|pov hands)$/.test(t.toLowerCase()));
+    if (human) tags = tags.filter(t => t.toLowerCase() !== 'no humans');
+    tags = tags.filter(t => !/\(original\)$/i.test(t));
+    return tags.join(', ');
+}
 
 /** Takes the PROMPT line out of the helper's answer (falls back to the whole text). */
 export function extractPrompt(out) {
@@ -130,15 +141,17 @@ export async function buildPrompt(settings, mode, mesId) {
     };
     const custom = settings.prompts?.[mode];
     const template = custom && /PROMPT:/.test(custom) ? custom : PROMPT_TEMPLATES[mode];
-    const out = await callHelper(settings, PROMPT_SYSTEM, fill(template, vars), 600);
+    const out = await callHelper(settings, PROMPT_SYSTEM, fill(template, vars), 800);
     log('image prompt draft', out);
-    return clampWords(extractPrompt(out), 130);
+    return clampWords(fixTags(extractPrompt(out)), 150);
 }
 
 /** Feral characters drift into humans on anime models: push that away explicitly. */
 export function negativeFor(prompt, base = '') {
     const extra = /\bferal\b/i.test(prompt) ? 'humanization, gijinka, anthro, humanoid, human face' : '';
-    return [base, extra].filter(Boolean).join(', ');
+    // The plain-English sentence at the end sometimes gets drawn as a caption.
+    const noText = /\btext\b/i.test(base) ? '' : 'text, english text, caption, subtitles, speech bubble, signature';
+    return [base, extra, noText].filter(Boolean).join(', ');
 }
 
 export async function generateImage(settings, prompt, mode, signal) {
