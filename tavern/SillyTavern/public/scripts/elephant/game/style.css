@@ -254,3 +254,4 @@ body.eg-sheet-open #eg-scrim { opacity: 1; pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) {
     .eg-die.eg-rolling, #eg-banner.eg-show, #eg-hud.eg-lowhp { animation: none; }
 }
+.eg-skill-hint { display: block; font-size: 11.5px; color: rgba(220, 214, 235, 0.55); margin-top: 2px; line-height: 1.3; }

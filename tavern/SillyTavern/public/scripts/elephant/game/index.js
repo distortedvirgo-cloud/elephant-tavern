@@ -207,6 +207,8 @@ const RISKY = [
     'взлом', 'вскры', 'лезу', 'карабк', 'прыга', 'прыгну', 'бегу', 'убега', 'сбега', 'плыв', 'вру', 'лгу', 'обман', 'блеф', 'убежда', 'уговар',
     'угрожа', 'запуга', 'соблаз', 'подкуп', 'торгу', 'обыск', 'ищу', 'осматрива', 'изуча', 'прислушив', 'выслежива', 'чиню', 'ломаю', 'выбива',
     'сопротивл', 'терплю', 'колду', 'заклин', 'целюсь', 'пытаюсь', 'попробую', 'осторожно', 'тихо', 'быстро',
+    'flirt', 'tempt', 'charm', 'refuse', 'see through', 'disguise', 'recognize', 'pretend', 'overpower', 'pin',
+    'флирт', 'очаров', 'не поддаюсь', 'отказыва', 'вижу насквозь', 'маскир', 'узнаю', 'притворя', 'прижимаю', 'одолеть', 'вырыва',
 ];
 
 function worthRefereeing(text) {
@@ -556,7 +558,7 @@ function openStateSheet(tab = 'hero') {
 function heroHtml(s) {
     const skills = Object.entries(E.SKILLS).map(([k, sk]) => `
         <div class="eg-skill-row">
-            <span>${sk.icon} ${sk.ru}</span>
+            <span>${sk.icon} ${sk.ru}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
             <span class="eg-dots">${pips(s.skills[k], 4, 'eg-dot')}</span>
             ${s.unspent > 0 && s.skills[k] < 4 ? `<button class="eg-plus" data-spend="${k}">+</button>` : ''}
         </div>`).join('');
@@ -639,11 +641,12 @@ function openSetup(editing = false) {
         const left = BUDGET - spent();
         $('#eg-setup .eg-sheet-body').html(`
             <h3 class="eg-title">🎲 ${editing ? 'Настройки игры' : 'Игровой режим'}</h3>
-            ${editing ? '' : '<p class="eg-muted">Броски, раны, стресс, часы угроз, цели и отношения с NPC. Движок считает, модель только рассказывает.</p>'}
+            ${editing ? '' : '<p class="eg-muted">Твой герой с навыками, ранами и целями; персонажи с отношениями; угрозы, которые растут. Движок считает, модель рассказывает.</p>'}
             <h4 class="eg-h">Навыки ${editing ? '' : `<small>осталось очков: ${left}</small>`}</h4>
+            <p class="eg-muted">Навыки — это ты в истории: мир и персонажи замечают их в каждом ответе, а кубики решают спорные моменты. 1 — обычный, 0 — слабое место, 3 — то, чем тебя запомнят.</p>
             ${Object.entries(E.SKILLS).map(([k, sk]) => `
                 <div class="eg-skill-row">
-                    <span>${sk.icon} ${sk.ru}</span>
+                    <span>${sk.icon} ${sk.ru}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
                     ${editing ? `<span class="eg-dots">${pips(draft.skills[k], 4, 'eg-dot')}</span>` : `
                     <button class="eg-step" data-k="${k}" data-d="-1" ${draft.skills[k] <= 0 ? 'disabled' : ''}>−</button>
                     <span class="eg-dots">${pips(draft.skills[k], 3, 'eg-dot')}</span>

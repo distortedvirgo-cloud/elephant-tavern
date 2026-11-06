@@ -17,6 +17,67 @@ export const SKILLS = {
     lore:    { ru: 'Знание',   icon: '📜', en: 'Lore' },
 };
 
+/*
+ * Living traits: skills shape every reply, not only dice. Level 1 is ordinary and stays silent;
+ * the narrator gets a line for every skill that stands out (0, 2, 3, 4).
+ * `hint` is what the setup screen tells the player.
+ */
+export const TRAITS = {
+    might: {
+        hint: 'сила тела: драки, тяжёлое, выносливость; мир видит, насколько ты крепкий',
+        0: 'physically weak and out of shape: heavy things, fights and long exertion go badly, and others see it',
+        2: 'strong: doors give, loads are easy, people think twice before shoving {{user}}',
+        3: 'powerfully built: an imposing body that others notice, size up and react to, wary or impressed',
+        4: 'exceptionally strong, almost frighteningly so: feats of strength come easily and people react with awe or fear',
+    },
+    finesse: {
+        hint: 'ловкость рук и тела: тихо, быстро, точно; руки, которые знают, что делают',
+        0: 'clumsy: things get dropped, noise gets made, quiet and delicate tasks go wrong',
+        2: 'quick and light on their feet: quiet, precise hands, easy balance',
+        3: 'nimble and deft: moves silently, hands are sure and skilled, in a fight or in bed',
+        4: 'uncannily graceful and precise: others notice how effortlessly {{user}} moves',
+    },
+    insight: {
+        hint: 'чутьё: замечать ложь, маски, скрытые чувства — рассказ покажет тебе подсказки',
+        0: 'misses subtle tells: lies, hidden motives and disguises that are not obvious slip past {{user}}, so the prose does not point them out',
+        2: 'sharp-eyed: when someone lies, hides something or wears a disguise, the prose lets {{user}} catch one small tell',
+        3: 'reads people: hidden intent, lies, disguises and unspoken feelings show through to {{user}} as clear tells in the prose',
+        4: 'sees through almost anything: no mask, lie or hidden mood stays hidden from {{user}} for long',
+    },
+    charm: {
+        hint: 'обаяние: как к тебе тянутся, насколько легко флиртовать, уговаривать и нравиться',
+        0: 'awkward company: people warm to {{user}} slowly, flirting and persuasion tend to land wrong',
+        2: 'likeable: people open up a little faster and enjoy {{user}}\'s company',
+        3: 'magnetic: characters find {{user}} attractive and easy to like; flirting lands, warmth comes quickly (within each character\'s nature)',
+        4: 'irresistible presence: even guarded or hostile characters feel the pull of {{user}}\'s charm, whether they like it or not',
+    },
+    resolve: {
+        hint: 'воля: страх, боль, соблазн, внушение и магия разума берут тебя меньше',
+        0: 'easily rattled: fear, pain, temptation and manipulation hit {{user}} hard and show',
+        2: 'steady nerves: pressure and fear get less grip on {{user}}',
+        3: 'iron will: intimidation, seduction used as a weapon and mind-affecting magic get little grip; characters notice that {{user}} does not bend easily',
+        4: 'unshakable: almost nothing can force {{user}}\'s mind or nerve',
+    },
+    lore: {
+        hint: 'знание: узнавать существ, магию, историю, лечить; рассказ подскажет, что ты знаешь',
+        0: 'knows little of this world: strange creatures, magic and customs stay strange to {{user}}',
+        2: 'well-read: the prose can let {{user}} recognize common creatures, magic and customs',
+        3: 'deeply learned: the prose can let {{user}} recognize rare creatures, spells, history and weaknesses',
+        4: 'a true scholar: {{user}} understands nearly anything uncanny that appears',
+    },
+};
+
+/** Narrator line about the player's standout traits ('' when everything is ordinary). */
+export function traitsBlock(state, userName = '{{user}}') {
+    const items = Object.keys(SKILLS).map((k) => {
+        const lvl = clamp(Number(state.skills?.[k] ?? 1), 0, 4);
+        const t = TRAITS[k]?.[lvl];
+        return t ? `${SKILLS[k].en}: ${t.replaceAll('{{user}}', userName)}` : '';
+    }).filter(Boolean);
+    if (!items.length) return '';
+    return `${userName}'s traits (let the world and the characters react to them in every reply, without naming them and without writing ${userName}'s actions):\n- ${items.join('\n- ')}`;
+}
+
 export const POSITIONS = {
     controlled: { ru: 'Под контролем', en: 'controlled', tick: 1, harm: 0 },
     risky:      { ru: 'Рискованно',    en: 'risky',      tick: 2, harm: 1 },
@@ -465,6 +526,8 @@ export function narratorBlock(state, { record = null, events = [], userName = '{
     if (progress.length) parts.push(`Progress: ${progress.join(', ')}`);
     lines.push(`STATE: ${parts.join(' · ')}`);
     if (goals.length) lines.push(`${userName}'s goals: ${goals.join('; ')}`);
+    const traits = traitsBlock(state, userName);
+    if (traits) lines.push(traits);
     const present = Object.values(state.npcs).filter(n => n.present);
     if (present.length) {
         lines.push('NPCs present (relationship tier gates closeness; dialogue colour): ' + present.slice(0, 5)
@@ -506,7 +569,7 @@ export function refereePrompt({ state, lastNarration, action, user, char }) {
 
 Skills: might (force, brawling, endurance, intimidation by force), finesse (stealth, agility, lockpicking, sleight of hand, shooting), insight (noticing, reading people, sensing lies, intuition), charm (persuasion, deception, seduction, haggling, performance), resolve (willpower, resisting fear/pain/temptation/magic), lore (knowledge, medicine, magic, tech, investigation).
 
-A check is needed ONLY when the outcome is genuinely uncertain AND both success and failure would be interesting: attacks, sneaking, lying, persuading someone unwilling, dangerous climbing, picking locks, resisting. NO check for: ordinary talk, questions, looking around, walking, routine tasks, emotional moments, consensual intimacy, anything trivial or impossible.
+A check is needed ONLY when the outcome is genuinely uncertain AND both success and failure would be interesting: attacks, sneaking, lying, persuading someone unwilling, dangerous climbing, picking locks; also the social and intimate contests that drive this kind of story: seducing or charming someone reluctant, guarded or hostile (charm); resisting seduction used as a weapon, fear, pain, a supernatural pull, feeding or mind-affecting magic (resolve); seeing through a lie, an act or a disguise when ${user} looks for it or something is at stake (insight); recognizing a creature, spell or weakness (lore); keeping up, holding out or overpowering in a physical contest (might/finesse). NO check for: ordinary talk, questions, looking around, walking, routine tasks, emotional moments, willing intimacy between people who both want it, anything trivial or impossible.
 
 Game state:
 ${stateSummary(state)}
