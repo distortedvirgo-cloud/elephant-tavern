@@ -497,8 +497,8 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
         : enc.options.map((o, i) => {
             const set = X.optionSetup(st, o);
             const pct = Math.round(set.odds.atLeastSuccess * 100);
-            return `<button class="eg-ecard eg-ek-${o.kind}${o.ru.length > 24 ? ' eg-wide' : ''}" data-opt="${i}">
-                <b class="eg-elabel">${escapeHtml(o.ru)}</b>
+            return `<button class="eg-ecard eg-ek-${o.kind}${o.say ? ' eg-say' : ''}${o.ru.length > 24 ? ' eg-wide' : ''}" data-opt="${i}">
+                <b class="eg-elabel">${o.say ? '💬 ' : ''}${escapeHtml(o.ru)}</b>
                 ${o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
                 <small>${E.SKILLS[o.skill]?.icon || ''} ${pct}%${set.locked ? ' · 🔒 рано' : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
             </button>`;

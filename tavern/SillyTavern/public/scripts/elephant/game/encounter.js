@@ -146,7 +146,7 @@ export function cleanOptions(list, kind = 'nsfw') {
     const kinds = kind === 'nsfw' ? KINDS_NSFW : KINDS_COMBAT;
     return (Array.isArray(list) ? list : []).slice(0, 4).map((o, i) => ({
         id: `o${i}`,
-        ru: trimLabel(o?.ru || o?.en || '…'),
+        ru: trimLabel(o?.ru || o?.en || '…', (o?.say || /^[«"„]/.test(String(o?.ru || '').trim())) ? 46 : 32),
         risk_ru: String(o?.risk_ru || '').replace(/\s+/g, ' ').trim().slice(0, 24),
         en: String(o?.en || o?.ru || '').slice(0, 240),
         skill: E.SKILLS[o?.skill] ? o.skill : (kind === 'nsfw' ? 'passion' : 'might'),
@@ -156,6 +156,7 @@ export function cleanOptions(list, kind = 'nsfw') {
         stage: clamp(Math.round(Number(o?.stage) || 0), 0, E.STAGES.length - 1),
         limit: Boolean(o?.limit),
         item: String(o?.item || '').slice(0, 40),
+        say: Boolean(o?.say) || /^[«"„]/.test(String(o?.ru || '').trim()),
     })).filter(o => o.en);
 }
 
@@ -579,24 +580,26 @@ ${optionsRules(nsfw, user)}`;
 
 function optionsSchema(nsfw) {
     return `"intent":{"ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
-"options":[{"ru":"действие по-русски, 2-5 слов, не длиннее 28 символов","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*first-person action in English, 1 sentence*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
+"options":[{"say":bool,"ru":"действие по-русски, 2-5 слов, не длиннее 28 символов; для реплики — сама фраза в «ёлочках», до 6 слов","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*first-person action in English, 1 sentence*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
 }
 
 function optionsRules(nsfw, user, recent = []) {
     const avoid = recent.length ? `\nDo NOT repeat or paraphrase these recent cards (verbs, actions, body parts): ${recent.join('; ')}.` : '';
-    const lang = `\nLabels ("ru"): Russian, 2-5 words, at most 28 characters, a concrete verb phrase ("Укусить за мочку", "Поднять на стол"), never a full sentence. "risk_ru": 1-3 words about the gamble or the payoff ("рискованно", "может понравиться", "она может отказать", "надёжно"), different on each card.`;
+    const lang = `\nLabels ("ru"): Russian, 2-5 words, at most 28 characters, a concrete verb phrase ("Укусить за мочку", "Поднять на стол"); spoken cards are the phrase itself in «ёлочках». "risk_ru": 1-3 words about the gamble or the payoff ("рискованно", "может понравиться", "она может отказать", "надёжно"), different on each card.`;
     return (nsfw
         ? `Options: exactly 4 cards that are genuinely DIFFERENT from each other, each grounded in a specific detail of the latest narration (her body, her clothes, the place, a prop, ${user}'s inventory, what she just said or did). Required mix:
 1. TENDER or sensual (power 1-2): slow, attentive, a touch or a kiss placed somewhere specific.
 2. BOLD (power 3): the high-risk move that can ruin the mood or blow her away.
 3. SITUATION-CHANGER: a new position, a new place, removing or moving clothing, using the room or an item ${user} carries, a game, a tease, a bit of roleplay, a dare.
-4. VERBAL or TACTICAL: a tease, a command, a whispered confession, holding back, or turning her telegraphed move (kind redirect or resist).
+4. VERBAL or TACTICAL: holding back, or turning her telegraphed move (kind redirect or resist).
+SPOKEN LINES: one or two of the four cards are things ${user} SAYS, not does (say: true): a tease, a compliment, a command, a confession, a dirty promise, a question that makes her blush, a challenge; in his own voice, fitting the moment and the variation. For these, ru = the phrase itself in Russian in «ёлочках», at most 6 words ("«Ты дрожишь. Мне нравится»"), and en = *the exact words in quotes, plus at most a short tag* (e.g. "I lean in. \"You're shaking. I like that.\""); skill charm (or passion for dirty talk, insight for a question that reads her). A spoken card can be any of the four styles.
 Rotate which style leads from round to round; do not repeat the pattern of the previous round. Follow the variation: duel = every card fights for control (pin, steal the initiative, make her break first); her_lead = obey / please / defy with real stakes (defy can win her over or cost ${user}); your_lead = ${user} leads with care, reads her, asks, builds trust; bold cards risk her trust. ${user}'s skill passion = technique, charm = words, finesse = precise hands, resolve = holding out, insight = reading her. power 1 = light, 3 = intense. stage = the ladder step the act belongs to; never offer acts more than one step above "ready now". limit: true only if it touches one of her limits. The intent is her next move toward ${user}, building from the narration.`
         : `Options: exactly 4 cards, each specific to the opponent's telegraphed move and to the surroundings in the latest narration:
 1. ATTACK (name the strike and the target).
 2. DEFEND or EVADE aimed at the telegraphed move.
 3. ENVIRONMENT TRICK: use a named object, terrain, light, crowd or a hazard from the narration.
-4. WILDCARD: a bold gamble (power 3), or talk, or an item ${user} carries.
+4. WILDCARD: a bold gamble (power 3), or an item ${user} carries.
+SPOKEN LINES: one of the four cards (two in a standoff) is something ${user} SAYS (say: true): a taunt, a threat, a bluff, a bargain, a calm word, kind talk; ru = the phrase in Russian in «ёлочках», at most 6 words; en = *the exact words in quotes, plus at most a short tag*; skill charm (bluff, persuade), resolve (calm, threat) or insight.
 Do not offer two cards of the same kind. The intent is the opponent's next move, telegraphed so ${user} can react.`) + lang + avoid;
 }
 
