@@ -95,6 +95,8 @@ export function startEncounter(state, opts = {}) {
         partner: npc?.name || partner,
         title_ru: String(opts.title_ru || '').slice(0, 60) || `${v.ru}${v.kind === 'nsfw' ? ` с ${npc?.name || partner}` : `: ${partner}`}`,
         role: opts.role === 'fleeing' ? 'fleeing' : 'chaser',
+        forced: Boolean(opts.forced),
+        escape: 0,
         power,
         round: 0,
         startTurn: s.turn,
@@ -272,6 +274,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
                 break;
             }
             case 'defy': {
+                if (enc.forced && mult >= 1) { enc.escape += 1; notes.push({ kind: 'enc_escape', n: enc.escape }); }
                 if (v === 'her_lead') B.approval = clamp(B.approval + (mult >= 1 ? 6 : -15), 0, 100);
                 if (mult >= 1) intentLands = false;
                 B.her = clamp(B.her + Math.round(gain * 0.8), 0, 100);
@@ -332,7 +335,8 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         if (youPeakNow && enc.log.at(-1)?.herPeak) enc.together = true;
 
         // how it ends
-        if (v === 'duet') {
+        if (enc.forced && enc.escape >= 2) enc.status = 'fled';
+        else if (v === 'duet') {
             if (youPeakNow) enc.status = enc.herPeaks ? 'won' : 'early';
         } else if (v === 'duel') {
             if (herPeakNow && !youPeakNow) enc.status = 'won';
@@ -509,6 +513,7 @@ export function encounterBlock(state, userName = '{{user}}') {
         if (enc.status === 'active') lines.push(`ENCOUNTER in progress: ${v.en} with ${enc.partner}. Keep replies to one short beat (80-130 words).`);
         return lines.join('\n');
     }
+    if (enc.forced && enc.kind === 'nsfw') lines.push(`${enc.partner} started this without asking: she is taking ${u}, and he may struggle against it or give in.`);
     lines.push(`ENCOUNTER — ${v.en}${enc.kind === 'nsfw' ? ` with ${enc.partner}` : ` against ${enc.partner}`}, round ${r.round}. Write ONE short beat for this round only: 80-130 words, vivid, in the scene's voice. Never mention numbers, bars, rounds or dice.`);
     const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/^\*|\*$/g, '')}")`;
     if (r.refused) lines.push(`THIS ROUND: ${act} — ${enc.partner} stops it or turns it down: ${enc.kind === 'nsfw' ? 'not that, not now; in character, the mood dips but she stays in the scene' : 'it fails'}.`);
@@ -538,7 +543,7 @@ export function encounterBlock(state, userName = '{{user}}') {
             early: `${u} came before her. Last beat of the scene: she reacts in character (teasing, amused, a little frustrated, or kind), afterglow.`,
             lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? `${enc.partner} stops the scene: it went too far for her. Last beat: she pulls back, in character.` : `${enc.partner} wins this one. Last beat: she savours her victory, in character.`) : `${u} loses this ${v.en.replace(/^a /, '')}: the worst plausible outcome lands. Last beat of the encounter.`,
             draw: 'They break together. Last beat of the scene, then the afterglow.',
-            fled: `${u} gets away. Last beat of the encounter.`,
+            fled: enc.kind === 'nsfw' ? `${u} breaks free and stops it. Last beat: ${enc.partner} reacts in character (amused, offended, hungry for a next time, or backing off).` : `${u} gets away. Last beat of the encounter.`,
             ended: 'This is the last beat of the encounter: wind it down.',
         }[enc.status];
         lines.push(end);
@@ -556,12 +561,12 @@ function partnerSheet(state, enc) {
     return `${E.npcLine(n, '{{user}}', state)}\nIntimacy ladder (0-8): ${E.STAGES.map((s, i) => `${i}=${s.id}`).join(', ')}. Ready now up to: ${r.ready}.${n.limits.length ? `\nHer limits: ${n.limits.join(', ')}` : ''}`;
 }
 
-export function startPrompt({ state, kind, partner, narration, card, user, char }) {
+export function startPrompt({ state, kind, partner, narration, card, user, char, forced = false }) {
     const nsfw = kind === 'nsfw';
     return `An ${nsfw ? 'intimate scene' : 'action encounter'} is starting in an interactive story. Set it up as a mini-game.
 
 ${nsfw ? `Variations: duet (mutual lovemaking, both move toward the peak together — the default), duel (a playful or real contest of pleasure: whoever comes first loses — for succubi, rivals, bets, competitive or predatory characters), her_lead (she is dominant and in charge: ${user} must please her and hold out until she allows), your_lead (she is submissive or asks ${user} to take charge; ${user} leads, her trust must hold).` : `Variations: fight (a physical fight), chase (someone runs, someone pursues), standoff (a tense confrontation of nerves, threats or words).`}
-Pick the variation that fits the character and the moment.
+Pick the variation that fits the character and the moment.${forced ? ` She is taking ${user} without asking: pick her_lead or duel, and make one of the four cards a way to break free or push her off (kind defy).` : ''}
 
 Character card (${char}):
 ${String(card || '').slice(0, 1800)}
@@ -617,7 +622,7 @@ ${String(narration || '').slice(-1600)}
 </narration>
 
 Reply with ONE line of JSON: {${optionsSchema(nsfw)}}
-${optionsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru))}`;
+${optionsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru))}${enc.forced && nsfw ? `\nShe started this without asking: one of the four cards is always a way to break free or push her off (kind defy)${enc.escape ? ' — he already got partly free once' : ''}.` : ''}`;
 }
 
 export function classifyPrompt({ state, action, narration, user }) {

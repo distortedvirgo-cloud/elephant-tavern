@@ -292,7 +292,12 @@ async function onReply(mesId) {
 
     if (finished) { renderEnc(null); showEncResult(finished); }
     else if (state.enc) nextEncCards(mesId, msg.mes);
-    else { renderEnc(null); if (report?.encounter?.kind) offerEncounter(report.encounter, mesId); }
+    else {
+        renderEnc(null);
+        const sug = report?.encounter;
+        if (sug?.kind === 'nsfw' && sug.by === 'char' && sug.forced) startEncounterFlow('nsfw', sug.partner, null, { forced: true });
+        else if (sug?.kind) offerEncounter(sug, mesId);
+    }
     if (!state.enc) maybeOfferQuest(mesId);
     maybeSchedule(mesId);
 
@@ -390,14 +395,17 @@ function offerEncounter(sug, mesId) {
     encSuggestion = { ...sug, mesId };
     ensureEncDom();
     const nsfw = sug.kind === 'nsfw';
-    $('#eg-enc-chip').html(`<button class="eg-enc-chip" data-act="enc-start">${nsfw ? '💗' : '⚔️'} ${nsfw ? `Сцена близости${sug.partner ? ` с ${escapeHtml(sug.partner)}` : ''}` : `Бой${sug.partner ? `: ${escapeHtml(sug.partner)}` : ''}`} <small>играть по раундам</small></button><button class="eg-enc-chip-x" data-act="enc-dismiss">✕</button>`).addClass('eg-show');
+    const proposed = nsfw && sug.by === 'char';
+    $('#eg-enc-chip').html(proposed
+        ? `<button class="eg-enc-chip" data-act="enc-start">💗 ${escapeHtml(sug.partner || 'Она')} предлагает… <small>согласиться — сцена по раундам</small></button><button class="eg-enc-chip-x eg-decline" data-act="enc-decline">Отказать</button>`
+        : `<button class="eg-enc-chip" data-act="enc-start">${nsfw ? '💗' : '⚔️'} ${nsfw ? `Сцена близости${sug.partner ? ` с ${escapeHtml(sug.partner)}` : ''}` : `Бой${sug.partner ? `: ${escapeHtml(sug.partner)}` : ''}`} <small>играть по раундам</small></button><button class="eg-enc-chip-x" data-act="enc-dismiss">✕</button>`).addClass('eg-show');
     if (S().juice) haptic('tick');
 }
 
 function clearEncChip() { $('#eg-enc-chip').removeClass('eg-show').empty(); encSuggestion = null; }
 
 /** Sets up an encounter: the helper picks the variation, her hidden tastes and the first cards. */
-async function startEncounterFlow(kind, partner, variant = null) {
+async function startEncounterFlow(kind, partner, variant = null, { forced = false } = {}) {
     const c = ctx();
     const ss = stageSettings();
     const chat = c.chat ?? [];
@@ -412,7 +420,7 @@ async function startEncounterFlow(kind, partner, variant = null) {
     if (hasHelper(ss)) {
         try {
             const ch = currentCharacter();
-            const out = await callHelper(ss, 'You set up a mini-game inside a story. Output only JSON.', X.startPrompt({ state: st, kind, partner: who, narration: chat[idx]?.mes || '', card: `${ch?.description || ''}\n${ch?.personality || ''}`, user: c.name1, char: c.name2 }), 1400, { json: true });
+            const out = await callHelper(ss, 'You set up a mini-game inside a story. Output only JSON.', X.startPrompt({ state: st, kind, partner: who, narration: chat[idx]?.mes || '', card: `${ch?.description || ''}\n${ch?.personality || ''}`, user: c.name1, char: c.name2, forced }), 1400, { json: true });
             setup = E.parseJsonLine(out) || {};
         } catch (e) { log('encounter setup failed', e); }
     }
@@ -422,7 +430,7 @@ async function startEncounterFlow(kind, partner, variant = null) {
         kind,
         variant: variant || (vs.includes(setup.variant) ? setup.variant : vs[0]),
         partner: setup.partner || who,
-        power: setup.power, role: setup.role, prefs: setup.prefs, title_ru: setup.title_ru,
+        power: setup.power, role: setup.role, prefs: setup.prefs, title_ru: setup.title_ru, forced,
         intent: setup.intent, options: setup.options,
     });
     writeSnapshot(idx, { state: next });
@@ -431,7 +439,7 @@ async function startEncounterFlow(kind, partner, variant = null) {
     renderEnc(next);
     if (!next.enc.options.length) nextEncCards(idx, chat[idx]?.mes || '');
     const v = X.VARIANTS[next.enc.variant];
-    banner(`${v.icon} ${v.ru}`, 'gold');
+    banner(forced ? `${v.icon} Она не спрашивает` : `${v.icon} ${v.ru}`, forced ? 'bad' : 'gold');
 }
 
 async function endEncounter() {
@@ -450,7 +458,12 @@ function ensureEncDom() {
     if (document.getElementById('eg-enc')) return;
     $('#form_sheld').prepend('<div id="eg-enc-chip"></div><section id="eg-enc" aria-live="polite"></section>');
     $('#eg-enc-chip').on('click', '[data-act="enc-start"]', () => { const s0 = encSuggestion; if (s0) startEncounterFlow(s0.kind, s0.partner); })
-        .on('click', '[data-act="enc-dismiss"]', clearEncChip);
+        .on('click', '[data-act="enc-dismiss"]', clearEncChip)
+        .on('click', '[data-act="enc-decline"]', () => {
+            clearEncChip();
+            const $ta = $('#send_textarea');
+            if (!$ta.val()) $ta.val('*I gently stop her.* "Not tonight."').trigger('input').trigger('focus');
+        });
     $('#eg-enc').on('click', '[data-act="enc-end"]', endEncounter)
         .on('click', '[data-act="enc-min"]', () => { $('#eg-enc').toggleClass('eg-min'); haptic('tick'); })
         .on('click', '[data-opt]', function () { playCard(Number(this.dataset.opt)); })
@@ -510,6 +523,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
             <button class="eg-enc-x" data-act="enc-end" aria-label="Закончить">✕</button>
         </div>
         <div class="eg-ebars">${bars}</div>
+        ${enc.forced ? `<div class="eg-forced">⚠️ ${escapeHtml(enc.partner)} не спрашивает${enc.escape ? ' · ты почти вырвался' : ' · вырваться: 2 удачных рывка'}</div>` : ''}
         ${enc.intent && !loading ? `<div class="eg-intent">${enc.kind === 'nsfw' ? '💭' : '⚠️'} <b>${escapeHtml(enc.partner)}:</b> ${escapeHtml(enc.intent.ru)}</div>` : ''}
         <div class="eg-ecards">${cards}</div>
         ${waiting ? '' : '<div class="eg-enc-foot">или напиши своё действие — кубик бросится сам</div>'}`).addClass('eg-show');
@@ -552,7 +566,7 @@ function showEncResult(enc) {
     const r = enc.result || {};
     const head = {
         won: enc.kind === 'nsfw' ? (enc.variant === 'duel' ? 'Победа!' : enc.variant === 'her_lead' ? 'Она довольна' : 'Блаженство') : enc.variant === 'chase' ? (enc.role === 'chaser' ? 'Догнал!' : 'Оторвался!') : 'Победа!',
-        early: 'Слишком рано…', lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? 'Она остановила сцену' : 'Она победила') : 'Поражение', draw: 'Вместе!', fled: 'Удалось уйти', ended: 'Сцена окончена',
+        early: 'Слишком рано…', lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? 'Она остановила сцену' : 'Она победила') : 'Поражение', draw: 'Вместе!', fled: enc.kind === 'nsfw' ? 'Ты вырвался' : 'Удалось уйти', ended: 'Сцена окончена',
     }[enc.status] || 'Конец';
     const stars = enc.kind === 'nsfw' ? `<div class="eg-stars">${[0, 1, 2].map(i => `<span class="${i < r.stars ? 'on' : ''}">★</span>`).join('')}</div>` : '';
     const found = enc.found?.length ? `<div class="eg-chips">${enc.found.map(f => `<span class="eg-chip ${f.kind === 'dislike' ? 'eg-chip-limit' : f.kind === 'spot' ? 'eg-chip-spot' : 'eg-chip-like'}">${f.kind === 'spot' ? '✨' : f.kind === 'like' ? '💗' : '👎'} ${escapeHtml(X.TAGS[f.tag])}</span>`).join('')}</div>` : '';
@@ -931,6 +945,7 @@ function showNotes(notes = []) {
             case 'enc_peak': out.push({ text: `💦 ${n.name}: пик${n.n > 1 ? ` ×${n.n}` : ''}!`, tone: 'gold' }); break;
             case 'enc_you_peak': out.push({ text: '🔥 Ты не сдержался', tone: 'warn' }); break;
             case 'enc_limit': out.push({ text: `🚫 ${n.name}: это — нет`, tone: 'bad' }); break;
+            case 'enc_escape': out.push({ text: n.n >= 2 ? '🏃 Ты вырвался!' : '💪 Почти вырвался', tone: 'warn' }); break;
             case 'orgasm': out.push({ text: `💦 ${n.name}: оргазм${n.n > 1 ? ` ×${n.n}` : ''}`, tone: 'gold' }); break;
             case 'lust': if (n.delta >= 20) out.push({ text: `🔥 ${n.name} возбуждается`, tone: 'info' }); break;
             case 'like': out.push({ text: `💗 ${n.name} любит: ${n.text}`, tone: 'info' }); break;
