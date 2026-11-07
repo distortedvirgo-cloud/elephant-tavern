@@ -379,6 +379,7 @@ async function nextEncCards(mesId, narration) {
         const st = stateAt(mesId);
         if (!st.enc) return;
         st.enc.intent = X.cleanIntent(j?.intent) ?? st.enc.intent;
+        if (j?.pose_ru) st.enc.pose = String(j.pose_ru).slice(0, 60);
         st.enc.options = X.cleanOptions(j?.options, st.enc.kind);
         writeSnapshot(mesId, { state: st });
         await ctx().saveChat();
@@ -430,7 +431,7 @@ async function startEncounterFlow(kind, partner, variant = null, { forced = fals
         kind,
         variant: variant || (vs.includes(setup.variant) ? setup.variant : vs[0]),
         partner: setup.partner || who,
-        power: setup.power, role: setup.role, prefs: setup.prefs, title_ru: setup.title_ru, forced,
+        power: setup.power, role: setup.role, prefs: setup.prefs, title_ru: setup.title_ru, forced, pose_ru: setup.pose_ru,
         intent: setup.intent, options: setup.options,
     });
     writeSnapshot(idx, { state: next });
@@ -523,6 +524,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
             <button class="eg-enc-x" data-act="enc-end" aria-label="Закончить">✕</button>
         </div>
         <div class="eg-ebars">${bars}</div>
+        ${enc.pose ? `<div class="eg-pose">${enc.kind === 'nsfw' ? '🌀' : '📍'} ${escapeHtml(enc.pose)}</div>` : ''}
         ${enc.forced ? `<div class="eg-forced">⚠️ ${escapeHtml(enc.partner)} не спрашивает${enc.escape ? ' · ты почти вырвался' : ' · вырваться: 2 удачных рывка'}</div>` : ''}
         ${enc.intent && !loading ? `<div class="eg-intent">${enc.kind === 'nsfw' ? '💭' : '⚠️'} <b>${escapeHtml(enc.partner)}:</b> ${escapeHtml(enc.intent.ru)}</div>` : ''}
         <div class="eg-ecards">${cards}</div>

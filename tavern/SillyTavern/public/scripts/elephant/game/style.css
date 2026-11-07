@@ -450,3 +450,4 @@ body.eg-in-enc #ec-ideas { display: none !important; }
 .eg-ecard.eg-say .eg-elabel { font-style: italic; }
 .eg-forced { font-size: 12px; margin: 0 0 6px; padding: 5px 10px; border-radius: 10px; color: #ffb0a0; background: rgba(255, 80, 60, 0.1); border: 1px solid rgba(255, 90, 70, 0.3); }
 .eg-decline { font-size: 12.5px; white-space: nowrap; }
+.eg-pose { font-size: 12.5px; margin: 0 0 6px; color: rgba(255, 215, 235, 0.9); }

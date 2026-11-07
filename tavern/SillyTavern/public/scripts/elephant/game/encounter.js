@@ -106,6 +106,7 @@ export function startEncounter(state, opts = {}) {
         together: false,
         lastTag: null,
         found: [],
+        pose: String(opts.pose_ru || '').slice(0, 60),
         intent: cleanIntent(opts.intent),
         options: cleanOptions(opts.options, v.kind),
         status: 'active',
@@ -584,7 +585,7 @@ ${optionsRules(nsfw, user)}`;
 }
 
 function optionsSchema(nsfw) {
-    return `"intent":{"ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
+    return `"pose_ru":"${nsfw ? 'текущая поза и действие прямо сейчас, 3-7 слов, например «Она сверху, медленно двигается» или «Прижата к стене, его рука под юбкой»' : 'положение сейчас, 3-7 слов, например «Сцепились у стойки»'}","intent":{"ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
 "options":[{"say":bool,"ru":"действие по-русски, 2-5 слов, не длиннее 28 символов; для реплики — сама фраза в «ёлочках», до 6 слов","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*first-person action in English, 1 sentence*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
 }
 
