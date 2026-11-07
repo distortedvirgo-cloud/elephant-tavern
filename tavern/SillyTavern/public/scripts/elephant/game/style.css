@@ -305,3 +305,53 @@ body.eg-sheet-open #eg-scrim { opacity: 1; pointer-events: auto; }
 .eg-card-edit { margin-top: 8px; width: 100%; }
 .eg-badge-bond { color: #ffb3d1; border-color: rgba(255, 110, 170, 0.35) !important; }
 @media (prefers-reduced-motion: reduce) { .eg-hot .eg-cbar-track i { animation: none; } }
+
+/* ---------------------------------------------------------------- levels, ranks, perks */
+.eg-rank { font-style: normal; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; margin-left: 4px; vertical-align: 1px; background: rgba(255, 255, 255, 0.06); color: rgba(230, 224, 245, 0.75); white-space: nowrap; }
+.eg-rank-0 { color: #ff9a8a; background: rgba(255, 90, 70, 0.12); }
+.eg-rank-3 { color: #9fe3b8; background: rgba(90, 210, 140, 0.12); }
+.eg-rank-4 { color: #8fd0ff; background: rgba(80, 160, 255, 0.14); }
+.eg-rank-5 { color: #d6a8ff; background: rgba(170, 100, 255, 0.16); }
+.eg-rank-6, .eg-rank-adv { color: #ffe08a; background: rgba(255, 200, 80, 0.16); }
+.eg-gold { color: #ffe08a !important; }
+.eg-perks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0 4px; }
+.eg-perk { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 9px 10px; border-radius: 14px; font: inherit; color: inherit; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.09); cursor: pointer; }
+.eg-perk b { font-size: 13px; }
+.eg-perk small { font-size: 11.5px; color: rgba(220, 214, 235, 0.65); line-height: 1.3; }
+.eg-perk:active { transform: scale(0.98); }
+.eg-perk-own { cursor: default; border-color: rgba(255, 200, 80, 0.4); background: rgba(255, 200, 80, 0.08); }
+button.eg-perk { border-style: dashed; }
+.eg-badge-perk { color: #ffe08a; border-color: rgba(255, 200, 80, 0.4) !important; }
+.eg-die-drop { opacity: 0.35; transform: scale(0.85); }
+
+/* ---------------------------------------------------------------- intimacy ladder & counters */
+.eg-ladder { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; margin: 8px 0 6px; position: relative; }
+.eg-st { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.eg-st span { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); }
+.eg-st small { font-size: 10px; line-height: 1.15; text-align: center; color: rgba(220, 214, 235, 0.55); white-space: nowrap; }
+.eg-st-done span { background: linear-gradient(135deg, rgba(255, 90, 150, 0.45), rgba(180, 90, 255, 0.35)); border-color: rgba(255, 140, 190, 0.7); box-shadow: 0 0 10px rgba(255, 90, 150, 0.35); }
+.eg-st-done small { color: #ffc2dc; }
+.eg-st-open span { border: 1px dashed rgba(255, 150, 200, 0.75); animation: eg-open 2.2s ease-in-out infinite; }
+.eg-st-open small { color: rgba(255, 200, 225, 0.85); }
+.eg-st-lock { opacity: 0.45; }
+@keyframes eg-open { 50% { box-shadow: 0 0 12px rgba(255, 120, 180, 0.45); } }
+.eg-ladder-hint { font-size: 12.5px; line-height: 1.4; color: rgba(235, 228, 248, 0.8); margin: 4px 0 2px; }
+.eg-bigstats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0 6px; }
+.eg-bigstats > div { display: flex; flex-direction: column; align-items: center; padding: 8px 4px; border-radius: 14px; background: rgba(255, 90, 150, 0.07); border: 1px solid rgba(255, 110, 170, 0.18); }
+.eg-bigstats b { font-size: 20px; font-variant-numeric: tabular-nums; color: #ffc2dc; }
+.eg-bigstats b i { font-style: normal; opacity: 0.5; margin: 0 1px; }
+.eg-bigstats small { font-size: 10px; text-align: center; color: rgba(220, 214, 235, 0.65); }
+.eg-last { font-size: 13px; margin: 4px 0 2px; color: rgba(240, 236, 250, 0.85); }
+.eg-acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 6px 0; }
+.eg-act { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 4px; border-radius: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); opacity: 0.5; }
+.eg-act span { font-size: 20px; }
+.eg-act b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.eg-act em { font-style: normal; font-size: 11px; text-align: center; line-height: 1.2; }
+.eg-act small { font-size: 9.5px; color: rgba(220, 214, 235, 0.55); }
+.eg-act.eg-got { opacity: 1; border-color: rgba(255, 120, 170, 0.4); background: rgba(255, 90, 150, 0.09); }
+.eg-tl { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; border-left: 2px solid rgba(255, 120, 170, 0.3); padding-left: 10px; }
+.eg-tl-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.eg-tl-row > span { font-size: 16px; }
+.eg-tl-row b { font-size: 13px; display: block; }
+.eg-tl-row small { font-size: 11px; color: rgba(220, 214, 235, 0.6); }
+@media (prefers-reduced-motion: reduce) { .eg-st-open span { animation: none; } }

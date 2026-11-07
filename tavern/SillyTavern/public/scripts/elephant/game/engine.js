@@ -15,11 +15,17 @@ export const SKILLS = {
     charm:   { ru: 'Обаяние',  icon: '🎭', en: 'Charm' },
     resolve: { ru: 'Воля',     icon: '🔥', en: 'Resolve' },
     lore:    { ru: 'Знание',   icon: '📜', en: 'Lore' },
+    passion: { ru: 'Страсть',  icon: '💋', en: 'Passion' },
 };
+
+export const SKILL_MAX = 6;
+export const START_MAX = 3;
+/** Rank names for skill values 0..6. */
+export const RANKS = ['Слабое место', 'Обычный', 'Умелый', 'Опытный', 'Мастер', 'Виртуоз', 'Легенда'];
 
 /*
  * Living traits: skills shape every reply, not only dice. Level 1 is ordinary and stays silent;
- * the narrator gets a line for every skill that stands out (0, 2, 3, 4).
+ * the narrator gets a line for every skill that stands out (0, 2..6).
  * `hint` is what the setup screen tells the player.
  */
 export const TRAITS = {
@@ -29,6 +35,8 @@ export const TRAITS = {
         2: 'strong: doors give, loads are easy, people think twice before shoving {{user}}',
         3: 'powerfully built: an imposing body that others notice, size up and react to, wary or impressed',
         4: 'exceptionally strong, almost frighteningly so: feats of strength come easily and people react with awe or fear',
+        5: 'superhuman strength: walls, chains and doors give way; fights against ordinary foes are over fast; people stare',
+        6: 'legendary strength, the stuff of stories: monsters and armies hesitate to face {{user}}',
     },
     finesse: {
         hint: 'ловкость рук и тела: тихо, быстро, точно; руки, которые знают, что делают',
@@ -36,6 +44,8 @@ export const TRAITS = {
         2: 'quick and light on their feet: quiet, precise hands, easy balance',
         3: 'nimble and deft: moves silently, hands are sure and skilled, in a fight or in bed',
         4: 'uncannily graceful and precise: others notice how effortlessly {{user}} moves',
+        5: 'a virtuoso of hands and body: impossible locks, silent as a shadow, hands that play bodies like instruments',
+        6: 'legendary grace: {{user}} moves like a rumour; nothing is locked, nothing is noticed',
     },
     insight: {
         hint: 'чутьё: замечать ложь, маски, скрытые чувства — рассказ покажет тебе подсказки',
@@ -43,6 +53,8 @@ export const TRAITS = {
         2: 'sharp-eyed: when someone lies, hides something or wears a disguise, the prose lets {{user}} catch one small tell',
         3: 'reads people: hidden intent, lies, disguises and unspoken feelings show through to {{user}} as clear tells in the prose',
         4: 'sees through almost anything: no mask, lie or hidden mood stays hidden from {{user}} for long',
+        5: 'reads minds by their faces: every lie, mask and secret want shows to {{user}} at a glance',
+        6: 'nothing stays hidden: even magic disguises and perfect liars give themselves away to {{user}}',
     },
     charm: {
         hint: 'обаяние: как к тебе тянутся, насколько легко флиртовать, уговаривать и нравиться',
@@ -50,6 +62,8 @@ export const TRAITS = {
         2: 'likeable: people open up a little faster and enjoy {{user}}\'s company',
         3: 'magnetic: characters find {{user}} attractive and easy to like; flirting lands, warmth comes quickly (within each character\'s nature)',
         4: 'irresistible presence: even guarded or hostile characters feel the pull of {{user}}\'s charm, whether they like it or not',
+        5: 'devastating charisma: rooms turn toward {{user}}, enemies hesitate, hearts open quickly',
+        6: 'legendary allure: people fall for {{user}} almost against their nature (still within it)',
     },
     resolve: {
         hint: 'воля: страх, боль, соблазн, внушение и магия разума берут тебя меньше',
@@ -57,6 +71,8 @@ export const TRAITS = {
         2: 'steady nerves: pressure and fear get less grip on {{user}}',
         3: 'iron will: intimidation, seduction used as a weapon and mind-affecting magic get little grip; characters notice that {{user}} does not bend easily',
         4: 'unshakable: almost nothing can force {{user}}\'s mind or nerve',
+        5: 'will like a fortress: fear, pain and mind magic slide off; {{user}}\'s calm steadies others',
+        6: 'unbreakable soul: nothing in this world can bend {{user}}\'s will',
     },
     lore: {
         hint: 'знание: узнавать существ, магию, историю, лечить; рассказ подскажет, что ты знаешь',
@@ -64,13 +80,24 @@ export const TRAITS = {
         2: 'well-read: the prose can let {{user}} recognize common creatures, magic and customs',
         3: 'deeply learned: the prose can let {{user}} recognize rare creatures, spells, history and weaknesses',
         4: 'a true scholar: {{user}} understands nearly anything uncanny that appears',
+        5: 'a master of secrets: {{user}} knows the true names, weaknesses and history of almost everything',
+        6: 'living archive: the prose can let {{user}} know what even the wise have forgotten',
+    },
+    passion: {
+        hint: 'страсть: каково с тобой в постели, как ты чувствуешь тело партнёра; близость идёт быстрее',
+        0: 'inexperienced and clumsy in intimacy: {{user}} fumbles, misreads bodies, partners stay patient or tease',
+        2: 'a good lover: attentive hands and mouth, partners respond warmly',
+        3: 'a skilled lover: {{user}} reads a partner\'s body and finds what works; partners come apart faster',
+        4: 'an exceptional lover: partners lose composure quickly with {{user}} and want more afterwards',
+        5: 'a virtuoso lover: one touch from {{user}} makes partners weak; they think about it for days',
+        6: 'legendary in bed: lovers become addicted to {{user}}, rivals hear rumours',
     },
 };
 
 /** Narrator line about the player's standout traits ('' when everything is ordinary). */
 export function traitsBlock(state, userName = '{{user}}') {
     const items = Object.keys(SKILLS).map((k) => {
-        const lvl = clamp(Number(state.skills?.[k] ?? 1), 0, 4);
+        const lvl = clamp(Number(state.skills?.[k] ?? 1), 0, SKILL_MAX);
         const t = TRAITS[k]?.[lvl];
         return t ? `${SKILLS[k].en}: ${t.replaceAll('{{user}}', userName)}` : '';
     }).filter(Boolean);
@@ -120,13 +147,49 @@ export const TIERS = [
 ];
 
 /* Romance & intimacy, per character (eroge-style card). All 0..100 except trust (−100..100). */
-export const INTIMACY = [
-    { id: 'kiss', ru: 'Поцелуй', icon: '💋' },
-    { id: 'touch', ru: 'Ласки', icon: '🤲' },
-    { id: 'oral', ru: 'Оральный', icon: '👅' },
-    { id: 'sex', ru: 'Секс', icon: '🔥' },
+
+/*
+ * The ladder: intimacy goes up step by step. A stage opens when the feelings are there AND the
+ * stage below has happened; one scene can only climb a few steps (pace). The narrator is told how
+ * far the character is ready to go right now and what holds them back.
+ * req: attraction / trust / affection / openness the step needs (normal pace).
+ */
+export const STAGES = [
+    { id: 'none',    ru: 'Знакомство',          icon: '🤝', en: 'nothing yet', req: {} },
+    { id: 'flirt',   ru: 'Флирт',               short: 'Флирт', icon: '😊', en: 'flirting, light touches, holding hands, hugs', req: { attraction: 10 } },
+    { id: 'kiss',    ru: 'Поцелуй',             short: 'Поцелуй', icon: '💋', en: 'kissing', req: { attraction: 25, trust: 5 } },
+    { id: 'makeout', ru: 'Страстные поцелуи',   short: 'Страсть', icon: '😘', en: 'making out, close embraces, hands roaming over clothes', req: { attraction: 35, trust: 12, openness: 20 } },
+    { id: 'petting', ru: 'Ласки через одежду',  short: 'Ласки', icon: '🤲', en: 'groping and grinding through clothes, hands under a shirt', req: { attraction: 45, trust: 18, openness: 25 } },
+    { id: 'bare',    ru: 'Ласки без одежды',    short: 'Голые', icon: '✋', en: 'undressing, naked touching, fingering, handjobs', req: { attraction: 52, trust: 24, openness: 30, affection: 10 } },
+    { id: 'oral',    ru: 'Оральный',            short: 'Орал', icon: '👅', en: 'oral sex', req: { attraction: 58, trust: 30, openness: 36, affection: 15 } },
+    { id: 'sex',     ru: 'Секс',                short: 'Секс', icon: '🔥', en: 'full sex', req: { attraction: 63, trust: 35, openness: 42, affection: 20 } },
+    { id: 'wild',    ru: 'Смелое',              short: 'Смелое', icon: '⛓️', en: 'anal, kinks, toys, risky places, anything bold', req: { attraction: 68, trust: 45, openness: 60, affection: 25 } },
 ];
-const INTIMACY_IDS = INTIMACY.map(x => x.id);
+export const STAGE_IDS = STAGES.map(x => x.id);
+export const PACES = {
+    fast:   { ru: 'Быстро',  k: 0.6, perScene: 3 },
+    medium: { ru: 'Средне',  k: 1,   perScene: 2 },
+    slow:   { ru: 'Медленно', k: 1.25, perScene: 1 },
+};
+
+/* Acts the card counts. stage = the ladder step the act belongs to. */
+export const ACTS = [
+    { id: 'kiss',     ru: 'Поцелуи',          icon: '💋', stage: 2 },
+    { id: 'makeout',  ru: 'Страстные поцелуи', icon: '😘', stage: 3 },
+    { id: 'grope',    ru: 'Ласки',            icon: '🤲', stage: 4 },
+    { id: 'hands',    ru: 'Руками',           icon: '✋', stage: 5 },
+    { id: 'oral_her', ru: 'Куни / ей ртом',   icon: '👅', stage: 6 },
+    { id: 'oral_you', ru: 'Минет / тебе ртом', icon: '💦', stage: 6 },
+    { id: 'sex',      ru: 'Секс',             icon: '🔥', stage: 7 },
+    { id: 'anal',     ru: 'Анал',             icon: '🍑', stage: 8 },
+    { id: 'kink',     ru: 'Кинки и игрушки',  icon: '⛓️', stage: 8 },
+];
+const ACT_IDS = ACTS.map(x => x.id);
+const ACT_ALIASES = { touch: 'grope', petting: 'grope', fingering: 'hands', handjob: 'hands', naked: 'hands', oral: 'oral_her', cunnilingus: 'oral_her', blowjob: 'oral_you', fellatio: 'oral_you', vaginal: 'sex', toys: 'kink', bdsm: 'kink' };
+const normAct = (x) => { const t = String(x || '').toLowerCase().trim(); return ACT_IDS.includes(t) ? t : ACT_ALIASES[t] || null; };
+/** Old cards (before the ladder) used these four. */
+export const INTIMACY = ACTS;
+export const EXPERIENCE = { virgin: 'Девственница', inexperienced: 'Неопытная', experienced: 'Опытная', very: 'Очень опытная' };
 
 /** Fields every character record has (old saves get them on the fly). */
 export function ensureNpc(n) {
@@ -136,22 +199,87 @@ export function ensureNpc(n) {
     n.lust ??= 0;
     n.openness ??= 20;
     n.orgasms ??= 0;
+    n.userOrgasms ??= 0;
     n.firsts ??= {};
+    // old saves: firsts were ISO strings under kiss/touch/oral/sex
+    for (const [k, v] of Object.entries(n.firsts)) {
+        const id = normAct(k) || k;
+        const val = typeof v === 'string' ? { time: v } : v;
+        if (id !== k) { delete n.firsts[k]; n.firsts[id] ??= val; } else n.firsts[k] = val;
+    }
+    n.counts ??= Object.fromEntries(Object.keys(n.firsts).filter(k => ACT_IDS.includes(k)).map(k => [k, 1]));
+    n.protected ??= 0;
+    n.unprotected ??= 0;
+    n.positions ??= [];
+    n.places ??= [];
     n.likes ??= [];
     n.spots ??= [];
     n.limits ??= [];
+    n.last ??= null;
+    n.pace ??= 'normal';
+    n.experience ??= '';
+    n.stage ??= Math.max(0, ...ACTS.filter(a => n.firsts[a.id]).map(a => a.stage), n.attraction >= 10 ? 1 : 0);
+    n.sceneStage ??= n.stage;
+    n.boost ??= null;
     return n;
 }
+
+/** Thresholds for a stage with this character, the game's pace and the player's passion. */
+export function stageReq(stageIdx, n, { pace = 'medium', passion = 1 } = {}) {
+    const st = STAGES[stageIdx];
+    const k = (PACES[pace]?.k ?? 1) * (n.pace === 'fast' ? 0.55 : n.pace === 'slow' ? 1.3 : 1);
+    const heat = n.lust >= 70 ? 8 : n.lust >= 45 ? 4 : 0; // the heat of the moment lowers the bar a little
+    const skill = Math.max(0, (passion ?? 1) - 1) * 2;
+    const out = {};
+    for (const [key, v] of Object.entries(st.req)) {
+        // characters made for quick sex don't need trust or love for it
+        if (n.pace === 'fast' && (key === 'trust' || key === 'affection')) continue;
+        let need = Math.round(v * k);
+        if (key === 'attraction' || key === 'openness') need -= heat + skill;
+        out[key] = Math.max(0, need);
+    }
+    return out;
+}
+
+const REQ_RU = { attraction: 'влечение', trust: 'доверие', affection: 'привязанность', openness: 'раскрепощённость' };
+const REQ_EN = { attraction: 'to want {{user}} more', trust: 'to trust {{user}} more', affection: 'to feel more attached', openness: 'to feel less shy, more comfortable' };
+
+/**
+ * How far this character is ready to go right now.
+ * { reached, ready, next, missing: [{key, have, need}] }
+ */
+export function readiness(n0, opts = {}) {
+    const n = ensureNpc(JSON.parse(JSON.stringify(n0)));
+    const scene = opts.scene ?? 0;
+    const perScene = PACES[opts.pace]?.perScene ?? 2;
+    const met = (i) => Object.entries(stageReq(i, n, opts)).every(([k, v]) => (n[k] ?? 0) >= v);
+    const bondOk = n.trust > -20 && n.attraction >= 15;
+    let open = 0;
+    for (let i = 1; i < STAGES.length; i++) {
+        // what has already happened stays open while the bond is not broken
+        if ((i <= n.stage && bondOk) || met(i)) open = i; else break;
+    }
+    if (n.trust <= -30) open = n.attraction >= 50 ? Math.min(open, n.stage) : 0;
+    const b = n.boost && n.boost.scene === scene ? n.boost.steps : 0; // a won roll: a step further than feelings allow
+    const cap = Math.max(n.stage, (n.sceneStage ?? n.stage) + perScene + (n.pace === 'fast' ? 1 : 0)) + b;
+    const ready = clamp(Math.min(open + b, cap), 0, STAGES.length - 1);
+    const nextIdx = Math.min(STAGES.length - 1, ready + 1);
+    const missing = ready >= STAGES.length - 1 ? [] : Object.entries(stageReq(nextIdx, n, opts)).filter(([k, v]) => (n[k] ?? 0) < v).map(([key, need]) => ({ key, have: n[key] ?? 0, need }));
+    const sceneLimited = ready < STAGES.length - 1 && !missing.length;
+    return { reached: n.stage, ready, next: ready >= STAGES.length - 1 ? null : nextIdx, missing, sceneLimited };
+}
+export const reqRu = (k) => REQ_RU[k] || k;
 
 /** One-word status for the card, from the numbers. */
 export function loveStatus(n) {
     ensureNpc(n);
     if (n.trust <= -30) return n.attraction >= 50 ? 'Ненависть и страсть' : 'Вражда';
     if (n.affection >= 75 && n.attraction >= 60) return 'Любовь';
-    const intimate = n.firsts.sex || n.firsts.oral || n.firsts.touch;
+    const intimate = n.stage >= 4;
     if (intimate && n.affection >= 45) return 'Любовники';
     if (intimate) return 'Страсть без обязательств';
     if (n.lust >= 70) return 'Сгорает от желания';
+    if (n.stage >= 2) return 'Целовались';
     if (n.attraction >= 60) return 'Хочет тебя';
     if (n.affection >= 50) return 'Привязанность';
     if (n.attraction >= 30) return 'Интерес';
@@ -162,7 +290,58 @@ export function loveStatus(n) {
 export const NPC_COLORS = ['7ec8e3', 'e3b77e', 'c3a6ff', '8fe3a8', 'ff9fb2', 'e3e07e', '7ee3d4', 'ffb38a', 'a6c8ff', 'd9a6ff', 'b4e37e', 'ff8f8f'];
 
 export const STRESS_MAX = 9;
-export const XP_PER_LEVEL = 8;
+export const MAX_LEVEL = 30;
+/** XP to go from `level` to the next one: 6, 7, 9, 10 … ~48 at the top. */
+export const xpNeed = (level) => Math.round(4.5 + 1.5 * level);
+/** Kept for old code paths; the real need grows per level. */
+export const XP_PER_LEVEL = xpNeed(1);
+export const TITLES = [[1, 'Новичок'], [3, 'Бродяга'], [6, 'Искатель'], [9, 'Бывалый'], [12, 'Ветеран'], [15, 'Герой'], [18, 'Чемпион'], [21, 'Мастер'], [24, 'Прославленный'], [27, 'Живая легенда'], [30, 'Легенда']];
+export const titleOf = (level) => { let t = TITLES[0][1]; for (const [l, n] of TITLES) if (level >= l) t = n; return t; };
+export const PERK_EVERY = 3;
+
+/*
+ * Perks: one every PERK_EVERY levels. adv = roll 3 dice, keep the best two, for that skill.
+ */
+export const PERKS = {
+    second_chance: { ru: 'Второй шанс', icon: '🔁', text: 'Раз за сцену можно перебросить проваленный бросок.' },
+    lucky:         { ru: 'Везунчик', icon: '🍀', text: 'Две единицы — просто провал, а не катастрофа.' },
+    tough:         { ru: 'Крепкий', icon: '🛡️', text: 'Катастрофы ранят на одну ступень меньше.' },
+    cool:          { ru: 'Хладнокровие', icon: '🧊', text: 'Провалы не добавляют стресс.' },
+    fast_learner:  { ru: 'Самоучка', icon: '📈', text: '+1 опыт за каждый провал и каждую цель.' },
+    heartthrob:    { ru: 'Сердцеед', icon: '💘', text: 'Влечение к тебе растёт быстрее.' },
+    seducer:       { ru: 'Обольститель', icon: '🌹', text: 'Близость открывается легче (пороги ниже).' },
+    tireless:      { ru: 'Неутомимый', icon: '♾️', text: 'Оргазмы партнёра сильнее раскрепощают и привязывают.' },
+    adv_might:     { ru: 'Талант: Сила', icon: '💪', text: 'Броски Силы — 3 кубика, лучшие два.', adv: 'might' },
+    adv_finesse:   { ru: 'Талант: Ловкость', icon: '🗝️', text: 'Броски Ловкости — 3 кубика, лучшие два.', adv: 'finesse' },
+    adv_insight:   { ru: 'Талант: Чутьё', icon: '👁️', text: 'Броски Чутья — 3 кубика, лучшие два.', adv: 'insight' },
+    adv_charm:     { ru: 'Талант: Обаяние', icon: '🎭', text: 'Броски Обаяния — 3 кубика, лучшие два.', adv: 'charm' },
+    adv_resolve:   { ru: 'Талант: Воля', icon: '🔥', text: 'Броски Воли — 3 кубика, лучшие два.', adv: 'resolve' },
+    adv_lore:      { ru: 'Талант: Знание', icon: '📜', text: 'Броски Знания — 3 кубика, лучшие два.', adv: 'lore' },
+    adv_passion:   { ru: 'Талант: Страсть', icon: '💋', text: 'Броски Страсти — 3 кубика, лучшие два.', adv: 'passion' },
+};
+export const hasPerk = (s, id) => Array.isArray(s.perks) && s.perks.includes(id);
+export const hasAdvantage = (s, skill) => (s.perks || []).some(p => PERKS[p]?.adv === skill);
+/** Perk picks earned but not chosen yet. */
+export const perkPicks = (s) => Math.max(0, Math.floor((s.level || 1) / PERK_EVERY) - (s.perks?.length || 0));
+export function choosePerk(state, id) {
+    const s = clone(state);
+    if (!PERKS[id] || hasPerk(s, id) || perkPicks(s) <= 0) return state;
+    s.perks = [...(s.perks || []), id];
+    return s;
+}
+/** Fills in fields added after a save was made. */
+export function ensureState(s) {
+    s.skills ??= {};
+    for (const k of Object.keys(SKILLS)) s.skills[k] ??= 1;
+    s.perks ??= [];
+    s.perkUsed ??= {};
+    s.scene ??= 0;
+    s.pace ??= 'medium';
+    s.era ??= '';
+    s.level ??= 1; s.xp ??= 0; s.unspent ??= 0;
+    for (const n of Object.values(s.npcs || {})) ensureNpc(n);
+    return s;
+}
 export const MAX_GOALS = 6;
 export const MAX_CLOCKS = 6;
 
@@ -174,9 +353,14 @@ export const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export function newState(setup = {}) {
     const skills = {};
-    for (const k of Object.keys(SKILLS)) skills[k] = clamp(Number(setup.skills?.[k] ?? 1), 0, 3);
+    for (const k of Object.keys(SKILLS)) skills[k] = clamp(Number(setup.skills?.[k] ?? 1), 0, START_MAX);
     return {
-        v: 1,
+        v: 2,
+        pace: PACES[setup.pace] ? setup.pace : 'medium',
+        perks: [],
+        perkUsed: {},
+        scene: 0,
+        era: String(setup.era || '').slice(0, 40),
         difficulty: DIFFICULTY[setup.difficulty] ? setup.difficulty : 'standard',
         skills,
         level: 1,
@@ -188,7 +372,7 @@ export function newState(setup = {}) {
         money: Number(setup.money ?? 0) || 0,
         currency: setup.currency || '🪙',
         items: [],
-        time: setup.time || '2026-03-12T19:00',
+        time: setup.time || new Date().toISOString().slice(0, 11) + '19:00',
         location: setup.location || '',
         weather: 'clear',
         npcs: {},
@@ -226,11 +410,11 @@ export function bondModifier(state, check) {
     if (!npc) return out;
     const n = ensureNpc(JSON.parse(JSON.stringify(npc)));
     const add = (d, why) => { if (d) { out.delta += d; out.why.push(`${why} ${d > 0 ? '+' : '−'}${Math.abs(d)}`); } };
-    if (check.skill === 'charm' || check.skill === 'insight') {
+    if (check.skill === 'charm' || check.skill === 'insight' || check.skill === 'passion') {
         if (n.trust <= -30) add(2, 'вражда');
         else if (n.trust >= 45) add(-1, 'доверие');
     }
-    if (check.skill === 'charm') {
+    if (check.skill === 'charm' || check.skill === 'passion') {
         if (n.attraction >= 65) add(-2, 'влечение');
         else if (n.attraction >= 40) add(-1, 'влечение');
         if (n.lust >= 60) add(-1, 'возбуждение');
@@ -245,7 +429,7 @@ export function bondModifier(state, check) {
 }
 
 export function effectiveDc(state, dc, check = null) {
-    return clamp(Math.round(Number(dc) || 8), 4, 14) + DIFFICULTY[state.difficulty].dc + (check ? bondModifier(state, check).delta : 0);
+    return clamp(Math.round(Number(dc) || 8), 4, 16) + DIFFICULTY[state.difficulty].dc + (check ? bondModifier(state, check).delta : 0);
 }
 
 /** Classify a total of 2d6 + mod. */
@@ -259,32 +443,62 @@ export function classify(d1, d2, mod, dc, position) {
     return 'fail';
 }
 
-/** Exact odds over the 36 outcomes of 2d6. */
-export function odds(mod, dc, position) {
+/** The two dice that count: with advantage (3 dice) the best two. */
+export const bestTwo = (dice) => [...dice].sort((x, y) => y - x).slice(0, 2);
+
+/** Classify a roll (2 or 3 dice). opts.lucky: double ones are only a fail. */
+export function classifyDice(dice, mod, dc, position, opts = {}) {
+    const [a, b] = bestTwo(dice);
+    const out = classify(a, b, mod, dc, position);
+    if (opts.lucky && out === 'disaster' && a === 1 && b === 1) return 'fail';
+    return out;
+}
+
+/** Exact odds over 2d6 (or 3d6 keep best 2 with advantage). */
+export function odds(mod, dc, position, opts = {}) {
     const r = { crit: 0, success: 0, near: 0, fail: 0, disaster: 0 };
-    for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) r[classify(a, b, mod, dc, position)]++;
-    for (const k in r) r[k] /= 36;
+    let total = 0;
+    if (opts.adv) {
+        for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) for (let c = 1; c <= 6; c++) { r[classifyDice([a, b, c], mod, dc, position, opts)]++; total++; }
+    } else {
+        for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) { r[classifyDice([a, b], mod, dc, position, opts)]++; total++; }
+    }
+    for (const k in r) r[k] /= total;
     r.atLeastSuccess = r.crit + r.success;
     r.atLeastNear = r.atLeastSuccess + r.near;
     return r;
 }
 
-export function rollDice(rng = Math.random) {
-    return [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
+export function rollDice(rng = Math.random, n = 2) {
+    return Array.from({ length: n }, () => 1 + Math.floor(rng() * 6));
+}
+
+/** Everything the card and the engine need to know about a roll before it happens. */
+export function rollSetup(state, check) {
+    const s = ensureState(clone(state));
+    const skill = SKILLS[check.skill] ? check.skill : 'insight';
+    const position = POSITIONS[check.position] ? check.position : 'risky';
+    return {
+        skill, position,
+        dc: effectiveDc(s, check.dc, { ...check, skill }),
+        mod: modifier(s, skill),
+        adv: hasAdvantage(s, skill),
+        lucky: hasPerk(s, 'lucky'),
+        reroll: hasPerk(s, 'second_chance') && s.perkUsed.second_chance !== s.scene,
+    };
 }
 
 /**
  * Resolves a referee verdict into an outcome and the state after it.
- * check: { skill, action_en, label_ru, position, effect, dc, success_en, cost_en, fail_en, threat, threat_size }
- * opts: { push: bool, dice: [d1,d2] }
+ * check: { skill, action_en, label_ru, position, effect, dc, success_en, cost_en, fail_en, threat, threat_size, target, intimacy_push }
+ * opts: { push: bool, dice: [d1,d2(,d3)], rerolled: bool }
  */
 export function resolveCheck(state, check, opts = {}) {
-    const s = clone(state);
-    const skill = SKILLS[check.skill] ? check.skill : 'insight';
-    const position = POSITIONS[check.position] ? check.position : 'risky';
+    const s = ensureState(clone(state));
+    const setup = rollSetup(s, check);
+    const { skill, position, dc } = setup;
     const effect = EFFECTS[check.effect] ? check.effect : 'standard';
-    const dc = effectiveDc(s, check.dc, { ...check, skill });
-    let mod = modifier(s, skill);
+    let mod = setup.mod;
     const notes = [];
     if (opts.push) {
         if (s.stress < STRESS_MAX) {
@@ -293,9 +507,12 @@ export function resolveCheck(state, check, opts = {}) {
             notes.push({ kind: 'stress', delta: 1, why: 'Надавить' });
         }
     }
-    const dice = opts.dice || rollDice(opts.rng);
-    const outcome = classify(dice[0], dice[1], mod, dc, position);
+    if (opts.rerolled) s.perkUsed.second_chance = s.scene;
+    const dice = opts.dice || rollDice(opts.rng, setup.adv ? 3 : 2);
+    const outcome = classifyDice(dice, mod, dc, position, { lucky: setup.lucky });
     const events = [];
+    const xp = (n, why) => { if (n > 0) { s.xp += n; notes.push({ kind: 'xp', delta: n, why }); } };
+    const learner = hasPerk(s, 'fast_learner') ? 1 : 0;
 
     // Consequences — the engine decides, the narrator dramatises.
     const threat = String(check.threat || '').trim();
@@ -308,30 +525,49 @@ export function resolveCheck(state, check, opts = {}) {
         if (c.filled >= c.size && before < c.size) events.push({ kind: 'clock_full', clock: clone(c) });
     };
     const pos = POSITIONS[position];
+    const cool = hasPerk(s, 'cool');
     switch (outcome) {
         case 'crit':
             events.push({ kind: 'crit' });
+            xp(position === 'controlled' ? 1 : 2);
             break;
         case 'success':
+            if (position !== 'controlled') xp(1);
             break;
         case 'near':
             if (threat) tickThreat(1);
-            else { s.stress = clamp(s.stress + 1, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: 1, why: 'цена' }); }
+            else if (!cool) { s.stress = clamp(s.stress + 1, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: 1, why: 'цена' }); }
+            xp(1);
             break;
         case 'fail':
             tickThreat(pos.tick);
             if (pos.harm && !threat) applyHarm(s, 1, events, notes);
-            if (position !== 'controlled') { s.stress = clamp(s.stress + 1, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: 1, why: 'провал' }); }
-            s.xp += 1;
-            notes.push({ kind: 'xp', delta: 1 });
+            if (position !== 'controlled' && !cool) { s.stress = clamp(s.stress + 1, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: 1, why: 'провал' }); }
+            xp(2 + learner);
             break;
         case 'disaster':
             tickThreat(pos.tick + 1);
-            applyHarm(s, position === 'desperate' ? 2 : 1, events, notes);
-            s.xp += 2;
-            notes.push({ kind: 'xp', delta: 2 });
+            applyHarm(s, Math.max(0, (position === 'desperate' ? 2 : 1) - (hasPerk(s, 'tough') ? 1 : 0)), events, notes);
+            xp(3 + learner);
             break;
         default:
+    }
+
+    // Trying to go further in intimacy than the character is ready for.
+    const npc = check.intimacy_push ? findNpcIn(s, check.target) : null;
+    if (npc) {
+        ensureNpc(npc);
+        const steps = { crit: 2, success: 1, near: 1 }[outcome] || 0;
+        if (steps) {
+            npc.boost = { scene: s.scene, steps };
+            notes.push({ kind: 'push_ok', name: npc.name });
+        } else {
+            const hard = outcome === 'disaster';
+            npc.attraction = clamp(npc.attraction - (hard ? 4 : 2), 0, 100);
+            npc.lust = clamp(npc.lust - (hard ? 30 : 15), 0, 100);
+            if (hard) npc.trust = clamp(npc.trust - 3, -100, 100);
+            notes.push({ kind: 'push_fail', name: npc.name });
+        }
     }
     levelUp(s, notes);
     if (s.stress >= STRESS_MAX) {
@@ -343,7 +579,9 @@ export function resolveCheck(state, check, opts = {}) {
         id: uid(),
         turn: s.turn,
         skill, position, effect, dc,
-        mod, dice, total: dice[0] + dice[1] + mod,
+        mod, dice, total: bestTwo(dice)[0] + bestTwo(dice)[1] + mod,
+        adv: dice.length > 2,
+        rerolled: Boolean(opts.rerolled),
         outcome,
         push: Boolean(opts.push),
         label_ru: String(check.label_ru || check.action_en || '').slice(0, 80),
@@ -352,6 +590,7 @@ export function resolveCheck(state, check, opts = {}) {
         cost_en: String(check.cost_en || '').slice(0, 160),
         fail_en: String(check.fail_en || '').slice(0, 160),
         target: String(check.target || '').slice(0, 40),
+        intimacy_push: Boolean(npc),
         bond: bondModifier(state, { ...check, skill }).why,
         notes,
         events,
@@ -360,7 +599,16 @@ export function resolveCheck(state, check, opts = {}) {
     return { state: s, record };
 }
 
+function findNpcIn(s, name) {
+    const q = String(name || '').trim().toLowerCase();
+    if (!q) return null;
+    const all = Object.values(s.npcs || {});
+    return s.npcs?.[q] ?? all.find(n => n.name.toLowerCase() === q)
+        ?? all.find(n => q.includes(n.name.toLowerCase()) || n.name.toLowerCase().includes(q.split(/\s+/)[0])) ?? null;
+}
+
 function applyHarm(s, n, events, notes) {
+    if (n <= 0) return;
     const before = s.harm;
     const next = s.harm + n;
     if (next > 3) {
@@ -373,17 +621,20 @@ function applyHarm(s, n, events, notes) {
 }
 
 function levelUp(s, notes) {
-    while (s.xp >= XP_PER_LEVEL) {
-        s.xp -= XP_PER_LEVEL;
+    while (s.level < MAX_LEVEL && s.xp >= xpNeed(s.level)) {
+        s.xp -= xpNeed(s.level);
         s.level += 1;
         s.unspent += 1;
         notes.push({ kind: 'level', level: s.level });
+        if (s.level % PERK_EVERY === 0) notes.push({ kind: 'perk_pick' });
     }
+    if (s.level >= MAX_LEVEL) s.xp = Math.min(s.xp, xpNeed(MAX_LEVEL));
 }
 
 export function spendPoint(state, skill) {
     const s = clone(state);
-    if (s.unspent <= 0 || !SKILLS[skill] || s.skills[skill] >= 4) return state;
+    if (s.unspent <= 0 || !SKILLS[skill] || (s.skills[skill] ?? 1) >= SKILL_MAX) return state;
+    s.skills[skill] ??= 1;
     s.skills[skill] += 1;
     s.unspent -= 1;
     return s;
@@ -474,11 +725,18 @@ export function parseTrackerLine(text) {
  * Everything is clamped: the model reports, the engine decides how much it counts.
  */
 export function applyReport(state, report, { trackerLine = null, colors = null } = {}) {
-    const s = clone(state);
+    const s = ensureState(clone(state));
     const notes = [];
     const events = [];
     s.turn += 1;
     sweepClocks(s);
+    const xp = (n, why) => { if (n > 0) { s.xp += n; notes.push({ kind: 'xp', delta: n, why }); } };
+    const learner = hasPerk(s, 'fast_learner') ? 1 : 0;
+    // A new scene starts with a scene change or a big jump in time; the intimacy pace counts per scene.
+    if (report?.scene_changed || Number(report?.minutes) >= 180) {
+        s.scene += 1;
+        for (const n of Object.values(s.npcs)) { ensureNpc(n); n.sceneStage = n.stage; n.lust = Math.round(n.lust * 0.4); n.boost = null; }
+    }
 
     if (trackerLine?.time) s.time = trackerLine.time;
     else s.time = advanceTime(s.time, report?.minutes ?? 5);
@@ -510,6 +768,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
                 met: s.turn,
             };
             notes.push({ kind: 'npc_new', name });
+            xp(1);
         }
         ensureNpc(npc);
         touched.add(key);
@@ -520,35 +779,74 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         const df = clamp(Math.round(Number(n.affection) || 0), -5, 5);
         const dl = clamp(Math.round(Number(n.lust) || 0), -40, 40);
         let dop = clamp(Math.round(Number(n.openness) || 0), 0, 3);
-        if (dt || da || df) {
+        let daa = da;
+        if (daa > 0 && hasPerk(s, 'heartthrob')) daa += 1;
+        if (dt || daa || df) {
             const beforeTier = tierOf(npc.trust).id;
             npc.trust = clamp(npc.trust + dt, -100, 100);
-            npc.attraction = clamp(npc.attraction + da, 0, 100);
+            npc.attraction = clamp(npc.attraction + daa, 0, 100);
             npc.affection = clamp(npc.affection + df, 0, 100);
-            notes.push({ kind: 'rel', name: npc.name, trust: dt, attraction: da, affection: df, why: String(n.why_ru || '').slice(0, 60) });
+            notes.push({ kind: 'rel', name: npc.name, trust: dt, attraction: daa, affection: df, why: String(n.why_ru || '').slice(0, 60) });
             const afterTier = tierOf(npc.trust).id;
-            if (afterTier !== beforeTier) notes.push({ kind: 'tier', name: npc.name, from: beforeTier, to: afterTier });
-        }
-        // intimacy that happened in THIS exchange
-        const acts = (Array.isArray(n.intimacy) ? n.intimacy : [n.intimacy]).map(x => String(x || '').toLowerCase()).filter(x => INTIMACY_IDS.includes(x));
-        for (const act of acts) {
-            if (!npc.firsts[act]) {
-                npc.firsts[act] = s.time;
-                dop += 2; // every first time opens them up a little
-                notes.push({ kind: 'first', name: npc.name, act });
+            if (afterTier !== beforeTier) {
+                notes.push({ kind: 'tier', name: npc.name, from: beforeTier, to: afterTier });
+                if (TIERS.findIndex(t => t.id === afterTier) > TIERS.findIndex(t => t.id === beforeTier)) xp(1);
             }
         }
-        if (acts.length && dl <= 0) npc.lust = clamp(npc.lust + 15, 0, 100);
-        npc.lust = clamp(npc.lust + dl, 0, 100);
+        // what the card says they bring with them (only for a character the game has just met)
+        if (npc.met === s.turn) {
+            if (['fast', 'slow'].includes(n.start_pace)) npc.pace = n.start_pace;
+            if (EXPERIENCE[n.start_experience]) npc.experience = n.start_experience;
+            const st = clamp(Math.round(Number(n.start_stage) || 0), 0, STAGES.length - 1);
+            if (st) { npc.stage = st; npc.sceneStage = st; }
+        }
+        // intimacy that happened in THIS exchange
+        const acts = [...new Set((Array.isArray(n.intimacy) ? n.intimacy : [n.intimacy]).map(normAct).filter(Boolean))];
+        const where = String(n.place_ru || s.location || '').trim().slice(0, 40);
+        for (const act of acts) {
+            const def = ACTS.find(x => x.id === act);
+            npc.counts[act] = (npc.counts[act] || 0) + 1;
+            npc.last = { act, time: s.time };
+            if (!npc.firsts[act]) {
+                npc.firsts[act] = { time: s.time, place: where };
+                dop += 4; // every first time opens them up
+                notes.push({ kind: 'first', name: npc.name, act });
+                if (act === 'sex' && npc.experience === 'virgin') { notes.push({ kind: 'virgin', name: npc.name }); npc.experience = 'inexperienced'; }
+                xp(def.stage >= 6 ? 2 : 1);
+            }
+            if (def.stage > npc.stage) {
+                npc.stage = def.stage;
+                notes.push({ kind: 'stage', name: npc.name, stage: def.stage });
+            }
+        }
+        if ((acts.includes('sex') || acts.includes('anal')) && n.protection) {
+            if (n.protection === 'none') npc.unprotected += 1; else npc.protected += 1;
+        }
+        for (const raw of (Array.isArray(n.positions_ru) ? n.positions_ru : []).slice(0, 3)) {
+            const t = String(raw || '').trim().slice(0, 30);
+            if (t && !npc.positions.some(x => x.toLowerCase() === t.toLowerCase())) { npc.positions.push(t); if (npc.positions.length > 12) npc.positions.shift(); }
+        }
+        if (acts.some(a => ACTS.find(x => x.id === a).stage >= 5) && where && !npc.places.some(x => x.toLowerCase() === where.toLowerCase())) {
+            npc.places.push(where); if (npc.places.length > 10) npc.places.shift();
+        }
+        if (!acts.length && npc.stage < 1 && npc.attraction >= 10) npc.stage = 1;
+        let dll = dl;
+        const passion = s.skills.passion ?? 1;
+        if (dll > 0 && passion !== 1) dll = Math.round(dll * (1 + 0.1 * (passion - 1)));
+        if (acts.length && dll <= 0) dll = 15;
+        npc.lust = clamp(npc.lust + dll, 0, 100);
         const orgasms = clamp(Math.round(Number(n.her_orgasm) || 0), 0, 3);
         if (orgasms) {
             npc.orgasms += orgasms;
             npc.lust = clamp(npc.lust - 35 * orgasms, 5, 100); // release
-            dop += 1;
+            dop += hasPerk(s, 'tireless') ? 2 : 1;
+            if (hasPerk(s, 'tireless')) npc.affection = clamp(npc.affection + 1, 0, 100);
             notes.push({ kind: 'orgasm', name: npc.name, n: orgasms });
         }
+        const mine = clamp(Math.round(Number(n.user_orgasm) || 0), 0, 3);
+        if (mine) npc.userOrgasms += mine;
         if (dop) npc.openness = clamp(npc.openness + dop, 0, 100);
-        if (dl >= 10 || dl <= -10) notes.push({ kind: 'lust', name: npc.name, delta: dl });
+        if (dll >= 10 || dll <= -10) notes.push({ kind: 'lust', name: npc.name, delta: dll });
         const addTo = (list, items, max, kind) => {
             for (const raw of Array.isArray(items) ? items : []) {
                 const t = String(raw || '').trim().slice(0, 40);
@@ -558,9 +856,9 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
                 notes.push({ kind, name: npc.name, text: t });
             }
         };
-        addTo(npc.likes, n.likes_ru, 8, 'like');
-        addTo(npc.spots, n.weak_spots_ru, 5, 'spot');
-        addTo(npc.limits, n.limits_ru, 5, 'limit');
+        addTo(npc.likes, n.likes_ru, 10, 'like');
+        addTo(npc.spots, n.weak_spots_ru, 6, 'spot');
+        addTo(npc.limits, n.limits_ru, 6, 'limit');
     }
     // Arousal cools down when nothing keeps it up.
     for (const [key, npc] of Object.entries(s.npcs)) {
@@ -602,7 +900,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         } else if (goal && goal.status === 'active' && (g.status === 'done' || g.status === 'failed')) {
             goal.status = g.status;
             goal.closed = s.turn;
-            if (g.status === 'done') { s.xp += 2; notes.push({ kind: 'goal_done', title: goal.title }, { kind: 'xp', delta: 2 }); }
+            if (g.status === 'done') { notes.push({ kind: 'goal_done', title: goal.title }); xp(4 + learner); }
             else notes.push({ kind: 'goal_failed', title: goal.title });
         }
     }
@@ -617,7 +915,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         const before = clock.filled;
         clock.filled = clamp(clock.filled + tick, 0, clock.size);
         notes.push({ kind: 'clock', name: clock.name, from: before, to: clock.filled, size: clock.size });
-        if (clock.filled >= clock.size && before < clock.size) events.push({ kind: 'clock_full', clock: clone(clock) });
+        if (clock.filled >= clock.size && before < clock.size) { events.push({ kind: 'clock_full', clock: clone(clock) }); if (clock.kind === 'progress') xp(3); }
     }
 
     levelUp(s, notes);
@@ -638,29 +936,54 @@ function similar(a, b) {
 /** The block the narrator sees at depth 0. Compact on purpose. */
 const band = (v, steps) => { let out = steps[0][1]; for (const [min, txt] of steps) if (v >= min) out = txt; return out; };
 
+/** Options readiness() needs from the game state. */
+export const readyOpts = (state) => ({ pace: state.pace || 'medium', scene: state.scene || 0, passion: (state.skills?.passion ?? 1) + (hasPerk(state, 'seducer') ? 3 : 0) });
+
+/** The intimacy line: how far they've gone, how far they'll go now, what holds them back. */
+export function intimacyLine(n0, state, userName = '{{user}}') {
+    const n = ensureNpc(JSON.parse(JSON.stringify(n0)));
+    const r = readiness(n, readyOpts(state));
+    if (r.ready === 0 && r.reached === 0 && n.attraction < 10) return '';
+    const sub = (t) => t.replaceAll('{{user}}', userName);
+    const parts = [`intimacy so far: ${r.reached ? STAGES[r.reached].en : 'nothing'}`];
+    if (r.next == null) {
+        parts.push('ready for anything with ' + userName);
+    } else {
+        parts.push(`ready right now for up to: ${STAGES[r.ready].en}`);
+        const why = r.sceneLimited
+            ? 'it is too soon, too fast for one evening; they want to savour this step first'
+            : r.missing.map(m => sub(REQ_EN[m.key])).join(', ') || 'more time';
+        parts.push(`NOT YET: ${STAGES[r.next].en}. If ${userName} goes further than this, ${n.name} slows ${userName} down in their own way (teasing, flustered, playful "not so fast", a promise of later, or firm), keeps what is allowed going warmly, and does not cross the line this reply. What would change it: ${why}`);
+    }
+    return parts.join('; ');
+}
+
 /** What the narrator needs to know about one character's feelings and body. */
-export function npcLine(n0, userName = '{{user}}') {
+export function npcLine(n0, userName = '{{user}}', state = null) {
     const n = ensureNpc(JSON.parse(JSON.stringify(n0)));
     const parts = [`${n.name}: ${tierOf(n.trust).en}`];
     parts.push(band(n.affection, [[0, 'no attachment yet'], [25, 'fond of ' + userName], [50, 'attached, cares, gets jealous'], [75, 'in love with ' + userName + ', shows it in small ways']]));
     parts.push(band(n.attraction, [[0, 'not attracted'], [20, 'noticing ' + userName], [40, 'attracted'], [65, 'wants ' + userName + ' badly'], [85, 'can barely keep their hands off ' + userName]]));
     if (n.lust >= 20) parts.push(band(n.lust, [[20, 'warm, a little flushed'], [45, 'aroused: flushed, distracted, looks for touch'], [70, 'very aroused: breathless, initiates, hard to refuse'], [90, 'desperate with need: it shows in body and voice']]));
     parts.push(band(n.openness, [[0, 'shy and inexperienced with ' + userName + ': hesitant about new things, needs warming up, embarrassed'], [35, 'getting comfortable: will try things they trust'], [60, 'uninhibited: bold, suggests and asks for what they want'], [85, 'shameless: eager to explore anything']]));
-    const done = INTIMACY.filter(x => n.firsts[x.id]).map(x => x.id);
-    if (done.length) parts.push(`has done with ${userName}: ${done.join(', ')}${n.orgasms ? ` (${n.orgasms} orgasms so far)` : ''}`);
+    if (n.experience === 'virgin') parts.push('a virgin');
+    const done = ACTS.filter(x => n.counts[x.id]).map(x => `${x.id} ×${n.counts[x.id]}`);
+    if (done.length) parts.push(`done with ${userName}: ${done.join(', ')}${n.orgasms ? `; ${n.orgasms} orgasms so far` : ''}`);
+    if (state) { const il = intimacyLine(n, state, userName); if (il) parts.push(il); }
     if (n.likes.length) parts.push(`known turn-ons: ${n.likes.join(', ')}`);
     if (n.spots.length) parts.push(`weak spots (strong reaction when touched): ${n.spots.join(', ')}`);
     if (n.limits.length) parts.push(`limits they have set: ${n.limits.join(', ')}`);
     return `${parts.join('; ')}; #${n.color}`;
 }
 
-export function narratorBlock(state, { record = null, events = [], userName = '{{user}}' } = {}) {
+export function narratorBlock(state0, { record = null, events = [], userName = '{{user}}' } = {}) {
+    const state = ensureState(clone(state0));
     const lines = ['[GAME ENGINE — ground truth for this reply. Never mention dice, numbers, clocks, stats or any mechanics in prose; show them only through the fiction.]'];
     const threats = state.clocks.filter(c => c.kind === 'threat' && c.filled < c.size).map(c => `${c.name} ${c.filled}/${c.size}`);
     const progress = state.clocks.filter(c => c.kind === 'progress' && c.filled < c.size).map(c => `${c.name} ${c.filled}/${c.size}`);
     const goals = state.goals.filter(g => g.status === 'active').map(g => g.title).slice(0, 3);
     const harm = state.harm ? `${HARM[state.harm].ru === 'Ушибы' ? 'bruised' : state.harm === 2 ? 'wounded' : 'badly wounded'}` : 'unhurt';
-    const parts = [`${timeEn(state.time)}`];
+    const parts = [`${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}`];
     if (state.location) parts.push(state.location);
     parts.push(`${userName}: ${harm}${state.stress >= 6 ? ', frayed nerves' : ''}`);
     if (threats.length) parts.push(`Looming: ${threats.join(', ')}`);
@@ -672,7 +995,7 @@ export function narratorBlock(state, { record = null, events = [], userName = '{
     const present = Object.values(state.npcs).filter(n => n.present);
     if (present.length) {
         lines.push(`Characters present (how they feel about ${userName} right now; let it drive their behaviour; dialogue colour):`);
-        for (const n of present.slice(0, 4)) lines.push(`- ${npcLine(n, userName)}`);
+        for (const n of present.slice(0, 4)) lines.push(`- ${npcLine(n, userName, state)}`);
     }
     if (record) {
         const o = OUTCOMES[record.outcome];
@@ -684,6 +1007,9 @@ export function narratorBlock(state, { record = null, events = [], userName = '{
             disaster: `It goes badly wrong: ${record.fail_en || 'the worst plausible consequence'} — make it hurt and raise the stakes.`,
         }[record.outcome];
         lines.push(`OUTCOME of ${userName}'s attempt to ${record.action_en || 'act'} (${record.position}): ${o.en} — ${consequence.charAt(0).toUpperCase()}${consequence.slice(1)}${/[.!?]$/.test(consequence) ? '' : '.'}`);
+        if (record.intimacy_push) lines.push(['crit', 'success', 'near'].includes(record.outcome)
+            ? `${record.target} gives in to ${userName}'s push this time: they let it go one step further than they meant to.`
+            : `${record.target} does not give in: they stop ${userName} and cool off a little (in character, not cruel).`);
         const harmNote = record.notes.find(n => n.kind === 'harm');
         if (harmNote) lines.push(`${userName} is hurt by this (${HARM[harmNote.to].ru === 'Тяжело ранен' ? 'seriously' : 'noticeably'}).`);
     }
@@ -697,20 +1023,26 @@ export function narratorBlock(state, { record = null, events = [], userName = '{
 
 // ------------------------------------------------------------------ referee / extractor prompts
 
-export function stateSummary(state) {
+export function stateSummary(state0) {
+    const state = ensureState(clone(state0));
     const skills = Object.entries(state.skills).map(([k, v]) => `${k} ${v}`).join(', ');
     const clocks = state.clocks.map(c => `${c.name} (${c.kind}) ${c.filled}/${c.size}`).join('; ') || 'none';
     const goals = state.goals.filter(g => g.status === 'active').map(g => g.title).join('; ') || 'none';
-    const npcs = Object.values(state.npcs).slice(-8).map(n => { ensureNpc(n); return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}${INTIMACY.some(x => n.firsts[x.id]) ? `, done: ${INTIMACY.filter(x => n.firsts[x.id]).map(x => x.id).join('/')}` : ''})`; }).join('; ') || 'none';
-    return `Time: ${timeEn(state.time)}. Location: ${state.location || '?'}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills: ${skills}. Money: ${state.money}. Items: ${state.items.join(', ') || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}\nNPCs: ${npcs}`;
+    const ro = readyOpts(state);
+    const npcs = Object.values(state.npcs).slice(-8).map(n => {
+        const r = readiness(n, ro);
+        return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}, intimacy reached: ${STAGE_IDS[r.reached]}, willing now up to: ${STAGE_IDS[r.ready]}${n.experience ? `, ${n.experience}` : ''})`;
+    }).join('; ') || 'none';
+    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills (0-6): ${skills}. Money: ${state.money}. Items: ${state.items.join(', ') || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}\nNPCs: ${npcs}`;
 }
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {
     return `You are the referee of a narrative RPG between ${user} (the player) and the world run by ${char}'s narrator. Decide whether ${user}'s latest action needs a skill check.
 
-Skills: might (force, brawling, endurance, intimidation by force), finesse (stealth, agility, lockpicking, sleight of hand, shooting), insight (noticing, reading people, sensing lies, intuition), charm (persuasion, deception, seduction, haggling, performance), resolve (willpower, resisting fear/pain/temptation/magic), lore (knowledge, medicine, magic, tech, investigation).
+Skills: might (force, brawling, endurance, intimidation by force), finesse (stealth, agility, lockpicking, sleight of hand, shooting), insight (noticing, reading people, sensing lies, intuition), charm (persuasion, deception, talking someone into something, haggling, performance), resolve (willpower, resisting fear/pain/temptation/magic), lore (knowledge, medicine, magic, tech, investigation), passion (seduction by touch and body, being good in bed, reading a partner's body, lasting, pushing intimacy further).
 
-A check is needed ONLY when the outcome is genuinely uncertain AND both success and failure would be interesting: attacks, sneaking, lying, persuading someone unwilling, dangerous climbing, picking locks; also the social and intimate contests that drive this kind of story: seducing or charming someone reluctant, guarded or hostile (charm); resisting seduction used as a weapon, fear, pain, a supernatural pull, feeding or mind-affecting magic (resolve); seeing through a lie, an act or a disguise when ${user} looks for it or something is at stake (insight); recognizing a creature, spell or weakness (lore); keeping up, holding out or overpowering in a physical contest (might/finesse). NO check for: ordinary talk, questions, looking around, walking, routine tasks, emotional moments, willing intimacy between people who both want it, anything trivial or impossible.
+A check is needed ONLY when the outcome is genuinely uncertain AND both success and failure would be interesting: attacks, sneaking, lying, persuading someone unwilling, dangerous climbing, picking locks; also the social and intimate contests that drive this kind of story: seducing or charming someone reluctant, guarded or hostile (charm); resisting seduction used as a weapon, fear, pain, a supernatural pull, feeding or mind-affecting magic (resolve); seeing through a lie, an act or a disguise when ${user} looks for it or something is at stake (insight); recognizing a creature, spell or weakness (lore); keeping up, holding out or overpowering in a physical contest (might/finesse). NO check for: ordinary talk, questions, looking around, walking, routine tasks, emotional moments, willing intimacy within what the character is "willing now up to", anything trivial or impossible.
+INTIMACY PUSH: if ${user} tries to take intimacy with a character beyond their "willing now up to" stage (e.g. undressing someone only ready for kissing), that IS a check: skill passion (or charm if ${user} is talking them into it), target = that character, intimacy_push true, position risky, dc 8 one stage beyond, 10 two stages, 12 more; success = they give in a step, failure = they stop ${user} and cool off; leave threat empty for these.
 
 Game state:
 ${stateSummary(state)}
@@ -727,8 +1059,8 @@ ${String(action || '').slice(0, 1200)}
 
 Reply with ONE line of minified JSON and nothing else.
 If no check: {"check":false}
-If a check: {"check":true,"skill":"might|finesse|insight|charm|resolve|lore","action_en":"verb phrase, e.g. pick the lock","label_ru":"короткое название по-русски","position":"controlled|risky|desperate","effect":"limited|standard|great","dc":6-12,"success_en":"what success gives","cost_en":"what a near miss costs","fail_en":"what failure brings","threat":"name of the danger clock this feeds, e.g. Guards alerted (or empty)","target":"name of the character the action is aimed at or contested with, or empty","threat_size":4|6|8}
-dc: 6 easy, 8 standard, 10 hard, 12 very hard. Position: controlled = safe retry possible, risky = default, desperate = serious danger. Reuse existing clock names when they fit.`;
+If a check: {"check":true,"skill":"might|finesse|insight|charm|resolve|lore|passion","action_en":"verb phrase, e.g. pick the lock","label_ru":"короткое название по-русски","position":"controlled|risky|desperate","effect":"limited|standard|great","dc":6-12,"success_en":"what success gives","cost_en":"what a near miss costs","fail_en":"what failure brings","threat":"name of the danger clock this feeds, e.g. Guards alerted (or empty)","target":"name of the character the action is aimed at or contested with, or empty","intimacy_push":bool,"threat_size":4|6|8}
+dc: 6 easy, 8 standard, 10 hard, 12 very hard, 14 heroic, 16 legendary. Set dc from the fiction, not from ${user}'s skills; as ${user} levels up, the world puts harder obstacles and stronger opponents in front of them (a level 15 hero fights things a level 1 one would flee). Position: controlled = safe retry possible, risky = default, desperate = serious danger. Reuse existing clock names when they fit.`;
 }
 
 export function extractorPrompt({ state, userText, reply, user, char, memoryState = '' }) {
@@ -749,12 +1081,12 @@ ${String(reply || '').slice(0, 3500)}
 
 Reply with ONE line of minified JSON, nothing else:
 {"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"${MOOD_IDS.join('|')}","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
-"npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"intimacy":["kiss"|"touch"|"oral"|"sex"],"her_orgasm":0..3,"likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
+"npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"start_stage":0..8,"start_experience":"virgin|inexperienced|experienced|very|","start_pace":"fast|normal|slow","intimacy":["kiss"|"makeout"|"grope"|"hands"|"oral_her"|"oral_you"|"sex"|"anal"|"kink"],"protection":"condom|pill|other|none|","positions_ru":[],"place_ru":"","her_orgasm":0..3,"user_orgasm":0..3,"likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
 "harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[],"items_lost":[],
 "goals":[{"title_ru":"","status":"new|done|failed"}],
 "clocks":[{"name":"","kind":"progress|threat","tick":1|2,"size":4|6|8}]}
 
-Rules: start_* only for a character who is NOT in the game state yet: where their feelings toward ${user} stand already, from the card and the story so far (a stranger ~0, an old friend trust 30+, a character who secretly wants ${user} attraction 40+; openness 20 for an average person, lower for shy or innocent, higher for bold or experienced ones). trust/affection/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. trust = how safe the character feels with ${user}; affection = emotional attachment, love; attraction = physical desire for ${user}. lust = the character's arousal change in this exchange (flirting +5..10, making out +15..25, sex +25..40, cold shower or interruption −20..−40). openness: +1..3 only when the character willingly tried something new or bolder with ${user}. intimacy: acts that physically happened between ${user} and that character in THIS exchange. her_orgasm: how many times that character climaxed in this exchange. likes_ru / weak_spots_ru / limits_ru: ONLY newly revealed things in Russian, 1-4 words (a turn-on they showed or said; a body spot that made them react strongly; something they refused or set as a boundary). harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
+Rules: start_* only for a character who is NOT in the game state yet: where their feelings toward ${user} stand already, from the card and the story so far (a stranger ~0, an old friend trust 30+, a character who secretly wants ${user} attraction 40+; openness 20 for an average person, lower for shy or innocent, higher for bold or experienced ones; start_stage = how far they have ALREADY gone with ${user} before the game: 0 none, 1 flirting, 2 kissed, 3 made out, 4 petting, 5 naked touching, 6 oral, 7 sex, 8 anything (a wife or long-time lover is 7-8); start_experience from the card (virgin, inexperienced, experienced, very) or empty if unknown; start_pace fast for characters made for quick sex (succubus, nymphomaniac, sex worker on the job, desperate heat), slow for very shy, chaste or guarded ones, else normal). trust/affection/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. trust = how safe the character feels with ${user}; affection = emotional attachment, love; attraction = physical desire for ${user}. lust = the character's arousal change in this exchange (flirting +5..10, making out +15..25, sex +25..40, cold shower or interruption −20..−40). openness: +1..3 only when the character willingly tried something new or bolder with ${user}. intimacy: acts that physically happened between ${user} and that character in THIS exchange (kiss = kissing; makeout = deep, heated making out; grope = touching through or under clothes; hands = naked touching, fingering, handjob; oral_her = ${user} pleasures them orally; oral_you = they pleasure ${user} orally; sex = penetrative sex; anal; kink = toys, bondage, other kinks). protection: for sex/anal only — what was used, none if nothing, empty otherwise. positions_ru: sex positions used, 1-3 Russian words each. place_ru: where it happened, 2-4 Russian words. her_orgasm: how many times that character climaxed in this exchange; user_orgasm: how many times ${user} did. likes_ru / weak_spots_ru / limits_ru: ONLY newly revealed things in Russian, 1-4 words (a turn-on they showed or said; a body spot that made them react strongly; something they refused or set as a boundary). harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
 }
 
 export function parseJsonLine(text) {

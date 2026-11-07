@@ -49,9 +49,9 @@ function stateAt(index) {
     const chat = ctx().chat ?? [];
     for (let i = Math.min(index, chat.length - 1); i >= 0; i--) {
         const snap = chat[i]?.extra?.elephant_game?.state;
-        if (snap) return E.clone(snap);
+        if (snap) return E.ensureState(E.clone(snap));
     }
-    return E.clone(meta()?.initial ?? E.newState());
+    return E.ensureState(E.clone(meta()?.initial ?? E.newState()));
 }
 
 const currentState = () => stateAt((ctx().chat?.length ?? 0) - 1);
@@ -140,7 +140,7 @@ export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
             return;
         }
         // The dice the card showed are the dice that count.
-        const { state, record } = E.resolveCheck(before, verdict, { push: choice.push, dice: choice.dice });
+        const { state, record } = E.resolveCheck(before, verdict, { push: choice.push, dice: choice.dice, rerolled: choice.rerolled });
         writeSnapshot(ui, { checked: true, state, record });
         await c.saveChat();
         afterCheck(record, state);
@@ -232,7 +232,7 @@ async function onReply(mesId) {
         setHudBusy(true);
         try {
             const out = await callHelper(ss, 'You are a meticulous game-state tracker. Output only JSON.',
-                E.extractorPrompt({ state: base, userText: ui >= 0 ? c.chat[ui].mes : '', reply: msg.mes, user: c.name1, char: c.name2, memoryState: memoryState() }), 420, { json: true });
+                E.extractorPrompt({ state: base, userText: ui >= 0 ? c.chat[ui].mes : '', reply: msg.mes, user: c.name1, char: c.name2, memoryState: memoryState() }), 650, { json: true });
             report = E.parseJsonLine(out);
         } catch (e) {
             log('extractor failed', e);
@@ -256,7 +256,8 @@ async function onReply(mesId) {
         if (ev.kind === 'defeat') handleDefeat(mesId, state, ui >= 0 ? ui : mesId);
     }
     if (notes.some(n => n.kind === 'goal_done')) banner('Цель выполнена', 'gold');
-    if (notes.some(n => n.kind === 'level')) banner(`Уровень ${state.level}!`, 'gold');
+    if (notes.some(n => n.kind === 'level')) banner(`Уровень ${state.level}! ${E.titleOf(state.level)}`, 'gold');
+    else if (notes.some(n => n.kind === 'stage')) { const st = notes.filter(n => n.kind === 'stage').at(-1); banner(`${E.STAGES[st.stage].icon} ${E.STAGES[st.stage].ru}`, 'gold'); }
 
     // One helper call feeds Elephant Stage too.
     if (report && globalThis.ElephantStage?.externalScene) {
@@ -347,7 +348,7 @@ function renderHud(state = currentState()) {
     $h.find('.eg-clocks').html(clocks.map(c => `<span class="eg-hud-clock">${clockSvg(c)}<span>${escapeHtml(c.name)}</span></span>`).join(''));
     $h.toggleClass('eg-lowhp', state.harm >= 2);
     $h.find('.eg-lvlup').remove();
-    if (state.unspent > 0) $h.find('.eg-hud-stats .eg-spacer').after('<span class="eg-lvlup">⬆ навык</span>');
+    if (state.unspent > 0 || E.perkPicks(state) > 0) $h.find('.eg-hud-stats .eg-spacer').after(`<span class="eg-lvlup">⬆ ${E.perkPicks(state) > 0 ? 'перк' : 'навык'}</span>`);
 }
 
 function setHudBusy(on) {
@@ -390,18 +391,20 @@ function closeEgSheets() {
 function showCheckCard(state, v) {
     ensureSheets();
     return new Promise((resolve) => {
-        const skill = E.SKILLS[v.skill] ? v.skill : 'insight';
-        const pos = E.POSITIONS[v.position] ? v.position : 'risky';
-        const dc = E.effectiveDc(state, v.dc, { ...v, skill });
+        const setup = E.rollSetup(state, v);
+        const { skill, dc, adv, lucky } = setup;
+        const pos = setup.position;
         const bond = E.bondModifier(state, { ...v, skill });
-        const baseMod = E.modifier(state, skill);
+        const baseMod = setup.mod;
         const canPush = state.stress < E.STRESS_MAX;
         let push = false;
+        let rerollLeft = setup.reroll;
         const $card = $('#eg-check');
+        const nDice = adv ? 3 : 2;
 
         const render = () => {
             const mod = baseMod + (push ? 1 : 0);
-            const o = E.odds(mod, dc, pos);
+            const o = E.odds(mod, dc, pos, { adv, lucky });
             const pct = Math.round(o.atLeastSuccess * 100);
             const nearPct = Math.round(o.near * 100);
             $card.attr('data-pos', pos).html(`
@@ -413,12 +416,14 @@ function showCheckCard(state, v) {
                 <div class="eg-badges">
                     <span class="eg-badge eg-pos-${pos}">${E.POSITIONS[pos].ru}</span>
                     <span class="eg-badge">Сложность ${dc}</span>
+                    ${v.intimacy_push ? '<span class="eg-badge eg-badge-bond">💗 дальше, чем она готова</span>' : ''}
+                    ${adv ? '<span class="eg-badge eg-badge-perk">✨ талант: 3 кубика</span>' : ''}
                     ${bond.why.map(w => `<span class="eg-badge eg-badge-bond">💞 ${escapeHtml(w)}</span>`).join('')}
                     <span class="eg-badge">+ ${nearPct}% успех ценой</span>
                     ${v.threat ? `<span class="eg-badge eg-badge-threat">⏳ ${escapeHtml(v.threat)}</span>` : ''}
                 </div>
                 <div class="eg-bar"><i style="width:${pct}%"></i><i class="eg-bar-near" style="width:${nearPct}%"></i></div>
-                <div class="eg-dice"><div class="eg-die">?</div><div class="eg-die">?</div><div class="eg-roll-result"></div></div>
+                <div class="eg-dice">${'<div class="eg-die">?</div>'.repeat(nDice)}<div class="eg-roll-result"></div></div>
                 <div class="eg-actions">
                     <button class="eg-btn eg-btn-roll"><i class="fa-solid fa-dice"></i> Бросить</button>
                     <button class="eg-btn eg-btn-push ${push ? 'eg-on' : ''}" ${canPush ? '' : 'disabled'}>⚡ Надавить <small>+1 · стресс</small></button>
@@ -429,20 +434,32 @@ function showCheckCard(state, v) {
         openEgSheet('eg-check');
         if (S().juice) haptic('tick');
 
+        let rerolled = false;
+        const roll = async () => {
+            $card.find('.eg-actions, .eg-btn-cancel, .eg-after').css('visibility', 'hidden');
+            const dice = E.rollDice(Math.random, nDice);
+            await animateDice($card, dice);
+            const mod = baseMod + (push ? 1 : 0);
+            const outcome = E.classifyDice(dice, mod, dc, pos, { lucky });
+            const o = E.OUTCOMES[outcome];
+            const [a, b] = E.bestTwo(dice);
+            $card.find('.eg-die').each(function (i) { this.classList.toggle('eg-die-drop', adv && i === dice.indexOf(Math.min(...dice))); });
+            $card.find('.eg-roll-result').attr('data-tone', o.tone).html(`<b>${o.ru}</b><small>${a} + ${b} ${mod >= 0 ? '+' : '−'} ${Math.abs(mod)} = ${a + b + mod} / ${dc}</small>`);
+            $card.attr('data-tone', o.tone);
+            juiceOutcome(outcome);
+            const finish = () => { closeEgSheets(); resolve({ roll: true, push, dice, rerolled }); };
+            if (rerollLeft && (outcome === 'fail' || outcome === 'disaster')) {
+                $card.find('.eg-after').remove();
+                $card.append(`<div class="eg-actions eg-after"><button class="eg-btn eg-btn-reroll">🔁 Второй шанс</button><button class="eg-btn eg-btn-accept">Принять</button></div>`);
+                $card.find('.eg-btn-reroll').one('click', () => { rerollLeft = false; rerolled = true; $card.find('.eg-after').remove(); roll(); });
+                $card.find('.eg-btn-accept').one('click', finish);
+                return;
+            }
+            setTimeout(finish, 1500);
+        };
         $card.off('click').on('click', '.eg-btn-push', () => { push = !push; render(); haptic('tick'); })
             .on('click', '.eg-btn-cancel', () => { closeEgSheets(); resolve({ cancel: true }); })
-            .on('click', '.eg-btn-roll', async () => {
-                $card.find('.eg-actions, .eg-btn-cancel').css('visibility', 'hidden');
-                const dice = E.rollDice();
-                await animateDice($card, dice);
-                const mod = baseMod + (push ? 1 : 0);
-                const outcome = E.classify(dice[0], dice[1], mod, dc, pos);
-                const o = E.OUTCOMES[outcome];
-                $card.find('.eg-roll-result').attr('data-tone', o.tone).html(`<b>${o.ru}</b><small>${dice[0]} + ${dice[1]} ${mod >= 0 ? '+' : '−'} ${Math.abs(mod)} = ${dice[0] + dice[1] + mod} / ${dc}</small>`);
-                $card.attr('data-tone', o.tone);
-                juiceOutcome(outcome);
-                setTimeout(() => { closeEgSheets(); resolve({ roll: true, push, dice }); }, 1500);
-            });
+            .on('click', '.eg-btn-roll', roll);
     });
 }
 
@@ -457,8 +474,7 @@ function animateDice($card, final) {
             if (++n >= 9) {
                 clearInterval(t);
                 $d.removeClass('eg-rolling');
-                $d.eq(0).text(faces[final[0] - 1]);
-                $d.eq(1).text(faces[final[1] - 1]);
+                $d.each(function (i) { this.textContent = faces[(final[i] ?? 1) - 1]; });
                 if (S().juice) haptic('hit');
                 res();
             }
@@ -497,10 +513,15 @@ function showNotes(notes = []) {
                 break;
             }
             case 'first': {
-                const a = E.INTIMACY.find(x => x.id === n.act);
+                const a = E.ACTS.find(x => x.id === n.act);
                 out.push({ text: `${a?.icon || '💗'} Впервые: ${(a?.ru || n.act).toLowerCase()} с ${n.name}`, tone: 'gold' });
                 break;
             }
+            case 'stage': out.push({ text: `${E.STAGES[n.stage].icon} ${n.name}: новая ступень — ${E.STAGES[n.stage].ru.toLowerCase()}`, tone: 'gold' }); break;
+            case 'virgin': out.push({ text: `🌸 ${n.name}: первый раз в жизни`, tone: 'gold' }); break;
+            case 'push_ok': out.push({ text: `💗 ${n.name} поддаётся`, tone: 'good' }); break;
+            case 'push_fail': out.push({ text: `✋ ${n.name} останавливает тебя`, tone: 'bad' }); break;
+            case 'perk_pick': out.push({ text: '✨ Можно выбрать перк', tone: 'gold' }); break;
             case 'orgasm': out.push({ text: `💦 ${n.name}: оргазм${n.n > 1 ? ` ×${n.n}` : ''}`, tone: 'gold' }); break;
             case 'lust': if (n.delta >= 20) out.push({ text: `🔥 ${n.name} возбуждается`, tone: 'info' }); break;
             case 'like': out.push({ text: `💗 ${n.name} любит: ${n.text}`, tone: 'info' }); break;
@@ -511,7 +532,7 @@ function showNotes(notes = []) {
             case 'clock': out.push({ text: `${n.name} ${n.to}/${n.size}`, tone: 'warn' }); break;
             case 'stress': out.push({ text: `Стресс ${n.delta > 0 ? '+' : ''}${n.delta}`, tone: n.delta > 0 ? 'bad' : 'good' }); break;
             case 'harm': out.push({ text: n.to > n.from ? `Рана: ${E.HARM[n.to].ru}` : `Легче: ${E.HARM[n.to].ru}`, tone: n.to > n.from ? 'bad' : 'good' }); break;
-            case 'xp': out.push({ text: `+${n.delta} опыта`, tone: 'info' }); break;
+            case 'xp': out.push({ text: `+${n.delta} опыта${n.why ? ` · ${n.why}` : ''}`, tone: 'info' }); break;
             case 'money': out.push({ text: `${n.delta > 0 ? '+' : ''}${n.delta} ${currentState().currency}`, tone: n.delta > 0 ? 'good' : 'bad' }); break;
             case 'item': out.push({ text: `${n.delta > 0 ? '+' : '−'} ${n.name}`, tone: n.delta > 0 ? 'good' : 'bad' }); break;
             case 'goal_new': out.push({ text: `Новая цель: ${n.title}`, tone: 'info' }); break;
@@ -552,6 +573,19 @@ function openStateSheet(tab = 'hero') {
     if (tab === 'goals') $b.html(goalsHtml(s));
     if (tab === 'log') $b.html(logHtml(s));
     $b.off('click').on('click', '[data-card]', function () { openCard(this.dataset.card); })
+        .on('click', '[data-perk]', async function () {
+            const id = this.dataset.perk;
+            const P = E.PERKS[id];
+            const ok = await ctx().Popup.show.confirm(`${P.icon} ${P.ru}`, `${P.text}<br><br>Выбор навсегда.`, { okButton: 'Взять', cancelButton: 'Назад' });
+            if (!ok) return;
+            const idx = (ctx().chat?.length ?? 1) - 1;
+            const next = E.choosePerk(currentState(), id);
+            writeSnapshot(idx, { state: next });
+            await ctx().saveChat();
+            renderHud(next);
+            openStateSheet('hero');
+            haptic('heartbeat');
+        })
         .on('click', '[data-spend]', async function () {
         const idx = (ctx().chat?.length ?? 1) - 1;
         const next = E.spendPoint(currentState(), this.dataset.spend);
@@ -575,28 +609,42 @@ function openStateSheet(tab = 'hero') {
 }
 
 function heroHtml(s) {
-    const skills = Object.entries(E.SKILLS).map(([k, sk]) => `
+    const need = E.xpNeed(s.level);
+    const top = s.level >= E.MAX_LEVEL;
+    const skills = Object.entries(E.SKILLS).map(([k, sk]) => {
+        const v = s.skills[k] ?? 1;
+        return `
         <div class="eg-skill-row">
-            <span>${sk.icon} ${sk.ru}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
-            <span class="eg-dots">${pips(s.skills[k], 4, 'eg-dot')}</span>
-            ${s.unspent > 0 && s.skills[k] < 4 ? `<button class="eg-plus" data-spend="${k}">+</button>` : ''}
-        </div>`).join('');
+            <span>${sk.icon} ${sk.ru} <em class="eg-rank eg-rank-${v}">${E.RANKS[v]}</em>${E.hasAdvantage(s, k) ? ' <em class="eg-rank eg-rank-adv">✨ талант</em>' : ''}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
+            <span class="eg-dots">${pips(v, E.SKILL_MAX, 'eg-dot')}</span>
+            ${s.unspent > 0 && v < E.SKILL_MAX ? `<button class="eg-plus" data-spend="${k}">+</button>` : ''}
+        </div>`;
+    }).join('');
+    const picks = E.perkPicks(s);
+    const owned = (s.perks || []).map(id => E.PERKS[id]).filter(Boolean);
+    const nextPerk = (Math.floor(s.level / E.PERK_EVERY) + 1) * E.PERK_EVERY;
+    const perksHtml = `
+        <h4 class="eg-h">Перки ${picks ? `<small class="eg-gold">можно выбрать: ${picks}</small>` : `<small>следующий на ${Math.min(nextPerk, E.MAX_LEVEL)} уровне</small>`}</h4>
+        ${owned.length ? `<div class="eg-perks">${owned.map(p => `<div class="eg-perk eg-perk-own"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></div>`).join('')}</div>` : (picks ? '' : '<p class="eg-muted">Перк даётся каждые 3 уровня.</p>')}
+        ${picks ? `<div class="eg-perks">${Object.entries(E.PERKS).filter(([id]) => !E.hasPerk(s, id)).map(([id, p]) => `<button class="eg-perk" data-perk="${id}"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></button>`).join('')}</div>` : ''}`;
     return `
         <div class="eg-hero-top">
-            <div><b>Уровень ${s.level}</b><small>Опыт ${s.xp}/${E.XP_PER_LEVEL}${s.unspent ? ` · свободных очков: ${s.unspent}` : ''}</small></div>
-            <div class="eg-xpbar"><i style="width:${Math.round(s.xp / E.XP_PER_LEVEL * 100)}%"></i></div>
+            <div><b>Уровень ${s.level} · ${E.titleOf(s.level)}</b><small>${top ? 'Максимальный уровень' : `Опыт ${s.xp}/${need}`}${s.unspent ? ` · свободных очков: ${s.unspent}` : ''}</small></div>
+            <div class="eg-xpbar"><i style="width:${top ? 100 : Math.round(s.xp / need * 100)}%"></i></div>
         </div>
         <div class="eg-cards">
             <div class="eg-mini"><small>Здоровье</small><b>${E.HARM[s.harm].ru}</b><span>${pips(3 - s.harm, 3, 'eg-pip eg-pip-hp')}</span></div>
             <div class="eg-mini"><small>Стресс</small><b>${s.stress}/${E.STRESS_MAX}</b><span>${pips(s.stress, E.STRESS_MAX, 'eg-pip eg-pip-st')}</span></div>
             <div class="eg-mini"><small>Деньги</small><b>${s.currency} ${s.money}</b></div>
         </div>
-        <h4 class="eg-h">Навыки</h4>${skills}
+        <h4 class="eg-h">Навыки <small>0–${E.SKILL_MAX}, очко за уровень</small></h4>${skills}
+        ${perksHtml}
         <h4 class="eg-h">Вещи</h4>
         <div class="eg-items">${s.items.length ? s.items.map(i => `<span class="eg-item">${escapeHtml(i)}</span>`).join('') : '<span class="eg-muted">Пусто</span>'}</div>
         ${s.scars?.length ? `<h4 class="eg-h">Шрамы</h4><div class="eg-items">${s.scars.map(i => `<span class="eg-item eg-scar">${escapeHtml(i)}</span>`).join('')}</div>` : ''}
+        <p class="eg-muted eg-small">Опыт: провалы (учишься на ошибках), рискованные успехи, цели, завершённые часы, новые знакомства и «первые разы».</p>
         <div class="eg-foot">
-            <span class="eg-muted">Сложность: ${E.DIFFICULTY[s.difficulty].ru}</span>
+            <span class="eg-muted">Сложность: ${E.DIFFICULTY[s.difficulty].ru} · Темп близости: ${E.PACES[s.pace]?.ru || 'Средне'}</span>
             <button class="eg-link" data-act="setup">Настройки игры</button>
             <button class="eg-link eg-danger" data-act="stop">Выключить</button>
         </div>`;
@@ -611,7 +659,7 @@ function peopleHtml(s) {
             <div class="eg-mini">
                 <span title="Доверие">🛡 ${n.trust}</span><span title="Привязанность">💞 ${n.affection}</span><span title="Влечение">💘 ${n.attraction}</span>
                 ${n.lust >= 20 ? `<span title="Возбуждение">🔥 ${n.lust}</span>` : ''}
-                ${E.INTIMACY.filter(x => n.firsts[x.id]).map(x => `<span title="${x.ru}">${x.icon}</span>`).join('')}
+                <span title="Ступень близости">${E.STAGES[n.stage].icon} ${E.STAGES[n.stage].ru}</span>
             </div>
         </button>`).join('') + '<p class="eg-muted">Нажми на персонажа, чтобы открыть карточку.</p>';
 }
@@ -631,6 +679,34 @@ function bar(label, icon, value, { min = 0, max = 100, cls = '' } = {}) {
     return `<div class="eg-cbar ${cls}"><div class="eg-cbar-top"><span>${icon} ${label}</span><b>${value}</b></div><div class="eg-cbar-track"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div></div>`;
 }
 
+function agoRu(fromIso, toIso) {
+    const d = (Date.parse(toIso + ':00Z') - Date.parse(fromIso + ':00Z')) / 60000;
+    if (!Number.isFinite(d) || d < 60) return 'только что';
+    if (d < 60 * 24) return `${Math.round(d / 60)} ч назад`;
+    const days = Math.round(d / 1440);
+    return days === 1 ? 'вчера' : `${days} дн. назад`;
+}
+
+function ladderHtml(n, state) {
+    const r = E.readiness(n, E.readyOpts(state));
+    const steps = E.STAGES.slice(1).map((st, i) => {
+        const idx = i + 1;
+        const cls = idx <= r.reached ? 'eg-st-done' : idx <= r.ready ? 'eg-st-open' : 'eg-st-lock';
+        return `<div class="eg-st ${cls}" title="${st.ru}"><span>${idx <= r.ready ? st.icon : '🔒'}</span><small>${st.short || st.ru}</small></div>`;
+    }).join('');
+    let hint = '';
+    if (r.next == null) hint = '<b>Всё открыто.</b> Между вами больше нет запретов.';
+    else {
+        const now = r.ready > r.reached ? `Готова на: <b>${E.STAGES[r.ready].ru.toLowerCase()}</b>.` : `Сейчас — не дальше: <b>${E.STAGES[r.ready].ru.toLowerCase()}</b>.`;
+        const why = r.sceneLimited
+            ? 'Для одного вечера уже достаточно — следующий шаг в другой сцене (или рискни броском).'
+            : `Для «${E.STAGES[r.next].ru.toLowerCase()}» нужно: ${r.missing.map(m => `${E.reqRu(m.key)} <b>${m.have}/${m.need}</b>`).join(', ')}.`;
+        hint = `${now} ${why}`;
+    }
+    const pace = n.pace === 'fast' ? '<span class="eg-chip eg-chip-like">⚡ быстрая</span>' : n.pace === 'slow' ? '<span class="eg-chip">🐢 не торопится</span>' : '';
+    return `<div class="eg-ladder">${steps}</div><p class="eg-ladder-hint">${hint} ${pace}</p>`;
+}
+
 function cardHtml(state, name) {
     const raw = findNpc(state, name);
     const ch = currentCharacter();
@@ -638,29 +714,51 @@ function cardHtml(state, name) {
     const n = raw ? E.ensureNpc(E.clone(raw)) : E.ensureNpc({ name: name || ch?.name || '?', color: 'c3a6ff' });
     const avatar = isMain && ch?.avatarUrl ? `<img class="eg-card-ava" src="${ch.avatarUrl}" alt="">` : `<div class="eg-card-ava eg-card-ini" style="--c:#${n.color}">${escapeHtml(n.name.slice(0, 1).toUpperCase())}</div>`;
     const tier = E.tierOf(n.trust);
-    const fmt = (iso) => { try { return E.timeRu(iso).split(',').slice(0, 2).join(','); } catch { return ''; } };
+    const fmt = (iso) => { try { return E.timeRu(iso).split(',').slice(1, 2).join('').split('·')[0].trim(); } catch { return ''; } };
     const chips = (list, cls, empty) => list.length ? list.map(t => `<span class="eg-chip ${cls}">${escapeHtml(t)}</span>`).join('') : `<span class="eg-muted">${empty}</span>`;
+    const tiles = E.ACTS.map(a => {
+        const c = n.counts[a.id] || 0;
+        const f = n.firsts[a.id];
+        return `<div class="eg-act ${c ? 'eg-got' : ''}"><span>${c ? a.icon : '🔒'}</span><b>${c ? `×${c}` : '—'}</b><em>${a.ru}</em><small>${f ? `с ${fmt(f.time)}` : 'ещё не было'}</small></div>`;
+    }).join('');
+    const firsts = Object.entries(n.firsts).filter(([id]) => E.ACTS.some(a => a.id === id))
+        .sort((x, y) => String(x[1].time).localeCompare(String(y[1].time)))
+        .map(([id, f]) => { const a = E.ACTS.find(x => x.id === id); return `<div class="eg-tl-row"><span>${a.icon}</span><div><b>${a.ru}</b><small>${fmt(f.time)}${f.place ? ` · ${escapeHtml(f.place)}` : ''}</small></div></div>`; }).join('');
+    const total = Object.values(n.counts).reduce((x, y) => x + y, 0);
+    const lastAct = n.last ? E.ACTS.find(a => a.id === n.last.act) : null;
     return `
         <div class="eg-card-hero" style="--c:#${n.color}">
             ${avatar}
             <div class="eg-card-who">
                 <h3>${escapeHtml(n.name)}</h3>
-                <div class="eg-card-tags"><span class="eg-status eg-status-big">${escapeHtml(raw ? E.loveStatus(n) : 'Ещё не знакомы')}</span><span class="eg-tier eg-tier-${tier.id}">${tier.ru}</span>${n.present ? '<span class="eg-here">рядом</span>' : ''}</div>
+                <div class="eg-card-tags"><span class="eg-status eg-status-big">${escapeHtml(raw ? E.loveStatus(n) : 'Ещё не знакомы')}</span><span class="eg-tier eg-tier-${tier.id}">${tier.ru}</span>${n.experience ? `<span class="eg-tier">${E.EXPERIENCE[n.experience]}</span>` : ''}${n.present ? '<span class="eg-here">рядом</span>' : ''}</div>
             </div>
         </div>
         <h4 class="eg-h eg-h-love">💗 Отношения</h4>
         ${bar('Доверие', '🛡', n.trust, { min: -100, cls: 'eg-c-trust' })}
         ${bar('Привязанность', '💞', n.affection, { cls: 'eg-c-aff' })}
         ${bar('Влечение', '💘', n.attraction, { cls: 'eg-c-attr' })}
-        <h4 class="eg-h eg-h-nsfw">🔞 Близость</h4>
+        <h4 class="eg-h eg-h-love">🪜 Ступени близости</h4>
+        ${ladderHtml(n, state)}
+        <h4 class="eg-h eg-h-nsfw">🔞 Тело и желание</h4>
         ${bar('Возбуждение', '🔥', n.lust, { cls: `eg-c-lust ${n.lust >= 70 ? 'eg-hot' : ''}` })}
         ${bar('Раскрепощённость', '🔓', n.openness, { cls: 'eg-c-open' })}
-        <div class="eg-firsts">${E.INTIMACY.map(x => `<div class="eg-first ${n.firsts[x.id] ? 'eg-got' : ''}"><span>${n.firsts[x.id] ? x.icon : '🔒'}</span><b>${x.ru}</b><small>${n.firsts[x.id] ? fmt(n.firsts[x.id]) : 'ещё нет'}</small></div>`).join('')}</div>
-        <div class="eg-orgasms">💦 Оргазмов с тобой: <b>${n.orgasms}</b></div>
+        <div class="eg-bigstats">
+            <div><b>${n.orgasms}</b><small>💦 её оргазмов</small></div>
+            <div><b>${n.userOrgasms}</b><small>твоих</small></div>
+            <div><b>${total}</b><small>всего раз</small></div>
+            <div><b>${n.protected}<i>/</i>${n.unprotected}</b><small>🛡 с защитой / без</small></div>
+        </div>
+        ${lastAct ? `<div class="eg-last">⏱ Последний раз: <b>${lastAct.ru.toLowerCase()}</b>, ${agoRu(n.last.time, state.time)}</div>` : ''}
+        <h4 class="eg-h eg-h-nsfw">📊 Сколько раз</h4>
+        <div class="eg-acts">${tiles}</div>
+        ${firsts ? `<h4 class="eg-h">📖 Первые разы</h4><div class="eg-tl">${firsts}</div>` : ''}
+        ${n.positions.length ? `<h4 class="eg-h">🌀 Позы</h4><div class="eg-chips">${chips(n.positions, 'eg-chip-like', '')}</div>` : ''}
+        ${n.places.length ? `<h4 class="eg-h">📍 Места</h4><div class="eg-chips">${chips(n.places, '', '')}</div>` : ''}
         <h4 class="eg-h">💗 Нравится</h4><div class="eg-chips">${chips(n.likes, 'eg-chip-like', 'узнаешь по ходу истории')}</div>
         <h4 class="eg-h">✨ Чувствительные места</h4><div class="eg-chips">${chips(n.spots, 'eg-chip-spot', 'ещё не найдены')}</div>
         <h4 class="eg-h">🚫 Границы</h4><div class="eg-chips">${chips(n.limits, 'eg-chip-limit', 'пока не обозначены')}</div>
-        <p class="eg-muted eg-card-note">Шкалы растут от сцен и меняют поведение персонажа: кто тебе доверяет и хочет тебя, ведёт себя смелее, а уговорить его проще. Возбуждение остывает, если его не поддерживать.</p>
+        <p class="eg-muted eg-card-note">Близость открывается по ступеням: чувства растут от сцен, каждая новая ступень требует предыдущей, а за один вечер можно подняться только на пару шагов. Попробовать быстрее можно — бросок Страсти или Обаяния.</p>
         ${isMain ? '<button class="menu_button eg-card-edit" data-card-edit="1"><i class="fa-solid fa-pen"></i> Карточка персонажа</button>' : ''}`;
 }
 
@@ -705,64 +803,145 @@ function logHtml(s) {
 
 // ------------------------------------------------------------------ UI: setup
 
+/**
+ * Where and when this story starts, read from the card: the helper picks a date, a year (or the
+ * world's own era), a time of day, a place, a currency and pocket money. Cached per chat.
+ */
+async function guessStart() {
+    const m = ctx().chatMetadata;
+    if (m?.elephant_game_guess) return m.elephant_game_guess;
+    const ss = stageSettings();
+    if (!hasHelper(ss)) return null;
+    const ch = currentCharacter();
+    const chat = ctx().chat ?? [];
+    const opening = chat.filter(x => !x.is_system).slice(0, 3).map(x => `${x.is_user ? 'User' : 'Char'}: ${String(x.mes || '').slice(0, 900)}`).join('\n');
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `Decide when and where this roleplay starts, from the character card and the opening.
+
+Character: ${ch?.name || ''}
+Description: ${String(ch?.description || '').slice(0, 2500)}
+Scenario: ${String(ch?.scenario || '').slice(0, 1200)}
+Opening:
+${opening.slice(0, 2500)}
+
+Rules: if the story gives a date, year or season, use it. A modern real-world story with no date: today (${today}) or close to it, a time of day that fits the opening. A historical setting: a fitting real year. A fantasy or fictional world: a plausible year in that world's own reckoning, with the era name in "era" (e.g. for Equestria a year counted from Celestia's reign, for Middle-earth "Third Age"); month and day still a normal calendar date. Location: where the opening scene is, 2-4 Russian words. Currency: the world's money as a short symbol or word (₽, $, €, bits, gold, credits). Money: what ${'{{user}}'} plausibly carries.
+Reply with ONE line of JSON: {"date":"YYYY-MM-DD","time":"HH:MM","era":"","location_ru":"","currency":"","money":int,"why_ru":"коротко, почему так"}`;
+    try {
+        const out = await callHelper(ss, 'You set up a story world. Output only JSON.', prompt, 220, { json: true });
+        const g = E.parseJsonLine(out);
+        if (!g || !/^\d{3,4}-\d{2}-\d{2}$/.test(String(g.date || ''))) return null;
+        const y = String(g.date).split('-');
+        const date = `${y[0].padStart(4, '0')}-${y[1]}-${y[2]}`;
+        const time = /^\d{1,2}:\d{2}$/.test(String(g.time || '')) ? String(g.time).padStart(5, '0') : '19:00';
+        const res = { time: `${date}T${time}`, era: String(g.era || '').slice(0, 40), location: String(g.location_ru || '').slice(0, 40), currency: String(g.currency || '').slice(0, 8), money: Math.max(0, Math.round(Number(g.money) || 0)), why: String(g.why_ru || '').slice(0, 140) };
+        if (m) { m.elephant_game_guess = res; ctx().saveMetadataDebounced?.(); }
+        return res;
+    } catch (e) {
+        log('start guess failed', e);
+        return null;
+    }
+}
+
 function openSetup(editing = false) {
     ensureSheets();
     const m = meta();
-    const base = editing ? currentState() : (m?.initial ?? E.newState());
-    const draft = { skills: { ...base.skills }, difficulty: base.difficulty, money: base.money, currency: base.currency, time: base.time };
-    const BUDGET = 9;
+    const base = E.ensureState(E.clone(editing ? currentState() : (m?.initial ?? E.newState())));
+    const draft = { skills: { ...base.skills }, difficulty: base.difficulty, pace: base.pace, money: base.money, currency: base.currency, time: base.time, era: base.era, location: base.location };
+    const BUDGET = Object.keys(E.SKILLS).length + 3;
     const spent = () => Object.values(draft.skills).reduce((a, b) => a + b, 0);
+    let guessing = false;
+    let guessWhy = '';
     const lastTracker = (() => {
         const chat = ctx().chat ?? [];
         for (let i = chat.length - 1; i >= 0; i--) { const t = E.parseTrackerLine(chat[i].mes); if (t) return t; }
         return null;
     })();
     if (!editing && lastTracker?.time) draft.time = lastTracker.time;
+    if (!editing && lastTracker?.location) draft.location = lastTracker.location;
+
+    const readInputs = () => {
+        if (editing || !$('#eg_time').length) return;
+        draft.time = $('#eg_time').val() || draft.time;
+        draft.money = Number($('#eg_money').val()) || 0;
+        draft.currency = $('#eg_cur').val() || '🪙';
+        draft.era = $('#eg_era').val() || '';
+        draft.location = $('#eg_loc').val() || '';
+    };
 
     const render = () => {
         const left = BUDGET - spent();
         $('#eg-setup .eg-sheet-body').html(`
             <h3 class="eg-title">🎲 ${editing ? 'Настройки игры' : 'Игровой режим'}</h3>
-            ${editing ? '' : '<p class="eg-muted">Твой герой с навыками, ранами и целями; персонажи с отношениями; угрозы, которые растут. Движок считает, модель рассказывает.</p>'}
+            ${editing ? '' : '<p class="eg-muted">Твой герой с навыками, ранами и целями; персонажи с отношениями и ступенями близости; угрозы, которые растут. Движок считает, модель рассказывает.</p>'}
             <h4 class="eg-h">Навыки ${editing ? '' : `<small>осталось очков: ${left}</small>`}</h4>
-            <p class="eg-muted">Навыки — это ты в истории: мир и персонажи замечают их в каждом ответе, а кубики решают спорные моменты. 1 — обычный, 0 — слабое место, 3 — то, чем тебя запомнят.</p>
+            <p class="eg-muted">Навыки — это ты в истории: мир и персонажи замечают их в каждом ответе, а кубики решают спорные моменты. На старте до 3, дальше качаются до 6 — очко за каждый уровень, перк каждые 3 уровня.</p>
             ${Object.entries(E.SKILLS).map(([k, sk]) => `
                 <div class="eg-skill-row">
-                    <span>${sk.icon} ${sk.ru}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
-                    ${editing ? `<span class="eg-dots">${pips(draft.skills[k], 4, 'eg-dot')}</span>` : `
+                    <span>${sk.icon} ${sk.ru} <em class="eg-rank eg-rank-${draft.skills[k]}">${E.RANKS[draft.skills[k]]}</em><small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
+                    ${editing ? `<span class="eg-dots">${pips(draft.skills[k], E.SKILL_MAX, 'eg-dot')}</span>` : `
                     <button class="eg-step" data-k="${k}" data-d="-1" ${draft.skills[k] <= 0 ? 'disabled' : ''}>−</button>
-                    <span class="eg-dots">${pips(draft.skills[k], 3, 'eg-dot')}</span>
-                    <button class="eg-step" data-k="${k}" data-d="1" ${draft.skills[k] >= 3 || left <= 0 ? 'disabled' : ''}>+</button>`}
+                    <span class="eg-dots">${pips(draft.skills[k], E.START_MAX, 'eg-dot')}</span>
+                    <button class="eg-step" data-k="${k}" data-d="1" ${draft.skills[k] >= E.START_MAX || left <= 0 ? 'disabled' : ''}>+</button>`}
                 </div>`).join('')}
             <h4 class="eg-h">Сложность</h4>
             <div class="eg-seg">${Object.entries(E.DIFFICULTY).map(([k, d]) => `<button class="eg-seg-btn ${draft.difficulty === k ? 'eg-on' : ''}" data-diff="${k}">${d.ru}</button>`).join('')}</div>
             <p class="eg-muted eg-small">${{ story: 'Проверки легче на 2, смерти нет.', standard: 'Честные шансы. Смерть — только после предупреждения.', brutal: 'Проверки тяжелее, мир безжалостнее.' }[draft.difficulty]}</p>
+            <h4 class="eg-h">Темп близости</h4>
+            <div class="eg-seg">${Object.entries(E.PACES).map(([k, d]) => `<button class="eg-seg-btn ${draft.pace === k ? 'eg-on' : ''}" data-pace="${k}">${d.ru}</button>`).join('')}</div>
+            <p class="eg-muted eg-small">${{ fast: 'Ступени открываются легко, за вечер можно пройти три.', medium: 'Сначала поцелуи и ласки, потом серьёзнее — по паре ступеней за сцену.', slow: 'Каждая ступень — отдельная сцена, чувства нужны сильнее.' }[draft.pace]} Карточка важнее: суккуб торопится, скромница — нет.</p>
             ${editing ? '' : `
-            <h4 class="eg-h">Старт</h4>
+            <h4 class="eg-h">Старт ${guessing ? '<small><i class="fa-solid fa-spinner fa-spin"></i> подбираю по персонажу…</small>' : '<button class="eg-link eg-small" data-act="reguess">↻ подобрать заново</button>'}</h4>
             <label class="eg-field">Дата и время в мире <input type="datetime-local" class="text_pole" id="eg_time" value="${draft.time}"></label>
-            ${lastTracker ? '<p class="eg-muted eg-small">Взято из строки трекера в чате.</p>' : ''}
+            <div class="eg-inline">
+                <label class="eg-field">Эпоха / летоисчисление <input type="text" class="text_pole" id="eg_era" value="${escapeHtml(draft.era)}" placeholder="необязательно" maxlength="40"></label>
+                <label class="eg-field">Место <input type="text" class="text_pole" id="eg_loc" value="${escapeHtml(draft.location)}" maxlength="40"></label>
+            </div>
+            ${guessWhy ? `<p class="eg-muted eg-small">${escapeHtml(guessWhy)}</p>` : ''}
             <div class="eg-inline">
                 <label class="eg-field">Деньги <input type="number" class="text_pole" id="eg_money" value="${draft.money}"></label>
-                <label class="eg-field">Валюта <input type="text" class="text_pole" id="eg_cur" value="${escapeHtml(draft.currency)}" maxlength="6"></label>
+                <label class="eg-field">Валюта <input type="text" class="text_pole" id="eg_cur" value="${escapeHtml(draft.currency)}" maxlength="8"></label>
             </div>`}
             <h4 class="eg-h">Интерфейс</h4>
             <label class="eg-check-opt"><input type="checkbox" id="eg_card" ${S().checkCard ? 'checked' : ''}><span>Карточка проверки с шансами (иначе бросок автоматически)</span></label>
             <label class="eg-check-opt"><input type="checkbox" id="eg_tracker" ${S().hideTracker ? 'checked' : ''}><span>Прятать строку трекера [🕐 | 📍 | 🌤] — её показывает HUD</span></label>
             <label class="eg-check-opt"><input type="checkbox" id="eg_juice" ${S().juice ? 'checked' : ''}><span>Эффекты: вибрация, вспышки, баннеры</span></label>
             ${hasHelper(stageSettings()) ? '' : '<p class="eg-warn">Служебная модель не выбрана (Сцена и арт / Elephant Memory) — судья работает по ключевым словам, а отношения и цели не отслеживаются.</p>'}
-            <button class="eg-btn eg-btn-roll eg-wide" id="eg_start">${editing ? 'Сохранить' : 'Начать игру'}</button>`);
+            <button class="eg-btn eg-btn-roll eg-wide" id="eg_start" ${guessing ? 'disabled' : ''}>${editing ? 'Сохранить' : 'Начать игру'}</button>`);
+    };
+    const runGuess = async (force = false) => {
+        if (editing) return;
+        if (force && ctx().chatMetadata) delete ctx().chatMetadata.elephant_game_guess;
+        guessing = true; render();
+        const g = await guessStart();
+        guessing = false;
+        if (g) {
+            draft.time = g.time; draft.era = g.era;
+            if (g.location) draft.location = g.location;
+            if (g.currency) draft.currency = g.currency;
+            draft.money = g.money;
+            guessWhy = g.why ? `🤖 ${g.why}` : '';
+        }
+        if ($('#eg-setup').hasClass('eg-open')) render();
     };
     render();
     openEgSheet('eg-setup');
+    if (!editing && !m?.initial) runGuess(false);
 
     $('#eg-setup .eg-sheet-body').off('click').on('click', '.eg-step', function () {
+        readInputs();
         const k = this.dataset.k;
-        draft.skills[k] = Math.max(0, Math.min(3, draft.skills[k] + Number(this.dataset.d)));
+        draft.skills[k] = Math.max(0, Math.min(E.START_MAX, draft.skills[k] + Number(this.dataset.d)));
         render();
-    }).on('click', '.eg-seg-btn', function () {
+    }).on('click', '[data-diff]', function () {
+        readInputs();
         draft.difficulty = this.dataset.diff;
         render();
-    }).on('click', '#eg_start', async () => {
+    }).on('click', '[data-pace]', function () {
+        readInputs();
+        draft.pace = this.dataset.pace;
+        render();
+    }).on('click', '[data-act="reguess"]', () => runGuess(true))
+        .on('click', '#eg_start', async () => {
         const s = S();
         s.checkCard = $('#eg_card').prop('checked');
         s.hideTracker = $('#eg_tracker').prop('checked');
@@ -772,14 +951,13 @@ function openSetup(editing = false) {
         if (editing) {
             const st = currentState();
             st.difficulty = draft.difficulty;
+            st.pace = draft.pace;
             writeSnapshot(c.chat.length - 1, { state: st });
             await c.saveChat();
         } else {
-            draft.time = $('#eg_time').val() || draft.time;
-            draft.money = Number($('#eg_money').val()) || 0;
-            draft.currency = $('#eg_cur').val() || '🪙';
+            readInputs();
             const initial = E.newState(draft);
-            if (lastTracker?.location) initial.location = lastTracker.location;
+            initial.location = draft.location || lastTracker?.location || '';
             if (lastTracker?.weather) initial.weather = lastTracker.weather;
             c.chatMetadata[MODULE] = { active: true, initial, started: Date.now() };
             // Start from now: older messages keep no snapshots.
@@ -830,7 +1008,7 @@ function registerCommands() {
         const v = { check: true, skill, dc: Number(dc), action_en: rest.join(' ') || 'act', label_ru: rest.join(' ') || 'Проверка', position: 'risky' };
         const choice = await showCheckCard(st, v);
         if (choice.cancel) return '';
-        const { state, record } = E.resolveCheck(st, v, { push: choice.push, dice: choice.dice });
+        const { state, record } = E.resolveCheck(st, v, { push: choice.push, dice: choice.dice, rerolled: choice.rerolled });
         writeSnapshot(ctx().chat.length - 1, { state });
         await ctx().saveChat();
         renderHud(state);
