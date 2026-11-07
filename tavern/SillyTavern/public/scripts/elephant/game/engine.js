@@ -402,6 +402,7 @@ export function ensureState(s) {
     s.offers ??= [];
     s.pending ??= [];
     s.enc ??= null;
+    s.eroge ??= false;
     s.level ??= 1; s.xp ??= 0; s.unspent ??= 0;
     for (const n of Object.values(s.npcs || {})) ensureNpc(n);
     return s;
@@ -421,6 +422,7 @@ export function newState(setup = {}) {
     return {
         v: 2,
         pace: PACES[setup.pace] ? setup.pace : 'medium',
+        eroge: Boolean(setup.eroge),
         perks: [],
         perkUsed: {},
         scene: 0,
@@ -1149,6 +1151,12 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
     return `${parts.join('; ')}; #${n.color}`;
 }
 
+export const EROGE_HARD_LIMIT = 'CONSENT LIMIT: sex only happens with partners who want it (their own nature or choice, shown in the story — a pervert by her card may willingly throw a fight or desire the goblins; that is fine when it comes from her character, never assumed). Magic and defeat can create lewd predicaments and arousal (a lust aura that leaves her flustered, clothes dissolving, embarrassing compulsions like moaning or blushing, a curse of sensitivity, capture, bindings, torn clothes) but never stand in for consent: no mind control or charm that makes someone agree to sex they would refuse, no sex while she resists, no rape by anyone, monsters and enemies included.';
+export function erogeDirection(u = '{{user}}') {
+    return `ERO-GE DIRECTION: the story deliberately builds intimate, lewd and suggestive circumstances like a classic eroge — accidental touches and falls into compromising positions, clothes torn or slipping in action, walking in on someone, one bed, wet clothes, bets with a lewd forfeit, magic/potions/traps with embarrassing effects, a defeat that leaves someone in a revealing, helpless or humiliating (but not sexually violated) predicament that ${u} can see, exploit for teasing, or rescue them from. Read ${u}'s hints toward lewd outcomes and play them up instead of ignoring them. Enemies (goblins, bandits, monsters, tentacle things) may on their own initiative go for more than killing — groping, grabbing, tearing or stripping clothes, pinning, lewd teasing — at the hero and especially at companions who are losing, restrained or low on HP, and may use incapacitating or charm effects to set it up (paralysis, hypnosis, a lust spell, aphrodisiac, webs or binding, sleep, a weakening curse); suggestive, not explicit. The victim is rescued, breaks free or is freed by the hero; sex never happens with someone who is incapacitated or unwilling. Characters still react in character and the intimacy ladder still gates what they agree to. ${EROGE_HARD_LIMIT}`;
+}
+export const EROGE_HELPER_NOTE = 'EROGE MODE is on: enemies may molest/tease captured or losing characters (groping, stripping clothes, pinning) and use paralysis/hypnosis/lust/aphrodisiac/binding/sleep/weakening effects as options and complications (suggestive only, victim can be freed; an advance by an enemy is the enemy own doing, never not player consent); prefer outcomes, options and complications with a lewd/suggestive twist (e.g. combat cards like "Сорвать плащ", failures where clothes tear or slip), within the consent limit: sex only with partners who genuinely want it (by their own nature or choice, shown in the story); magic and defeat may create lewd predicaments and arousal but never replace consent; no rape by anyone.';
+
 export function narratorBlock(state0, { record = null, events = [], userName = '{{user}}' } = {}) {
     const state = ensureState(clone(state0));
     const lines = ['[GAME ENGINE — ground truth for this reply. Never mention dice, numbers, clocks, stats or any mechanics in prose; show them only through the fiction.]'];
@@ -1170,6 +1178,7 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
     if (hook) lines.push(`SIDE QUEST HOOK (weave it in naturally within the next reply or two, through ${hook.giver || 'someone or something in the scene'}; ${userName} decides whether to take it): ${hook.hook_en}`);
     const traits = traitsBlock(state, userName);
     if (traits) lines.push(traits);
+    if (state.eroge) lines.push(erogeDirection(userName));
     const present = Object.values(state.npcs).filter(n => n.present);
     if (present.length) {
         lines.push(`Characters present (how they feel about ${userName} right now; let it drive their behaviour; dialogue colour):`);
@@ -1235,7 +1244,7 @@ ${user}'s action:
 ${String(action || '').slice(0, 1200)}
 </action>
 
-Reply with ONE line of minified JSON and nothing else.
+${state.eroge ? EROGE_HELPER_NOTE + '\n' : ''}Reply with ONE line of minified JSON and nothing else.
 If no check: {"check":false}
 If a check: {"check":true,"skill":"might|finesse|insight|charm|resolve|lore|passion","action_en":"verb phrase, e.g. pick the lock","label_ru":"короткое название по-русски","position":"controlled|risky|desperate","effect":"limited|standard|great","dc":6-12,"success_en":"what success gives","cost_en":"what a near miss costs","fail_en":"what failure brings","threat":"name of the danger clock this feeds, e.g. Guards alerted (or empty)","target":"name of the character the action is aimed at or contested with, or empty","intimacy_push":bool,"threat_size":4|6|8}
 dc: 6 easy, 8 standard, 10 hard, 12 very hard, 14 heroic, 16 legendary. Set dc from the fiction, not from ${user}'s skills; as ${user} levels up, the world puts harder obstacles and stronger opponents in front of them (a level 15 hero fights things a level 1 one would flee). Position: controlled = safe retry possible, risky = default, desperate = serious danger. Reuse existing clock names when they fit.`;
@@ -1257,7 +1266,7 @@ Narrator (${char}):
 ${String(reply || '').slice(0, 3500)}
 </reply>
 
-Reply with ONE line of minified JSON, nothing else:
+${state.eroge ? EROGE_HELPER_NOTE + '\n' : ''}Reply with ONE line of minified JSON, nothing else:
 {"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"${MOOD_IDS.join('|')}","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
 "npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"start_stage":0..8,"start_experience":"virgin|inexperienced|experienced|very|","start_pace":"fast|normal|slow","intimacy":["kiss"|"makeout"|"grope"|"hands"|"oral_her"|"oral_you"|"sex"|"anal"|"kink"],"protection":"condom|pill|other|none|","positions_ru":[],"place_ru":"","her_orgasm":0..3,"user_orgasm":0..3,"learned_about":[],"moment_ru":"","moment_en":"","likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
 "harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[{"name_ru":"","skill":"might|finesse|insight|charm|resolve|lore|passion|","bonus":0|1|2,"consumable":bool,"qty":int}],"items_lost":[],"items_used":[{"name_ru":"","qty":int}],"encounter":{"kind":"nsfw|combat|","partner":"","by":"user|char","forced":bool},

@@ -23,6 +23,7 @@ const DEFAULTS = {
     checkCard: true,     // show the card and wait for the tap; off = roll automatically
     hideTracker: true,   // hide the preset's "[ 🕐 … ]" line — the HUD shows it
     juice: true,
+    encMin: false,       // encounter panel collapsed to one row
 };
 
 function S() {
@@ -381,6 +382,10 @@ async function nextEncCards(mesId, narration) {
         st.enc.intent = X.cleanIntent(j?.intent) ?? st.enc.intent;
         if (j?.pose_ru) st.enc.pose = String(j.pose_ru).slice(0, 60);
         st.enc.options = X.cleanOptions(j?.options, st.enc.kind);
+        if (Array.isArray(j?.participants) && j.participants.length) {
+            st.enc.participants = X.cleanParticipants(j.participants, st.enc.kind, st, st.enc.participants);
+            if (!st.enc.participants.some(p => p.name === st.enc.target)) st.enc.target = X.defaultTarget(st.enc);
+        }
         writeSnapshot(mesId, { state: st });
         await ctx().saveChat();
         renderEnc(st);
@@ -432,7 +437,7 @@ async function startEncounterFlow(kind, partner, variant = null, { forced = fals
         variant: variant || (vs.includes(setup.variant) ? setup.variant : vs[0]),
         partner: setup.partner || who,
         power: setup.power, role: setup.role, prefs: setup.prefs, title_ru: setup.title_ru, forced, pose_ru: setup.pose_ru,
-        intent: setup.intent, options: setup.options,
+        intent: setup.intent, options: setup.options, participants: setup.participants,
     });
     writeSnapshot(idx, { state: next });
     await c.saveChat();
@@ -466,7 +471,24 @@ function ensureEncDom() {
             if (!$ta.val()) $ta.val('*I gently stop her.* "Not tonight."').trigger('input').trigger('focus');
         });
     $('#eg-enc').on('click', '[data-act="enc-end"]', endEncounter)
-        .on('click', '[data-act="enc-min"]', () => { $('#eg-enc').toggleClass('eg-min'); haptic('tick'); })
+        .on('click', '[data-act="enc-min"]', () => { S().encMin = !S().encMin; ctx().saveSettingsDebounced(); renderEnc(currentState()); haptic('tick'); })
+        .on('click', '[data-act="tgt-add"]', function () {
+            const st = currentState();
+            const name = (window.prompt('Кого добавить в сцену? (имя)') || '').trim();
+            if (!st.enc || !name) return;
+            const side = st.enc.kind === 'nsfw' ? 'partner' : (window.confirm('«ОК» — союзник, «Отмена» — враг') ? 'ally' : 'enemy');
+            const next = X.addTarget(st, name, side);
+            writeSnapshot((ctx().chat?.length ?? 1) - 1, { state: next });
+            renderEnc(next);
+        })
+        .on('click', '[data-tgt]', function () {
+            const st = currentState();
+            if (!st.enc) return;
+            const next = X.setTarget(st, this.dataset.tgt);
+            writeSnapshot((ctx().chat?.length ?? 1) - 1, { state: next });
+            renderEnc(next);
+            haptic('tick');
+        })
         .on('click', '[data-opt]', function () { playCard(Number(this.dataset.opt)); })
         .on('click', '[data-act="enc-variant"]', switchVariant);
 }
@@ -505,28 +527,41 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
     if (v.bars.includes('harm')) B.harm = 3 - (st.harm ?? 0);
     if (v.bars.includes('stress')) B.stress = st.stress ?? 0;
     const bars = v.bars.filter(k => B[k] != null).map(k => encBar(k, B[k], enc)).join('');
+    const P = enc.participants || [];
+    const tgt = X.targetOf(enc);
+    const min = Boolean(S().encMin);
+    const chip = (p) => `<button class="eg-tgt${p.name === enc.target ? ' eg-on' : ''}${p.bar <= 0 && p.side !== 'partner' ? ' eg-down' : ''}" data-tgt="${escapeHtml(p.name)}">${p.side === 'ally' ? '🛡' : p.side === 'partner' ? '💗' : '👹'} ${escapeHtml(p.name)}${p.status ? ` <em class="eg-st">${X.STATUSES[p.status.id]} ·${p.status.left}</em>` : ''} <i class="eg-tgt-bar"><b style="width:${Math.max(0, Math.min(100, p.side === 'ally' ? p.bar : p.bar))}%"></b></i></button>`;
+    const targets = enc.status === 'active' ? `<div class="eg-tgts"><span>🎯</span>${P.map(chip).join('')}<button class="eg-tgt eg-tgt-add" data-act="tgt-add" aria-label="Добавить цель">+</button></div>` : '';
+    const topBars = (v.bars.filter(k => B[k] != null).slice(0, 2)).map(k => { const b = X.BARS[k]; const mn = b.min ?? 0, mx = b.max ?? 100; return `<i class="eg-thin eg-eb-${k}" title="${b.ru}"><b style="width:${Math.max(0, Math.min(100, Math.round((B[k] - mn) / (mx - mn) * 100)))}%"></b></i>`; }).join('');
     const waiting = loading || (!enc.options?.length && enc.status === 'active');
     const cards = waiting
         ? `<div class="eg-enc-wait"><i class="fa-solid fa-dice fa-spin"></i> ${resolved ? 'Раунд разыгран — ждём ответ…' : enc.round ? 'Готовлю следующий ход…' : 'Готовлю сцену…'}</div>`
         : enc.options.map((o, i) => {
             const set = X.optionSetup(st, o);
             const pct = Math.round(set.odds.atLeastSuccess * 100);
-            return `<button class="eg-ecard eg-ek-${o.kind}${o.say ? ' eg-say' : ''}${o.ru.length > 24 ? ' eg-wide' : ''}" data-opt="${i}">
+            return `<button class="eg-ecard eg-ek-${o.kind}${o.say ? ' eg-say' : ''}" data-opt="${i}">
                 <b class="eg-elabel">${o.say ? '💬 ' : ''}${escapeHtml(o.ru)}</b>
                 ${o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
                 <small>${E.SKILLS[o.skill]?.icon || ''} ${pct}%${set.locked ? ' · 🔒 рано' : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
             </button>`;
         }).join('');
+    if (min) {
+        $p.toggleClass('eg-min', true).html(`<button class="eg-enc-mini" data-act="enc-min" aria-label="Развернуть"><span>${v.icon}</span><b>${escapeHtml(enc.title_ru || v.ru)}</b><small>${enc.round ? `р.${enc.round + (resolved ? 0 : 1)}` : ''}${enc.pose ? ` · ${escapeHtml(enc.pose)}` : ''}</small><span class="eg-thins">${topBars}</span><em>▴</em></button>`).addClass('eg-show');
+        return;
+    }
+    $p.removeClass('eg-min');
     $p.html(`
         <div class="eg-enc-head">
             <button class="eg-enc-title" data-act="enc-min"><span>${v.icon}</span><b>${escapeHtml(enc.title_ru || v.ru)}</b><small>${enc.round ? `раунд ${enc.round + (resolved ? 0 : 1)}` : ''}</small></button>
+            <button class="eg-enc-fold" data-act="enc-min" aria-label="Свернуть">▾</button>
             ${!enc.round && !loading ? `<button class="eg-link eg-small" data-act="enc-variant" title="${escapeHtml(v.hint)}">${v.ru} ↻</button>` : ''}
             <button class="eg-enc-x" data-act="enc-end" aria-label="Закончить">✕</button>
         </div>
         <div class="eg-ebars">${bars}</div>
         ${enc.pose ? `<div class="eg-pose">${enc.kind === 'nsfw' ? '🌀' : '📍'} ${escapeHtml(enc.pose)}</div>` : ''}
         ${enc.forced ? `<div class="eg-forced">⚠️ ${escapeHtml(enc.partner)} не спрашивает${enc.escape ? ' · ты почти вырвался' : ' · вырваться: 2 удачных рывка'}</div>` : ''}
-        ${enc.intent && !loading ? `<div class="eg-intent">${enc.kind === 'nsfw' ? '💭' : '⚠️'} <b>${escapeHtml(enc.partner)}:</b> ${escapeHtml(enc.intent.ru)}</div>` : ''}
+        ${enc.intent && !loading ? `<div class="eg-intent">${enc.kind === 'nsfw' ? '💭' : '⚠️'} <b>${escapeHtml(enc.intent.who || enc.partner)}:</b> ${escapeHtml(enc.intent.ru)}</div>` : ''}
+        ${waiting ? '' : targets}
         <div class="eg-ecards">${cards}</div>
         ${waiting ? '' : '<div class="eg-enc-foot">или напиши своё действие — кубик бросится сам</div>'}`).addClass('eg-show');
 }
@@ -542,7 +577,7 @@ async function playCard(i) {
     const tone = E.OUTCOMES[outcome].tone;
     const faces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
     const $p = $('#eg-enc').addClass('eg-rolling');
-    $p.find('.eg-ecards').html(`<div class="eg-enc-roll"><span class="eg-mini-dice">${dice.map(() => '<i>⚀</i>').join('')}</span><b>${escapeHtml(o.ru)}</b><em></em></div>`);
+    $p.find('.eg-ecards').html(`<div class="eg-enc-roll"><span class="eg-mini-dice">${dice.map(() => '<i>⚀</i>').join('')}</span><b>${escapeHtml(o.ru)}</b><em></em>${o.detail_ru ? `<small class="eg-detail">${escapeHtml(o.detail_ru)}</small>` : ''}</div>`);
     if (S().juice) haptic('tick');
     await new Promise((res) => {
         let n = 0;
@@ -556,9 +591,10 @@ async function playCard(i) {
     juiceOutcome(outcome);
     await new Promise(r => setTimeout(r, 700));
     $p.removeClass('eg-rolling');
-    pendingRound = { text: o.en, option: o, dice };
+    const sendText = X.aimText(st.enc, o.en);
+    pendingRound = { text: sendText, option: o, dice };
     const $ta = $('#send_textarea');
-    $ta.val(o.en).trigger('input');
+    $ta.val(sendText).trigger('input');
     $('#send_but').trigger('click');
 }
 
@@ -946,6 +982,10 @@ function showNotes(notes = []) {
             case 'dislike': out.push({ text: `👎 ${n.name} не нравится: ${n.text}`, tone: 'warn' }); break;
             case 'enc_peak': out.push({ text: `💦 ${n.name}: пик${n.n > 1 ? ` ×${n.n}` : ''}!`, tone: 'gold' }); break;
             case 'enc_you_peak': out.push({ text: '🔥 Ты не сдержался', tone: 'warn' }); break;
+            case 'status': out.push({ text: `✨ ${n.name}: ${X.STATUSES[n.id]}`, tone: 'bad' }); break;
+            case 'status_end': out.push({ text: `🔓 ${n.name} свободна`, tone: 'good' }); break;
+            case 'molest': out.push({ text: `🫳 Враг распускает руки: ${n.name}`, tone: 'warn' }); break;
+            case 'ally_hit': out.push({ text: `💢 ${n.name}: доверие −5`, tone: 'bad' }); break;
             case 'enc_limit': out.push({ text: `🚫 ${n.name}: это — нет`, tone: 'bad' }); break;
             case 'enc_escape': out.push({ text: n.n >= 2 ? '🏃 Ты вырвался!' : '💪 Почти вырвался', tone: 'warn' }); break;
             case 'orgasm': out.push({ text: `💦 ${n.name}: оргазм${n.n > 1 ? ` ×${n.n}` : ''}`, tone: 'gold' }); break;
@@ -1210,6 +1250,12 @@ export function openCard(name) {
     const state = currentState();
     const who = name || c.name2;
     const $b = $('#eg-card .eg-sheet-body').html(cardHtml(state, who));
+    $b.find('h4.eg-h-love').eq(1).nextAll().addBack().wrapAll('<div class="eg-card-more"></div>');
+    const folded = () => localStorage.getItem('eg_card_fold') === '1';
+    const $fold = $('<button class="eg-card-fold"></button>').appendTo($b.find('.eg-card-hero'));
+    const paint = () => { $b.toggleClass('eg-folded', folded()); $fold.text(folded() ? '▸' : '▾').attr('aria-label', folded() ? 'Развернуть' : 'Свернуть'); };
+    $fold.on('click', () => { localStorage.setItem('eg_card_fold', folded() ? '0' : '1'); paint(); haptic('tick'); });
+    paint();
     $b.find('[data-card-edit]').on('click', () => {
         closeEgSheets();
         $('#rightNavHolder .drawer-content').hasClass('openDrawer') || $('#rightNavHolder .drawer-toggle').first().trigger('click');
@@ -1290,7 +1336,7 @@ function openSetup(editing = false) {
     ensureSheets();
     const m = meta();
     const base = E.ensureState(E.clone(editing ? currentState() : (m?.initial ?? E.newState())));
-    const draft = { skills: { ...base.skills }, difficulty: base.difficulty, pace: base.pace, money: base.money, currency: base.currency, time: base.time, era: base.era, location: base.location };
+    const draft = { skills: { ...base.skills }, difficulty: base.difficulty, pace: base.pace, eroge: Boolean(base.eroge), money: base.money, currency: base.currency, time: base.time, era: base.era, location: base.location };
     const BUDGET = Object.keys(E.SKILLS).length + 3;
     const spent = () => Object.values(draft.skills).reduce((a, b) => a + b, 0);
     let guessing = false;
@@ -1304,6 +1350,7 @@ function openSetup(editing = false) {
     if (!editing && lastTracker?.location) draft.location = lastTracker.location;
 
     const readInputs = () => {
+        if ($('#eg_eroge').length) draft.eroge = $('#eg_eroge').prop('checked');
         if (editing || !$('#eg_time').length) return;
         draft.time = $('#eg_time').val() || draft.time;
         draft.money = Number($('#eg_money').val()) || 0;
@@ -1345,6 +1392,8 @@ function openSetup(editing = false) {
                 <label class="eg-field">Деньги <input type="number" class="text_pole" id="eg_money" value="${draft.money}"></label>
                 <label class="eg-field">Валюта <input type="text" class="text_pole" id="eg_cur" value="${escapeHtml(draft.currency)}" maxlength="8"></label>
             </div>`}
+            <h4 class="eg-h">Сюжет</h4>
+            <label class="eg-check-opt"><input type="checkbox" id="eg_eroge" ${draft.eroge ? 'checked' : ''}><span><b>Эроге-режим</b><br><small>Сюжет сознательно строит пикантные ситуации, как в классической эроге. Персонажи не отдаются сразу — ступени близости работают как прежде</small></span></label>
             <h4 class="eg-h">Интерфейс</h4>
             <label class="eg-check-opt"><input type="checkbox" id="eg_card" ${S().checkCard ? 'checked' : ''}><span>Карточка проверки с шансами (иначе бросок автоматически)</span></label>
             <label class="eg-check-opt"><input type="checkbox" id="eg_tracker" ${S().hideTracker ? 'checked' : ''}><span>Прятать строку трекера [🕐 | 📍 | 🌤] — её показывает HUD</span></label>
@@ -1386,6 +1435,7 @@ function openSetup(editing = false) {
         render();
     }).on('click', '[data-act="reguess"]', () => runGuess(true))
         .on('click', '#eg_start', async () => {
+        draft.eroge = $('#eg_eroge').prop('checked');
         const s = S();
         s.checkCard = $('#eg_card').prop('checked');
         s.hideTracker = $('#eg_tracker').prop('checked');
@@ -1396,6 +1446,7 @@ function openSetup(editing = false) {
             const st = currentState();
             st.difficulty = draft.difficulty;
             st.pace = draft.pace;
+            st.eroge = draft.eroge;
             writeSnapshot(c.chat.length - 1, { state: st });
             await c.saveChat();
         } else {

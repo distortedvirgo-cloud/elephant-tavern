@@ -50,6 +50,96 @@ export const TAGS = {
 };
 const TAG_IDS = Object.keys(TAGS);
 
+// ------------------------------------------------------------------ participants (several foes / partners / allies)
+
+const FOE_BAR = [0, 45, 70, 100];
+export const STATUSES = { paralyzed: 'парализована', charmed: 'очарована', aroused: 'под афродизиаком', bound: 'связана', asleep: 'уснула', weakened: 'ослаблена' };
+export const STATUS_EN = { paralyzed: 'paralysed, unable to move', charmed: 'under a hypnosis or lust charm, dazed', aroused: 'dosed with an aphrodisiac, flushed and weak-kneed', bound: 'bound or webbed in place', asleep: 'put to sleep', weakened: 'drained by a weakening curse' };
+export const SIDES = ['enemy', 'ally', 'partner'];
+const foesOf = (enc) => (enc.participants || []).filter(p => p.side === 'enemy');
+const aliveFoes = (enc) => foesOf(enc).filter(p => p.bar > 0);
+export const targetOf = (enc) => (enc?.participants || []).find(p => p.name === enc.target) || null;
+export const targetName = (enc) => targetOf(enc)?.name || enc?.partner || '';
+
+/** Cleans a participants list from the helper; `old` keeps bars the engine already owns. */
+export function cleanParticipants(list, kind, state = null, old = []) {
+    const out = (old || []).map(p => ({ ...p }));
+    for (const raw of (Array.isArray(list) ? list : []).slice(0, 8)) {
+        const name = String(raw?.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+        if (!name) continue;
+        const ex = out.find(p => p.name.toLowerCase() === name.toLowerCase());
+        if (raw.gone) { if (ex) out.splice(out.indexOf(ex), 1); continue; }
+        const power = clamp(Math.round(Number(raw.power) || ex?.power || 2), 1, 3);
+        if (ex) {
+            ex.power = power;
+            if (Number.isFinite(Number(raw.bar)) && Number(raw.bar) <= 0 && ex.side === 'enemy') ex.bar = 0;
+            continue;
+        }
+        let side = SIDES.includes(raw.side) ? raw.side : (kind === 'nsfw' ? 'partner' : 'enemy');
+        if (kind === 'nsfw') side = 'partner';
+        else if (side === 'partner') side = 'ally';
+        let bar;
+        if (side === 'enemy') bar = FOE_BAR[power];
+        else if (side === 'ally') bar = 100;
+        else { const n = state ? findNpc(state, name) : null; bar = n ? clamp(Math.round((n.lust ?? 30) * 0.5), 0, 50) : 15; }
+        out.push({ name, side, bar, power, peaks: 0 });
+    }
+    return out.slice(0, 8);
+}
+
+/** Puts the selected participant's bar into the shared her/foe slot (and back). Back-compat: no participants = no-op. */
+function mirror(enc) {
+    const P = enc.participants;
+    if (!P?.length) return;
+    if (enc.kind === 'nsfw') { const t = targetOf(enc); if (t) enc.bars.her = t.bar; }
+    else if (enc.bars.foe != null) {
+        const t = targetOf(enc);
+        const show = t?.side === 'enemy' ? t : (aliveFoes(enc)[0] || foesOf(enc)[0]);
+        if (show) enc.bars.foe = show.bar;
+    }
+}
+/** After a hit: an enemy at 0 hands the target to the next one standing. */
+function retarget(enc) {
+    const t = targetOf(enc);
+    if (t && t.side === 'enemy' && t.bar <= 0) { const n = aliveFoes(enc)[0]; if (n) enc.target = n.name; }
+    mirror(enc);
+}
+/** The player adds a character to the scene by hand. */
+export function addTarget(state, name, side = 'enemy') {
+    const s = clone(state);
+    const enc = s.enc;
+    if (!enc) return s;
+    enc.participants = cleanParticipants([{ name, side }], enc.kind, s, enc.participants || []);
+    const t = enc.participants.find(p => p.name.toLowerCase() === String(name).trim().toLowerCase());
+    if (t) enc.target = t.name;
+    else if (!targetOf(enc)) enc.target = defaultTarget(enc);
+    mirror(enc);
+    return s;
+}
+export function defaultTarget(enc) {
+    const P = enc.participants || [];
+    if (!P.length) return '';
+    return (enc.kind === 'nsfw' ? P.find(p => p.side === 'partner') : (aliveFoes(enc)[0] || P.find(p => p.side === 'enemy'))) ?.name || P[0].name;
+}
+export function setTarget(state, name) {
+    const s = clone(state);
+    const enc = s.enc;
+    if (!enc?.participants?.some(p => p.name === name)) return s;
+    enc.target = name;
+    mirror(enc);
+    return s;
+}
+/** The text sent as the player's move: {target} filled in, or the target appended when it is ambiguous. */
+export function aimText(enc, en) {
+    const P = enc?.participants || [];
+    const t = targetOf(enc);
+    en = String(en || '');
+    if (en.includes('{target}')) return en.replace(/\{target\}/g, t?.name || enc?.partner || 'them');
+    if (P.length > 1 && t) return /\*$/.test(en) ? `${en.slice(0, -1)}, aimed at ${t.name}.*` : `${en} (aimed at ${t.name})`;
+    return en;
+}
+const foeLabel = (enc) => { const f = foesOf(enc).map(p => p.name); return f.length ? f.join(', ') : enc.partner; };
+
 export const KINDS_NSFW = ['act', 'resist', 'redirect', 'obey', 'defy', 'please'];
 export const KINDS_COMBAT = ['attack', 'defend', 'trick', 'flee', 'talk', 'item'];
 
@@ -88,8 +178,20 @@ export function startEncounter(state, opts = {}) {
         bars.foe = [0, 45, 70, 100][power];
         if (variant === 'chase') { bars.distance = 50; delete bars.foe; }
     }
+    const participants = cleanParticipants(opts.participants, v.kind, s);
+    if (participants.length) {
+        if (v.kind === 'combat' && variant !== 'chase') {
+            const f = participants.filter(p => p.side === 'enemy');
+            if (f.length) bars.foe = f[0].bar;
+        } else if (v.kind === 'nsfw') {
+            const pp = participants.find(p => p.side === 'partner');
+            if (pp) pp.bar = bars.her;
+        }
+    }
     s.enc = {
         id: uid(),
+        participants,
+        target: '',
         kind: v.kind,
         variant,
         partner: npc?.name || partner,
@@ -114,6 +216,7 @@ export function startEncounter(state, opts = {}) {
         lastRound: null,
         result: null,
     };
+    if (participants.length) { s.enc.target = defaultTarget(s.enc); mirror(s.enc); if (v.kind === 'combat') s.enc.power = Math.max(s.enc.power, ...participants.filter(p => p.side === 'enemy').map(p => p.power)); }
     return s;
 }
 
@@ -128,6 +231,7 @@ export function cleanPrefs(p = {}) {
 export function cleanIntent(i) {
     if (!i || typeof i !== 'object') return null;
     return {
+        who: String(i.who || '').slice(0, 40),
         ru: String(i.ru || '').slice(0, 120),
         en: String(i.en || '').slice(0, 220),
         power: clamp(Math.round(Number(i.power) || 1), 1, 3),
@@ -136,12 +240,12 @@ export function cleanIntent(i) {
 }
 
 /** Card labels must be short: cut at a word boundary, "…" only as a last resort. */
-export function trimLabel(t, max = 32) {
+export function trimLabel(t, max = 16) {
     t = String(t || '').replace(/\s+/g, ' ').trim().replace(/[.!]+$/, '');
     if (t.length <= max) return t;
     const cut = t.slice(0, max + 1);
     const sp = cut.lastIndexOf(' ');
-    if (sp >= 12) return cut.slice(0, sp).replace(/[,;:—-]+$/, '');
+    if (sp >= Math.min(8, Math.floor(max / 2))) return cut.slice(0, sp).replace(/[,;:—-]+$/, '');
     return t.slice(0, max - 1) + '…';
 }
 
@@ -149,9 +253,10 @@ export function cleanOptions(list, kind = 'nsfw') {
     const kinds = kind === 'nsfw' ? KINDS_NSFW : KINDS_COMBAT;
     return (Array.isArray(list) ? list : []).slice(0, 4).map((o, i) => ({
         id: `o${i}`,
-        ru: trimLabel(o?.ru || o?.en || '…', (o?.say || /^[«"„]/.test(String(o?.ru || '').trim())) ? 46 : 32),
+        ru: trimLabel(o?.ru || o?.en || '…', (o?.say || /^[«"„]/.test(String(o?.ru || '').trim())) ? 34 : 16),
+        detail_ru: String(o?.detail_ru || '').replace(/\s+/g, ' ').trim().slice(0, 140),
         risk_ru: String(o?.risk_ru || '').replace(/\s+/g, ' ').trim().slice(0, 24),
-        en: String(o?.en || o?.ru || '').slice(0, 240),
+        en: String(o?.en || o?.ru || '').slice(0, 360),
         skill: E.SKILLS[o?.skill] ? o.skill : (kind === 'nsfw' ? 'passion' : 'might'),
         power: clamp(Math.round(Number(o?.power) || 2), 1, 3),
         tags: (Array.isArray(o?.tags) ? o.tags : []).map(x => String(x).toLowerCase()).filter(x => TAG_IDS.includes(x)).slice(0, 3),
@@ -177,12 +282,12 @@ export function optionSetup(state, option) {
     const s = E.ensureState(clone(state));
     const enc = s.enc;
     const nsfw = enc?.kind === 'nsfw';
-    let dc = nsfw ? 6 + option.power : 7 + (enc?.power ?? 2) + (option.power - 2);
+    let dc = nsfw ? 6 + option.power : 7 + (targetOf(enc)?.power ?? enc?.power ?? 2) + (option.power - 2);
     if (!nsfw && option.kind === 'defend') dc -= 1;
     if (!nsfw && option.kind === 'flee') dc += 1;
     if (nsfw && enc.variant === 'duel') dc -= Math.round((enc.bars.control || 0) / 40);
     if (nsfw && enc.variant === 'her_lead' && option.kind === 'defy') dc += 2;
-    const npc = nsfw ? findNpc(s, enc.partner) : null;
+    const npc = nsfw ? findNpc(s, targetName(enc)) : null;
     let locked = false;
     if (npc && option.stage) {
         const r = E.readiness(npc, E.readyOpts(s));
@@ -212,8 +317,12 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
     const roll = dice || E.rollDice(Math.random, set.adv ? 3 : 2);
     const outcome = E.classifyDice(roll, set.mod, set.dc, 'risky', { lucky: set.lucky });
     const mult = OUT_MULT[outcome];
+    const tgt = targetOf(enc);
+    if (tgt && enc.kind === 'combat' && enc.bars.foe != null) enc.bars.foe = tgt.bar;
+    if (tgt && enc.kind === 'nsfw') enc.bars.her = tgt.bar;
     const B = enc.bars;
     const before = clone(B);
+    const hitAlly = Boolean(tgt && tgt.side === 'ally' && enc.kind === 'combat' && ['attack', 'trick'].includes(option.kind));
     const notes = [];
     const v = enc.variant;
     enc.round += 1;
@@ -223,7 +332,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
     let complication = null;
 
     if (enc.kind === 'nsfw') {
-        const npc = findNpc(s, enc.partner);
+        const npc = findNpc(s, targetName(enc));
         if (npc) E.ensureNpc(npc);
         const passion = s.skills.passion ?? 1;
         // stage gate: an act beyond what she's ready for needs the roll to carry it
@@ -325,7 +434,8 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
             B.her = 30;
             if (B.mood != null) B.mood = clamp(B.mood + 10, 0, 100);
             if (v === 'her_lead') B.approval = clamp(B.approval + 25, 0, 100);
-            notes.push({ kind: 'enc_peak', name: enc.partner, n: enc.herPeaks });
+            if (tgt) tgt.peaks = (tgt.peaks || 0) + 1;
+            notes.push({ kind: 'enc_peak', name: targetName(enc), n: tgt ? tgt.peaks : enc.herPeaks });
         }
         let youPeakNow = false;
         if (B.you >= 100) {
@@ -350,6 +460,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
             else if (youPeakNow) enc.status = enc.herPeaks ? 'won' : 'early';
         }
         enc.round_herPeak = herPeakNow;
+        if (tgt) tgt.bar = B.her;
         var round = { herPeak: herPeakNow, youPeak: youPeakNow };
     } else {
         // ---------------------------------------------------------- combat
@@ -364,6 +475,32 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         }
         if (v === 'chase') { if (outcome === 'fail' || outcome === 'disaster') B.distance = clamp(B.distance + (enc.role === 'chaser' ? 5 : -5), 0, 100); }
         else if (outcome === 'fail' || outcome === 'disaster') B.foe = clamp(B.foe + 5, 0, 100);
+        if (tgt) {
+            tgt.bar = B.foe;
+            if (hitAlly) {
+                const an = findNpc(s, tgt.name);
+                if (an) { E.ensureNpc(an); an.trust = clamp(an.trust - 5, -100, 100); }
+                notes.push({ kind: 'ally_hit', name: tgt.name });
+            }
+            retarget(enc);
+        }
+        // eroge: enemies press an advantage; the failed roll can leave an ally (or the hero) harassed or hit by a binding effect
+        const victims = (enc.participants || []).filter(p => p.side === 'ally' && p.bar > 0);
+        for (const p of (enc.participants || [])) if (p.status && --p.status.left <= 0) { notes.push({ kind: 'status_end', name: p.name }); delete p.status; }
+        const rescue = tgt && tgt.status && !hitAlly && ['defend', 'item', 'talk', 'trick'].includes(k) && mult >= 1;
+        if (rescue) { notes.push({ kind: 'status_end', name: tgt.name }); delete tgt.status; }
+        if (s.eroge && foesOf(enc).length && (outcome === 'fail' || outcome === 'disaster') && !rescue) {
+            const vic = (tgt && tgt.side === 'ally' && tgt.bar > 0 ? tgt : null) || victims[Math.floor(Math.random() * victims.length)];
+            const by = aliveFoes(enc)[0]?.name || 'the enemy';
+            if (outcome === 'disaster' && vic && !vic.status) {
+                const id = Object.keys(STATUSES)[Math.floor(Math.random() * 6)];
+                vic.status = { id, left: 3 };
+                notes.push({ kind: 'status', name: vic.name, id });
+            }
+            complication = 'molest';
+            enc.molest = { who: vic?.name || '', by };
+            notes.push({ kind: 'molest', name: vic?.name || '{{user}}' });
+        }
         if (outcome === 'crit') intentLands = false;
         else if (outcome === 'success' && ['defend', 'flee', 'trick'].includes(k)) intentLands = false;
         const intent = enc.intent;
@@ -397,18 +534,20 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         else if (k === 'flee' && mult >= 1 && v !== 'chase') enc2.status = 'fled';
         else if (v === 'chase' && B.distance <= 0) enc2.status = enc2.role === 'chaser' ? 'won' : 'lost';
         else if (v === 'chase' && B.distance >= 100) enc2.status = enc2.role === 'chaser' ? 'lost' : 'won';
-        else if (B.foe != null && B.foe <= 0) enc2.status = 'won';
+        else if (B.foe != null && (enc2.participants?.length ? !aliveFoes(enc2).length : B.foe <= 0)) enc2.status = 'won';
         else if (v === 'standoff' && s.stress >= E.STRESS_MAX - 1) enc2.status = 'lost';
         effect = mult >= 1 ? 'good' : mult > 0 ? 'weak' : 'nothing';
         var round = { harm, stress };
         s.enc.bars = B;
     }
     const encNow = s.enc;
-    if (encNow.status === 'active' && encNow.round >= MAX_ROUNDS) encNow.status = 'ended';
+    if (encNow.status === 'active' && encNow.round >= MAX_ROUNDS + Math.min(8, 3 * Math.max(0, foesOf(encNow).length - 1))) encNow.status = 'ended';
 
     const rec = {
         round: encNow.round,
         turn: s.turn,
+        target: tgt ? { name: tgt.name, side: tgt.side } : null,
+        hitAlly,
         option: { ru: option.ru, en: option.en, skill: option.skill, power: option.power, kind: option.kind, tags: option.tags },
         free,
         dice: roll, dc: set.dc, mod: set.mod, adv: set.adv,
@@ -430,6 +569,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
 }
 
 const COMP_EN = {
+    molest: 'a foe presses its advantage in the classic eroge way: grabbing, groping over the clothes, tearing or pulling at them, pinning, lewd teasing — aimed at the weakest character in reach, played for tease, embarrassment and shock (suggestive, not explicit; the victim reacts in character: outrage, flustered, fighting back, or, only if it is truly her nature, secretly interested)',
     interrupt: 'someone approaches or a sound outside makes them freeze and listen for a moment',
     laugh: 'she laughs at him (not cruelly, but it stings and breaks the rhythm)',
     pullback: 'she pulls back for a moment, hand on his chest, breathing, needing a second',
@@ -444,6 +584,7 @@ export function deltaLine(rec, max = 3) {
         .filter(([k, d]) => rec.after?.[k] != null && rec.before?.[k] != null && Math.abs(d) >= 2)
         .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, max)
         .map(([k, d]) => `${short[k]} ${d > 0 ? '+' : '−'}${Math.abs(d)}`);
+    if (rec.complication === 'molest') parts.unshift('Враг распускает руки');
     if (rec.harm) parts.push(`Раны +${rec.harm}`);
     if (rec.stress) parts.push(`Стресс +${rec.stress}`);
     return parts.join(' · ');
@@ -509,45 +650,56 @@ export function encounterBlock(state, userName = '{{user}}') {
     const r = enc.lastRound;
     const v = VARIANTS[enc.variant];
     const u = userName;
+    const who = targetName(enc);
+    const P = enc.participants || [];
     const lines = [];
     if (!r || r.turn !== state.turn) {
-        if (enc.status === 'active') lines.push(`ENCOUNTER in progress: ${v.en} with ${enc.partner}. Keep replies to one short beat (80-130 words).`);
+        if (enc.status === 'active') lines.push(`ENCOUNTER in progress: ${v.en} with ${P.length ? P.map(p => p.name).join(', ') : who}. Keep replies to one short beat (80-130 words).`);
         return lines.join('\n');
     }
-    if (enc.forced && enc.kind === 'nsfw') lines.push(`${enc.partner} started this without asking: she is taking ${u}, and he may struggle against it or give in.`);
-    lines.push(`ENCOUNTER — ${v.en}${enc.kind === 'nsfw' ? ` with ${enc.partner}` : ` against ${enc.partner}`}, round ${r.round}. Write ONE short beat for this round only: 80-130 words, vivid, in the scene's voice. Never mention numbers, bars, rounds or dice.`);
-    const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/^\*|\*$/g, '')}")`;
-    if (r.refused) lines.push(`THIS ROUND: ${act} — ${enc.partner} stops it or turns it down: ${enc.kind === 'nsfw' ? 'not that, not now; in character, the mood dips but she stays in the scene' : 'it fails'}.`);
-    else lines.push(`THIS ROUND: ${act} goes ${OUT_EN[r.outcome]}${enc.kind === 'nsfw' ? ` (effect on ${enc.partner}: ${r.effect})` : ''}.`);
+    if (enc.forced && enc.kind === 'nsfw') lines.push(`${who} started this without asking: she is taking ${u}, and he may struggle against it or give in.`);
+    lines.push(`ENCOUNTER — ${v.en}${enc.kind === 'nsfw' ? ` with ${P.length > 1 ? P.map(p => p.name).join(' and ') : who}` : ` against ${foeLabel(enc)}`}, round ${r.round}. Write ONE short beat for this round only: 80-130 words, vivid, in the scene's voice. Never mention numbers, bars, rounds or dice.`);
+    if (P.length > 1) {
+        const band = (p) => enc.kind === 'nsfw' ? bandHer(p.bar) : p.side === 'ally' ? (p.bar <= 0 ? 'knocked out' : p.bar <= 40 ? 'battered' : 'holding up') : (p.bar <= 0 ? 'down' : p.bar <= 25 ? 'nearly broken' : p.bar <= 60 ? 'hurt' : 'still strong');
+        lines.push(`WHO IS HERE: ${P.map(p => `${p.name} (${p.side}, ${band(p)})`).join('; ')}. ${u}'s move this round was aimed at ${who}; the others act around it, in character.`);
+    }
+    const sts = P.filter(p => p.status);
+    if (sts.length) lines.push(`STATUS: ${sts.map(p => `${p.name} is ${STATUS_EN[p.status.id]} (${p.status.left} more rounds unless freed)`).join('; ')}. Show it in the beat. This is a predicament to escape or be rescued from — no sex happens while someone is incapacitated or unwilling; foes may tease, strip clothes or gloat, nothing more explicit.`);
+    if (r.notes.some(n => n.kind === 'status')) lines.push(`NEW EFFECT: ${r.notes.filter(n => n.kind === 'status').map(n => `${n.name} is hit by a ${STATUS_EN[n.id]} effect`).join('; ')} — the enemy's spell, venom, web or potion lands; describe it.`);
+    if (r.hitAlly) lines.push(`${u} turned on his ally ${who}: show her shock, hurt or anger; she may fight back or lose trust in him.`);
+    const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/\{target\}/g, who).replace(/^\*|\*$/g, '')}")`;
+    if (r.refused) lines.push(`THIS ROUND: ${act} — ${who} stops it or turns it down: ${enc.kind === 'nsfw' ? 'not that, not now; in character, the mood dips but she stays in the scene' : 'it fails'}.`);
+    else lines.push(`THIS ROUND: ${act} goes ${OUT_EN[r.outcome]}${enc.kind === 'nsfw' ? ` (effect on ${who}: ${r.effect})` : ''}.`);
     if (!r.refused && (r.outcome === 'fail' || r.outcome === 'disaster')) {
         const dis = r.outcome === 'disaster';
         if (enc.kind === 'nsfw') {
-            lines.push(`WHAT WENT WRONG: ${u}'s move ${dis ? 'badly backfires' : 'misjudges the moment'} — pick one that fits (wrong spot, too much too fast, a clumsy hand, bad timing, a line that falls flat). Show it clearly in the beat, and show ${enc.partner}'s mood visibly cooling: ${dis ? 'she stiffens, pulls back or loses the thread' : 'a flicker of disappointment, a breath of distance, less eager'}. Her pleasure dips instead of rising.`);
+            lines.push(`WHAT WENT WRONG: ${u}'s move ${dis ? 'badly backfires' : 'misjudges the moment'} — pick one that fits (wrong spot, too much too fast, a clumsy hand, bad timing, a line that falls flat). Show it clearly in the beat, and show ${who}'s mood visibly cooling: ${dis ? 'she stiffens, pulls back or loses the thread' : 'a flicker of disappointment, a breath of distance, less eager'}. Her pleasure dips instead of rising.`);
             if (r.complication) lines.push(`COMPLICATION: ${COMP_EN[r.complication]}; show it clearly in this beat.`);
         } else {
-            lines.push(`WHAT WENT WRONG: ${u}'s move ${dis ? 'goes badly wrong — a misjudged step, a bad angle, a slip' : 'is misjudged — too slow, wrong angle or wrong moment'}; show it, and show ${enc.partner} gaining ground because of it.${dis ? ` ${u} is shaken and off balance.` : ''}`);
+            lines.push(`WHAT WENT WRONG: ${u}'s move ${dis ? 'goes badly wrong — a misjudged step, a bad angle, a slip' : 'is misjudged — too slow, wrong angle or wrong moment'}; show it, and show ${who} gaining ground because of it.${dis ? ` ${u} is shaken and off balance.` : ''}`);
         }
     } else if (!r.refused && r.outcome === 'near' && enc.kind === 'nsfw') lines.push('It half-works: a small hitch or awkward beat takes a little of the heat out of the moment.');
-    if (r.intent) lines.push(r.intentLands ? `THEN ${enc.partner}: ${r.intent.en} — and it lands.` : `${enc.partner} tried to ${r.intent.en.replace(/^she |^he |^they /i, '')} but ${u}'s move stops or turns it.`);
+    if (r.intent) lines.push(r.intentLands ? `THEN ${r.intent.who || who}: ${r.intent.en} — and it lands.` : `${r.intent.who || who} tried to ${r.intent.en.replace(/^she |^he |^they /i, '')} but ${u}'s move stops or turns it.`);
     const B = enc.bars;
     if (enc.kind === 'nsfw') {
-        lines.push(`NOW (show through bodies and voices): ${enc.partner}: ${bandHer(B.her)}; ${bandYou(B.you, u)}${B.mood != null ? `; mood: ${B.mood >= 70 ? 'hot and close' : B.mood >= 40 ? 'good' : 'cooling, a little off'}` : ''}${B.control != null ? `; control: ${B.control >= 30 ? u + ' has the upper hand' : B.control <= -30 ? enc.partner + ' has the upper hand' : 'contested'}` : ''}${B.approval != null ? `; she is ${B.approval >= 70 ? 'very pleased with him' : B.approval >= 40 ? 'satisfied so far' : 'not yet impressed'}` : ''}${B.comfort != null ? `; her trust: ${B.comfort >= 60 ? 'she is giving herself completely' : B.comfort >= 30 ? 'holding' : 'shaky, she is close to stopping'}` : ''}.`);
-        if (r.herPeak) lines.push(`${enc.partner} CLIMAXES in this beat${enc.herPeaks > 1 ? ' (again)' : ''}: write it fully, broken speech and all.`);
+        lines.push(`NOW (show through bodies and voices): ${who}: ${bandHer(B.her)}; ${bandYou(B.you, u)}${B.mood != null ? `; mood: ${B.mood >= 70 ? 'hot and close' : B.mood >= 40 ? 'good' : 'cooling, a little off'}` : ''}${B.control != null ? `; control: ${B.control >= 30 ? u + ' has the upper hand' : B.control <= -30 ? who + ' has the upper hand' : 'contested'}` : ''}${B.approval != null ? `; she is ${B.approval >= 70 ? 'very pleased with him' : B.approval >= 40 ? 'satisfied so far' : 'not yet impressed'}` : ''}${B.comfort != null ? `; her trust: ${B.comfort >= 60 ? 'she is giving herself completely' : B.comfort >= 30 ? 'holding' : 'shaky, she is close to stopping'}` : ''}.`);
+        if (r.herPeak) lines.push(`${who} CLIMAXES in this beat${enc.herPeaks > 1 ? ' (again)' : ''}: write it fully, broken speech and all.`);
         if (r.youPeak) lines.push(`${u} can't hold back any more: he climaxes in this beat${enc.together ? ', together with her' : ''}. Show it through her eyes and his body; do not write his words.`);
-        if (r.notes.some(n => n.kind === 'spot')) lines.push(`${enc.partner} reacts unusually strongly: ${u} has found one of her most sensitive spots.`);
+        if (r.notes.some(n => n.kind === 'spot')) lines.push(`${who} reacts unusually strongly: ${u} has found one of her most sensitive spots.`);
     } else {
-        lines.push(`NOW: ${B.foe != null ? `${enc.partner} is ${B.foe <= 25 ? 'nearly broken' : B.foe <= 60 ? 'hurt and shaken' : 'still strong'}` : ''}${B.distance != null ? `distance: ${B.distance <= 20 ? 'almost within reach' : B.distance >= 80 ? 'almost gone' : 'still a gap'}` : ''}${r.harm ? `; ${u} takes a hit` : ''}${r.stress ? `; ${u} is rattled` : ''}.`);
+        lines.push(`NOW: ${B.foe != null ? `${who} is ${B.foe <= 25 ? 'nearly broken' : B.foe <= 60 ? 'hurt and shaken' : 'still strong'}` : ''}${B.distance != null ? `distance: ${B.distance <= 20 ? 'almost within reach' : B.distance >= 80 ? 'almost gone' : 'still a gap'}` : ''}${r.harm ? `; ${u} takes a hit` : ''}${r.stress ? `; ${u} is rattled` : ''}.`);
     }
     if (enc.status !== 'active') {
         const end = {
-            won: enc.kind === 'nsfw' ? (enc.variant === 'her_lead' ? `${enc.partner} finally allows ${u} to finish. This is the last beat of the scene: let it land, then the afterglow.` : `This is the last beat of the scene: the release lands, then the afterglow.`) : `${u} wins: ${enc.partner} is beaten, gives up or is caught. Last beat of the encounter.`,
+            won: enc.kind === 'nsfw' ? (enc.variant === 'her_lead' ? `${who} finally allows ${u} to finish. This is the last beat of the scene: let it land, then the afterglow.` : `This is the last beat of the scene: the release lands, then the afterglow.`) : `${u} wins: ${who} is beaten, gives up or is caught. Last beat of the encounter.`,
             early: `${u} came before her. Last beat of the scene: she reacts in character (teasing, amused, a little frustrated, or kind), afterglow.`,
-            lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? `${enc.partner} stops the scene: it went too far for her. Last beat: she pulls back, in character.` : `${enc.partner} wins this one. Last beat: she savours her victory, in character.`) : `${u} loses this ${v.en.replace(/^a /, '')}: the worst plausible outcome lands. Last beat of the encounter.`,
+            lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? `${who} stops the scene: it went too far for her. Last beat: she pulls back, in character.` : `${who} wins this one. Last beat: she savours her victory, in character.`) : `${u} loses this ${v.en.replace(/^a /, '')}: the worst plausible outcome lands. Last beat of the encounter.`,
             draw: 'They break together. Last beat of the scene, then the afterglow.',
-            fled: enc.kind === 'nsfw' ? `${u} breaks free and stops it. Last beat: ${enc.partner} reacts in character (amused, offended, hungry for a next time, or backing off).` : `${u} gets away. Last beat of the encounter.`,
+            fled: enc.kind === 'nsfw' ? `${u} breaks free and stops it. Last beat: ${who} reacts in character (amused, offended, hungry for a next time, or backing off).` : `${u} gets away. Last beat of the encounter.`,
             ended: 'This is the last beat of the encounter: wind it down.',
         }[enc.status];
         lines.push(end);
+        if (state.eroge && enc.kind === 'combat' && enc.status === 'lost') lines.push(`ERO-GE: the defeat leaves ${P.find(p => p.side === 'ally')?.name || 'whoever lost (an ally or a female foe)'} in a revealing, helpless or humiliating predicament that ${u} can see — torn or slipping clothes, bindings, a compromising pose, capture; played for embarrassment and tease. No sexual violence, no sex while she resists.`);
     }
     return lines.join('\n');
 }
@@ -561,6 +713,12 @@ function partnerSheet(state, enc) {
     const r = E.readiness(n, E.readyOpts(state));
     return `${E.npcLine(n, '{{user}}', state)}\nIntimacy ladder (0-8): ${E.STAGES.map((s, i) => `${i}=${s.id}`).join(', ')}. Ready now up to: ${r.ready}.${n.limits.length ? `\nHer limits: ${n.limits.join(', ')}` : ''}`;
 }
+
+const partsSchema = (nsfw) => nsfw ? '{"name":"her name","power":1-3}' : '{"name":"1-3 words","side":"enemy|ally","power":1-3}';
+const partsRule = (nsfw) => nsfw
+    ? 'participants: every partner actually in the scene (usually one; several only if the narration really has several).'
+    : 'participants: EVERY character actually in the fight from the narration, one entry each (3 goblins = 3 entries "Гоблин 1"..., or "Гоблины ×3" if truly indistinguishable); enemies side "enemy"; companions fighting on ${user}\'s side (a sorceress, a guard) side "ally"; power = how dangerous each one is.';
+const erogeNote = (state) => state?.eroge ? '\n' + E.EROGE_HELPER_NOTE + (state.enc?.participants?.some(p => p.status) ? '\nSomeone in the scene is under a status effect: make 1-2 of the four cards a way to free or protect them (kind defend/item/talk aimed at that character: resist, dispel, cure, pull them away, rescue).' : '') : '';
 
 export function startPrompt({ state, kind, partner, narration, card, user, char, forced = false }) {
     const nsfw = kind === 'nsfw';
@@ -578,34 +736,35 @@ ${String(narration || '').slice(-1800)}
 </narration>
 
 Reply with ONE line of JSON:
-{"variant":"${nsfw ? 'duet|duel|her_lead|your_lead' : 'fight|chase|standoff'}","partner":"${nsfw ? 'her name' : 'opponent name, 1-3 words'}","title_ru":"короткое название сцены",${nsfw ? `"prefs":{"loves":[1-2 tags],"likes":[2-4 tags],"dislikes":[1-2 tags]},` : `"power":1-3 (opponent strength: 1 weak, 2 even match, 3 dangerous),"role":"chaser|fleeing",`}
+{"variant":"${nsfw ? 'duet|duel|her_lead|your_lead' : 'fight|chase|standoff'}","participants":[${partsSchema(nsfw)}],"partner":"${nsfw ? 'her name' : 'opponent name, 1-3 words'}","title_ru":"короткое название сцены",${nsfw ? `"prefs":{"loves":[1-2 tags],"likes":[2-4 tags],"dislikes":[1-2 tags]},` : `"power":1-3 (opponent strength: 1 weak, 2 even match, 3 dangerous),"role":"chaser|fleeing",`}
 ${optionsSchema(nsfw)}}
+${partsRule(nsfw).replace('${user}', user)}
 ${nsfw ? `prefs: her hidden tastes, true to the card, from these tags only: ${TAG_IDS.join(', ')}.` : ''}
-${optionsRules(nsfw, user)}`;
+${optionsRules(nsfw, user)}${erogeNote(state)}`;
 }
 
 function optionsSchema(nsfw) {
-    return `"pose_ru":"${nsfw ? 'текущая поза и действие прямо сейчас, 3-7 слов, например «Она сверху, медленно двигается» или «Прижата к стене, его рука под юбкой»' : 'положение сейчас, 3-7 слов, например «Сцепились у стойки»'}","intent":{"ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
-"options":[{"say":bool,"ru":"действие по-русски, 2-5 слов, не длиннее 28 символов; для реплики — сама фраза в «ёлочках», до 6 слов","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*first-person action in English, 1 sentence*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
+    return `"pose_ru":"${nsfw ? 'текущая поза и действие прямо сейчас, 3-7 слов, например «Она сверху, медленно двигается» или «Прижата к стене, его рука под юбкой»' : 'положение сейчас, 3-7 слов, например «Сцепились у стойки»'}","intent":{"who":"кто именно действует","ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
+"options":[{"say":bool,"ru":"ПРОСТАЯ метка, 1-2 слова, до 16 символов («Атаковать», «Поцеловать», «Уклониться», «Раздеть», «Прижать», «Дразнить»); для реплики — короткая фраза в «ёлочках», до 4 слов","detail_ru":"подробно по-русски, одно предложение: что именно делает герой и чем рискует (показывается только после выбора)","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*detailed, specific first-person action in English, 1-2 sentences grounded in the scene; write {target} where the target's name goes*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
 }
 
 function optionsRules(nsfw, user, recent = []) {
     const avoid = recent.length ? `\nDo NOT repeat or paraphrase these recent cards (verbs, actions, body parts): ${recent.join('; ')}.` : '';
-    const lang = `\nLabels ("ru"): Russian, 2-5 words, at most 28 characters, a concrete verb phrase ("Укусить за мочку", "Поднять на стол"); spoken cards are the phrase itself in «ёлочках». "risk_ru": 1-3 words about the gamble or the payoff ("рискованно", "может понравиться", "она может отказать", "надёжно"), different on each card.`;
+    const lang = `\nLabels ("ru"): Russian, SIMPLE and SHORT: 1-2 words, at most 16 characters ("Атаковать", "Поцеловать", "Уклониться", "Раздеть", "Прижать", "Дразнить"); spoken cards are a short phrase in «ёлочках», at most 4 words. All the detail goes into "en": it is sent as ${user}'s message, so make it a specific, vivid first-person action (1-2 sentences) using details of the scene; use {target} for the name of whoever the move is aimed at when there are several characters. "risk_ru": 1-3 words about the gamble or the payoff ("рискованно", "может понравиться", "она может отказать", "надёжно"), different on each card.`;
     return (nsfw
         ? `Options: exactly 4 cards that are genuinely DIFFERENT from each other, each grounded in a specific detail of the latest narration (her body, her clothes, the place, a prop, ${user}'s inventory, what she just said or did). Required mix:
 1. TENDER or sensual (power 1-2): slow, attentive, a touch or a kiss placed somewhere specific.
 2. BOLD (power 3): the high-risk move that can ruin the mood or blow her away.
 3. SITUATION-CHANGER: a new position, a new place, removing or moving clothing, using the room or an item ${user} carries, a game, a tease, a bit of roleplay, a dare.
 4. VERBAL or TACTICAL: holding back, or turning her telegraphed move (kind redirect or resist).
-SPOKEN LINES: one or two of the four cards are things ${user} SAYS, not does (say: true): a tease, a compliment, a command, a confession, a dirty promise, a question that makes her blush, a challenge; in his own voice, fitting the moment and the variation. For these, ru = the phrase itself in Russian in «ёлочках», at most 6 words ("«Ты дрожишь. Мне нравится»"), and en = *the exact words in quotes, plus at most a short tag* (e.g. "I lean in. \"You're shaking. I like that.\""); skill charm (or passion for dirty talk, insight for a question that reads her). A spoken card can be any of the four styles.
+SPOKEN LINES: one or two of the four cards are things ${user} SAYS, not does (say: true): a tease, a compliment, a command, a confession, a dirty promise, a question that makes her blush, a challenge; in his own voice, fitting the moment and the variation. For these, ru = the phrase itself in Russian in «ёлочках», at most 4 words ("«Ты дрожишь»"), and en = *the exact words in quotes, plus at most a short tag* (e.g. "I lean in. \"You're shaking. I like that.\""); skill charm (or passion for dirty talk, insight for a question that reads her). A spoken card can be any of the four styles.
 Rotate which style leads from round to round; do not repeat the pattern of the previous round. Follow the variation: duel = every card fights for control (pin, steal the initiative, make her break first); her_lead = obey / please / defy with real stakes (defy can win her over or cost ${user}); your_lead = ${user} leads with care, reads her, asks, builds trust; bold cards risk her trust. ${user}'s skill passion = technique, charm = words, finesse = precise hands, resolve = holding out, insight = reading her. power 1 = light, 3 = intense. stage = the ladder step the act belongs to; never offer acts more than one step above "ready now". limit: true only if it touches one of her limits. The intent is her next move toward ${user}, building from the narration.`
         : `Options: exactly 4 cards, each specific to the opponent's telegraphed move and to the surroundings in the latest narration:
 1. ATTACK (name the strike and the target).
 2. DEFEND or EVADE aimed at the telegraphed move.
 3. ENVIRONMENT TRICK: use a named object, terrain, light, crowd or a hazard from the narration.
 4. WILDCARD: a bold gamble (power 3), or an item ${user} carries.
-SPOKEN LINES: one of the four cards (two in a standoff) is something ${user} SAYS (say: true): a taunt, a threat, a bluff, a bargain, a calm word, kind talk; ru = the phrase in Russian in «ёлочках», at most 6 words; en = *the exact words in quotes, plus at most a short tag*; skill charm (bluff, persuade), resolve (calm, threat) or insight.
+SPOKEN LINES: one of the four cards (two in a standoff) is something ${user} SAYS (say: true): a taunt, a threat, a bluff, a bargain, a calm word, kind talk; ru = the phrase in Russian in «ёлочках», at most 4 words; en = *the exact words in quotes, plus at most a short tag*; skill charm (bluff, persuade), resolve (calm, threat) or insight.
 Do not offer two cards of the same kind. The intent is the opponent's next move, telegraphed so ${user} can react.`) + lang + avoid;
 }
 
@@ -622,8 +781,10 @@ Latest narration:
 ${String(narration || '').slice(-1600)}
 </narration>
 
-Reply with ONE line of JSON: {${optionsSchema(nsfw)}}
-${optionsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru))}${enc.forced && nsfw ? `\nShe started this without asking: one of the four cards is always a way to break free or push her off (kind defy)${enc.escape ? ' — he already got partly free once' : ''}.` : ''}`;
+Participants now: ${(enc.participants || []).map(p => `${p.name} (${p.side}, bar ${p.bar})`).join('; ') || 'single opponent'}. Selected target: ${targetName(enc)}.
+Reply with ONE line of JSON: {"participants":[{"name":"","side":"enemy|ally|partner","power":1-3,"gone":bool,"bar":0 only if knocked out}],${optionsSchema(nsfw)}}
+participants: include only NEW arrivals, and anyone knocked out, fled or gone (gone:true or bar 0); otherwise [].
+${optionsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru))}${erogeNote(state)}${enc.forced && nsfw ? `\nShe started this without asking: one of the four cards is always a way to break free or push her off (kind defy)${enc.escape ? ' — he already got partly free once' : ''}.` : ''}`;
 }
 
 export function classifyPrompt({ state, action, narration, user }) {
@@ -633,5 +794,6 @@ export function classifyPrompt({ state, action, narration, user }) {
 ${nsfw ? partnerSheet(state, enc) : ''}
 Narration: ${String(narration || '').slice(-800)}
 ${user}'s move: ${String(action || '').slice(0, 600)}
-Reply with ONE line of JSON: {"ru":"2-5 слов, не длиннее 28 символов","en":"the move, 1 sentence","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[from: ' + TAG_IDS.join(', ') + '],"stage":0-8,"limit":bool' : ',"item":""'}}`;
+Selected target: ${targetName(enc)}.
+Reply with ONE line of JSON: {"ru":"1-2 слова, до 16 символов","en":"the move, 1-2 specific sentences","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[from: ' + TAG_IDS.join(', ') + '],"stage":0-8,"limit":bool' : ',"item":""'}}`;
 }
