@@ -569,7 +569,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
 }
 
 const COMP_EN = {
-    molest: 'a foe presses its advantage in the classic eroge way: grabbing, groping over the clothes, tearing or pulling at them, pinning, lewd teasing — aimed at the weakest character in reach, played for tease, embarrassment and shock (suggestive, not explicit; the victim reacts in character: outrage, flustered, fighting back, or, only if it is truly her nature, secretly interested)',
+    molest: 'a foe presses its advantage in a teasing, threatening way: grabbing, pinning, a torn cloak or sleeve, a lewd taunt — a brief, non-sexual or fading threat, never a sex scene. If the victim says stop or shows fear, the beat turns to escape, protest or rescue at once. The victim reacts in character (outrage, flustered, fighting back); protect, refuse and break-free cards are offered.',
     interrupt: 'someone approaches or a sound outside makes them freeze and listen for a moment',
     laugh: 'she laughs at him (not cruelly, but it stings and breaks the rhythm)',
     pullback: 'she pulls back for a moment, hand on his chest, breathing, needing a second',
@@ -664,7 +664,7 @@ export function encounterBlock(state, userName = '{{user}}') {
         lines.push(`WHO IS HERE: ${P.map(p => `${p.name} (${p.side}, ${band(p)})`).join('; ')}. ${u}'s move this round was aimed at ${who}; the others act around it, in character.`);
     }
     const sts = P.filter(p => p.status);
-    if (sts.length) lines.push(`STATUS: ${sts.map(p => `${p.name} is ${STATUS_EN[p.status.id]} (${p.status.left} more rounds unless freed)`).join('; ')}. Show it in the beat. This is a predicament to escape or be rescued from — no sex happens while someone is incapacitated or unwilling; foes may tease, strip clothes or gloat, nothing more explicit.`);
+    if (sts.length) lines.push(`STATUS: ${sts.map(p => `${p.name} is ${STATUS_EN[p.status.id]} (${p.status.left} more rounds unless freed)`).join('; ')}. Show it in the beat. This is a predicament to escape or be rescued from — a status changes mood and behaviour but never removes consent; nothing sexual happens to anyone incapacitated, unconscious or unwilling, and any refusal or fear ends or redirects the beat to escape, rescue or aftermath. Always offer break-free, refuse or protect.`);
     if (r.notes.some(n => n.kind === 'status')) lines.push(`NEW EFFECT: ${r.notes.filter(n => n.kind === 'status').map(n => `${n.name} is hit by a ${STATUS_EN[n.id]} effect`).join('; ')} — the enemy's spell, venom, web or potion lands; describe it.`);
     if (r.hitAlly) lines.push(`${u} turned on his ally ${who}: show her shock, hurt or anger; she may fight back or lose trust in him.`);
     const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/\{target\}/g, who).replace(/^\*|\*$/g, '')}")`;
@@ -699,7 +699,7 @@ export function encounterBlock(state, userName = '{{user}}') {
             ended: 'This is the last beat of the encounter: wind it down.',
         }[enc.status];
         lines.push(end);
-        if (state.eroge && enc.kind === 'combat' && enc.status === 'lost') lines.push(`ERO-GE: the defeat leaves ${P.find(p => p.side === 'ally')?.name || 'whoever lost (an ally or a female foe)'} in a revealing, helpless or humiliating predicament that ${u} can see — torn or slipping clothes, bindings, a compromising pose, capture; played for embarrassment and tease. No sexual violence, no sex while she resists.`);
+        if (state.eroge && enc.kind === 'combat' && enc.status === 'lost') lines.push(`ERO-GE: the defeat leaves ${P.find(p => p.side === 'ally')?.name || 'whoever lost (an ally or a female foe)'} in a revealing, helpless or humiliating predicament that ${u} can see — torn or slipping clothes, bindings, a compromising pose, capture; played for embarrassment and tease, then it moves to rescue, escape or aftermath. No sexual scene follows from defeat; any refusal ends or redirects the beat.`);
     }
     return lines.join('\n');
 }
