@@ -323,7 +323,9 @@ async function encounterTurn(before, text, narration) {
     if (pendingRound && pendingRound.text.trim() === text.trim()) {
         const p = pendingRound;
         pendingRound = null;
-        return X.resolveRound(before, p.option, { dice: p.dice });
+        const res = X.resolveRound(before, p.option, { dice: p.dice });
+        showDeltas(res.round);
+        return res;
     }
     pendingRound = null;
     let option = null;
@@ -340,7 +342,15 @@ async function encounterTurn(before, text, narration) {
     const res = X.resolveRound(before, option, { free: true });
     const o = E.OUTCOMES[res.round.outcome];
     toastEnc(`${E.SKILLS[res.round.option.skill]?.icon || '🎲'} ${res.round.option.ru}: ${o.ru} (${res.round.dice.join('·')})`, o.tone);
+    showDeltas(res.round, 700);
     return res;
+}
+
+function showDeltas(rec, delay = 0) {
+    const line = X.deltaLine(rec);
+    if (!line) return;
+    const bad = ['fail', 'disaster', 'near'].includes(rec.outcome);
+    setTimeout(() => toastEnc(line, bad ? 'bad' : 'good'), delay);
 }
 
 function toastEnc(text, tone = 'info') {
@@ -487,8 +497,9 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
         : enc.options.map((o, i) => {
             const set = X.optionSetup(st, o);
             const pct = Math.round(set.odds.atLeastSuccess * 100);
-            return `<button class="eg-ecard eg-ek-${o.kind}" data-opt="${i}">
-                <b>${escapeHtml(o.ru)}</b>
+            return `<button class="eg-ecard eg-ek-${o.kind}${o.ru.length > 24 ? ' eg-wide' : ''}" data-opt="${i}">
+                <b class="eg-elabel">${escapeHtml(o.ru)}</b>
+                ${o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
                 <small>${E.SKILLS[o.skill]?.icon || ''} ${pct}%${set.locked ? ' · 🔒 рано' : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
             </button>`;
         }).join('');

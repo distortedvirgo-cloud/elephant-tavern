@@ -53,6 +53,7 @@ const TAG_IDS = Object.keys(TAGS);
 export const KINDS_NSFW = ['act', 'resist', 'redirect', 'obey', 'defy', 'please'];
 export const KINDS_COMBAT = ['attack', 'defend', 'trick', 'flee', 'talk', 'item'];
 
+export const COMPLICATIONS = ['interrupt', 'laugh', 'pullback', 'clumsy', 'cold'];
 const OUT_MULT = { crit: 2, success: 1, near: 0.6, fail: 0.2, disaster: 0 };
 const MAX_ROUNDS = 10;
 /* How hard each partner is to bring over the edge, and how hard they push back. */
@@ -131,11 +132,22 @@ export function cleanIntent(i) {
     };
 }
 
+/** Card labels must be short: cut at a word boundary, "…" only as a last resort. */
+export function trimLabel(t, max = 32) {
+    t = String(t || '').replace(/\s+/g, ' ').trim().replace(/[.!]+$/, '');
+    if (t.length <= max) return t;
+    const cut = t.slice(0, max + 1);
+    const sp = cut.lastIndexOf(' ');
+    if (sp >= 12) return cut.slice(0, sp).replace(/[,;:—-]+$/, '');
+    return t.slice(0, max - 1) + '…';
+}
+
 export function cleanOptions(list, kind = 'nsfw') {
     const kinds = kind === 'nsfw' ? KINDS_NSFW : KINDS_COMBAT;
     return (Array.isArray(list) ? list : []).slice(0, 4).map((o, i) => ({
         id: `o${i}`,
-        ru: String(o?.ru || o?.en || '…').slice(0, 70),
+        ru: trimLabel(o?.ru || o?.en || '…'),
+        risk_ru: String(o?.risk_ru || '').replace(/\s+/g, ' ').trim().slice(0, 24),
         en: String(o?.en || o?.ru || '').slice(0, 240),
         skill: E.SKILLS[o?.skill] ? o.skill : (kind === 'nsfw' ? 'passion' : 'might'),
         power: clamp(Math.round(Number(o?.power) || 2), 1, 3),
@@ -204,6 +216,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
     let intentLands = true;
     let refused = false;
     let effect = '';
+    let complication = null;
 
     if (enc.kind === 'nsfw') {
         const npc = findNpc(s, enc.partner);
@@ -275,6 +288,20 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         }
         if (B.mood != null && !refused) B.mood = clamp(B.mood + (mult >= 1 ? 4 + (pref > 1 ? 5 : 0) : -4), 0, 100);
         if (crit(outcome) && v !== 'her_lead') intentLands = false;
+        // a miss costs something: mood, her pleasure, and her move lands harder
+        let intentMult = 1;
+        if (!refused) {
+            if (outcome === 'near') { if (B.mood != null) B.mood = clamp(B.mood - 3, 0, 100); }
+            else if (outcome === 'fail' || outcome === 'disaster') {
+                const dis = outcome === 'disaster';
+                if (B.mood != null) B.mood = clamp(B.mood - (dis ? 20 : 10), 0, 100);
+                B.her = clamp(B.her - (dis ? 15 : 5), 0, 100);
+                if (B.comfort != null) B.comfort = clamp(B.comfort - 15, 0, 100);
+                if (B.approval != null && v === 'her_lead' && option.kind !== 'defy') B.approval = clamp(B.approval - (dis ? 8 : 3), 0, 100);
+                intentMult = 1.5;
+                if (dis) { complication = COMPLICATIONS[Math.floor(Math.random() * COMPLICATIONS.length)]; notes.push({ kind: 'complication', text: complication }); }
+            }
+        }
         effect = refused ? 'refused' : gain >= 25 ? 'strong' : gain >= 12 ? 'good' : gain > 0 ? 'weak' : 'nothing';
 
         // her move
@@ -282,7 +309,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         if (intent && intentLands) {
             const resistF = 1 - 0.06 * Math.max(0, passion - 1) - (E.hasPerk(s, 'cool') ? 0.1 : 0);
             const domF = PUSH_F[v] * (v === 'duel' ? 1 - (B.control || 0) / 200 : 1);
-            B.you = clamp(B.you + Math.round(intent.power * 10 * resistF * domF), 0, 100);
+            B.you = clamp(B.you + Math.round(intent.power * 10 * resistF * domF * intentMult), 0, 100);
             B.her = clamp(B.her + intent.power * 3, 0, 100);
         }
 
@@ -329,6 +356,8 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
             const step = Math.round(1.4 * dmgBase * ({ attack: 1, trick: 1.1, flee: 1, item: 1.1, defend: 0.5, talk: 0.4 }[k] ?? 0.8));
             B.distance = clamp(B.distance + (enc.role === 'chaser' ? -step : step), 0, 100);
         }
+        if (v === 'chase') { if (outcome === 'fail' || outcome === 'disaster') B.distance = clamp(B.distance + (enc.role === 'chaser' ? 5 : -5), 0, 100); }
+        else if (outcome === 'fail' || outcome === 'disaster') B.foe = clamp(B.foe + 5, 0, 100);
         if (outcome === 'crit') intentLands = false;
         else if (outcome === 'success' && ['defend', 'flee', 'trick'].includes(k)) intentLands = false;
         const intent = enc.intent;
@@ -349,6 +378,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
                 if (outcome === 'disaster') harm += 1;
             }
         }
+        if (outcome === 'disaster') stress += 1;
         if (harm && E.hasPerk(s, 'tough') && outcome === 'disaster') harm -= 1;
         if (stress && E.hasPerk(s, 'cool')) stress = Math.max(0, stress - 1);
         const ev = [];
@@ -383,6 +413,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         intentLands,
         before, after: clone(encNow.bars),
         notes,
+        complication,
         ...round,
     };
     encNow.log = [...encNow.log, { round: rec.round, ru: option.ru, outcome, herPeak: rec.herPeak, youPeak: rec.youPeak }].slice(-20);
@@ -390,6 +421,26 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
     encNow.options = [];
     if (encNow.status !== 'active') s = finishEncounter(s, notes);
     return { state: s, round: rec };
+}
+
+const COMP_EN = {
+    interrupt: 'someone approaches or a sound outside makes them freeze and listen for a moment',
+    laugh: 'she laughs at him (not cruelly, but it stings and breaks the rhythm)',
+    pullback: 'she pulls back for a moment, hand on his chest, breathing, needing a second',
+    clumsy: 'an awkward bump, cramp, slipped grip or tangled clothing ruins the flow',
+    cold: 'the mood breaks; she goes quiet and cool and needs coaxing before she warms again',
+};
+/** Compact "Настрой −12 · Её удовольствие −5" line from a round record (biggest changes first). */
+export function deltaLine(rec, max = 3) {
+    if (!rec) return '';
+    const short = { her: 'Её удовольствие', you: 'Возбуждение', mood: 'Настрой', control: 'Контроль', approval: 'Одобрение', comfort: 'Доверие', foe: 'Стойкость врага', distance: 'Дистанция' };
+    const parts = Object.keys(short).map(k => [k, (rec.after?.[k] ?? 0) - (rec.before?.[k] ?? 0)])
+        .filter(([k, d]) => rec.after?.[k] != null && rec.before?.[k] != null && Math.abs(d) >= 2)
+        .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, max)
+        .map(([k, d]) => `${short[k]} ${d > 0 ? '+' : '−'}${Math.abs(d)}`);
+    if (rec.harm) parts.push(`Раны +${rec.harm}`);
+    if (rec.stress) parts.push(`Стресс +${rec.stress}`);
+    return parts.join(' · ');
 }
 
 const crit = (o) => o === 'crit';
@@ -461,6 +512,15 @@ export function encounterBlock(state, userName = '{{user}}') {
     const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/^\*|\*$/g, '')}")`;
     if (r.refused) lines.push(`THIS ROUND: ${act} — ${enc.partner} stops it or turns it down: ${enc.kind === 'nsfw' ? 'not that, not now; in character, the mood dips but she stays in the scene' : 'it fails'}.`);
     else lines.push(`THIS ROUND: ${act} goes ${OUT_EN[r.outcome]}${enc.kind === 'nsfw' ? ` (effect on ${enc.partner}: ${r.effect})` : ''}.`);
+    if (!r.refused && (r.outcome === 'fail' || r.outcome === 'disaster')) {
+        const dis = r.outcome === 'disaster';
+        if (enc.kind === 'nsfw') {
+            lines.push(`WHAT WENT WRONG: ${u}'s move ${dis ? 'badly backfires' : 'misjudges the moment'} — pick one that fits (wrong spot, too much too fast, a clumsy hand, bad timing, a line that falls flat). Show it clearly in the beat, and show ${enc.partner}'s mood visibly cooling: ${dis ? 'she stiffens, pulls back or loses the thread' : 'a flicker of disappointment, a breath of distance, less eager'}. Her pleasure dips instead of rising.`);
+            if (r.complication) lines.push(`COMPLICATION: ${COMP_EN[r.complication]}; show it clearly in this beat.`);
+        } else {
+            lines.push(`WHAT WENT WRONG: ${u}'s move ${dis ? 'goes badly wrong — a misjudged step, a bad angle, a slip' : 'is misjudged — too slow, wrong angle or wrong moment'}; show it, and show ${enc.partner} gaining ground because of it.${dis ? ` ${u} is shaken and off balance.` : ''}`);
+        }
+    } else if (!r.refused && r.outcome === 'near' && enc.kind === 'nsfw') lines.push('It half-works: a small hitch or awkward beat takes a little of the heat out of the moment.');
     if (r.intent) lines.push(r.intentLands ? `THEN ${enc.partner}: ${r.intent.en} — and it lands.` : `${enc.partner} tried to ${r.intent.en.replace(/^she |^he |^they /i, '')} but ${u}'s move stops or turns it.`);
     const B = enc.bars;
     if (enc.kind === 'nsfw') {
@@ -519,13 +579,25 @@ ${optionsRules(nsfw, user)}`;
 
 function optionsSchema(nsfw) {
     return `"intent":{"ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
-"options":[{"ru":"действие, 2-6 слов","en":"*first-person action in English, 1 sentence*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
+"options":[{"ru":"действие по-русски, 2-5 слов, не длиннее 28 символов","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*first-person action in English, 1 sentence*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
 }
 
-function optionsRules(nsfw, user) {
-    return nsfw
-        ? `Options: exactly 4, different from each other and from the last round: one tender, one bold, one that holds back or turns her move (resist or redirect), one surprising. Use the variation: in her_lead give obey/please/defy options, in duel give moves that fight for control. ${user}'s skill passion = technique, charm = words, finesse = precise hands, resolve = holding out, insight = reading her. power 1 = light, 3 = intense. stage = the ladder step the act belongs to; never offer acts more than one step above "ready now". limit: true only if it touches one of her limits. The intent is her next move toward ${user}, building from the narration.`
-        : `Options: exactly 4: attack, defend or evade, a clever trick or using the environment, and one more fitting option (flee, talk, or an item ${user} carries). The intent is the opponent's next move, telegraphed so ${user} can react.`;
+function optionsRules(nsfw, user, recent = []) {
+    const avoid = recent.length ? `\nDo NOT repeat or paraphrase these recent cards (verbs, actions, body parts): ${recent.join('; ')}.` : '';
+    const lang = `\nLabels ("ru"): Russian, 2-5 words, at most 28 characters, a concrete verb phrase ("Укусить за мочку", "Поднять на стол"), never a full sentence. "risk_ru": 1-3 words about the gamble or the payoff ("рискованно", "может понравиться", "она может отказать", "надёжно"), different on each card.`;
+    return (nsfw
+        ? `Options: exactly 4 cards that are genuinely DIFFERENT from each other, each grounded in a specific detail of the latest narration (her body, her clothes, the place, a prop, ${user}'s inventory, what she just said or did). Required mix:
+1. TENDER or sensual (power 1-2): slow, attentive, a touch or a kiss placed somewhere specific.
+2. BOLD (power 3): the high-risk move that can ruin the mood or blow her away.
+3. SITUATION-CHANGER: a new position, a new place, removing or moving clothing, using the room or an item ${user} carries, a game, a tease, a bit of roleplay, a dare.
+4. VERBAL or TACTICAL: a tease, a command, a whispered confession, holding back, or turning her telegraphed move (kind redirect or resist).
+Rotate which style leads from round to round; do not repeat the pattern of the previous round. Follow the variation: duel = every card fights for control (pin, steal the initiative, make her break first); her_lead = obey / please / defy with real stakes (defy can win her over or cost ${user}); your_lead = ${user} leads with care, reads her, asks, builds trust; bold cards risk her trust. ${user}'s skill passion = technique, charm = words, finesse = precise hands, resolve = holding out, insight = reading her. power 1 = light, 3 = intense. stage = the ladder step the act belongs to; never offer acts more than one step above "ready now". limit: true only if it touches one of her limits. The intent is her next move toward ${user}, building from the narration.`
+        : `Options: exactly 4 cards, each specific to the opponent's telegraphed move and to the surroundings in the latest narration:
+1. ATTACK (name the strike and the target).
+2. DEFEND or EVADE aimed at the telegraphed move.
+3. ENVIRONMENT TRICK: use a named object, terrain, light, crowd or a hazard from the narration.
+4. WILDCARD: a bold gamble (power 3), or talk, or an item ${user} carries.
+Do not offer two cards of the same kind. The intent is the opponent's next move, telegraphed so ${user} can react.`) + lang + avoid;
 }
 
 export function nextPrompt({ state, narration, user }) {
@@ -542,7 +614,7 @@ ${String(narration || '').slice(-1600)}
 </narration>
 
 Reply with ONE line of JSON: {${optionsSchema(nsfw)}}
-${optionsRules(nsfw, user)}`;
+${optionsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru))}`;
 }
 
 export function classifyPrompt({ state, action, narration, user }) {
@@ -552,5 +624,5 @@ export function classifyPrompt({ state, action, narration, user }) {
 ${nsfw ? partnerSheet(state, enc) : ''}
 Narration: ${String(narration || '').slice(-800)}
 ${user}'s move: ${String(action || '').slice(0, 600)}
-Reply with ONE line of JSON: {"ru":"2-6 слов","en":"the move, 1 sentence","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[from: ' + TAG_IDS.join(', ') + '],"stage":0-8,"limit":bool' : ',"item":""'}}`;
+Reply with ONE line of JSON: {"ru":"2-5 слов, не длиннее 28 символов","en":"the move, 1 sentence","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[from: ' + TAG_IDS.join(', ') + '],"stage":0-8,"limit":bool' : ',"item":""'}}`;
 }

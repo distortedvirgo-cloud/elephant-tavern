@@ -393,7 +393,10 @@ button.eg-perk { border-style: dashed; }
 .eg-intent { font-size: 12.5px; line-height: 1.35; padding: 6px 10px; margin: 2px 0 8px; border-radius: 12px; background: rgba(255, 110, 170, 0.08); border: 1px dashed rgba(255, 120, 180, 0.35); color: rgba(255, 225, 238, 0.92); }
 .eg-ecards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .eg-ecard { min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; min-height: 58px; text-align: left; font: inherit; color: inherit; padding: 8px 10px; border-radius: 14px; background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; }
-.eg-ecard b { font-size: 13px; line-height: 1.25; font-weight: 600; }
+.eg-ecard b, .eg-ecard .eg-elabel { display: block; width: 100%; font-size: 13px; line-height: 1.25; font-weight: 600; white-space: normal; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; overflow: hidden; }
+.eg-ecard { white-space: normal; overflow: hidden; }
+.eg-ecard.eg-wide { grid-column: 1 / -1; }
+.eg-ecard .eg-erisk { display: block; font-size: 10.5px; line-height: 1.2; font-style: italic; color: #ffb3cf; opacity: 0.9; white-space: normal; }
 .eg-ecard small { font-size: 11px; color: rgba(220, 214, 235, 0.7); display: flex; gap: 4px; align-items: center; }
 .eg-ecard .eg-pow { margin-left: auto; color: #ff8fb8; letter-spacing: 1px; }
 .eg-ecard:active { transform: scale(0.97); background: rgba(255, 110, 170, 0.15); }
