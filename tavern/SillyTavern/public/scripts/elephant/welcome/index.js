@@ -18,7 +18,7 @@ export const DEFAULT_TEXT_MODEL = 'z-ai/glm-5.3';
 export const DEFAULT_HELPER_MODEL = 'deepseek/deepseek-v4.1-flash-1017';
 const OLD_TEXT_MODEL = 'xiaomi/mimo-v2.6-pro';
 /** Bump when preset.json changes: it is (re)installed once per version. */
-const PRESET_VERSION = '13';
+const PRESET_VERSION = '16';
 const PRESET_NAME = 'Elephant Tavern';
 export const DEFAULT_IMAGE_MODEL = 'anima/text-to-image';
 
