@@ -221,7 +221,67 @@ export function ensureNpc(n) {
     n.stage ??= Math.max(0, ...ACTS.filter(a => n.firsts[a.id]).map(a => a.stage), n.attraction >= 10 ? 1 : 0);
     n.sceneStage ??= n.stage;
     n.boost ??= null;
+    n.diary ??= [];
+    n.knows ??= {};
+    n.schedule ??= null;
+    n.dislikes ??= [];
     return n;
+}
+
+// ------------------------------------------------------------------ schedules
+
+const DAY_RE = { all: /./, weekdays: /[1-5]/, weekend: /[06]/ };
+const toMin = (t) => { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+
+/** What a character is supposed to be doing at this moment by their routine, or null. */
+export function activityAt(n, iso) {
+    if (!Array.isArray(n?.schedule) || !n.schedule.length) return null;
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return null;
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    const dow = String(d.getUTCDay());
+    const now = (+m[4]) * 60 + (+m[5]);
+    for (const e of n.schedule) {
+        if (!(DAY_RE[e.days] || DAY_RE.all).test(dow)) continue;
+        const a = toMin(e.from), b = toMin(e.to);
+        if (a == null || b == null) continue;
+        const inside = a <= b ? (now >= a && now < b) : (now >= a || now < b);
+        if (inside) return e;
+    }
+    return null;
+}
+
+export function cleanSchedule(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 10).map(e => ({
+        days: DAY_RE[e?.days] ? e.days : 'all',
+        from: String(e?.from || '').slice(0, 5), to: String(e?.to || '').slice(0, 5),
+        where_ru: String(e?.where_ru || '').slice(0, 40), doing_ru: String(e?.doing_ru || '').slice(0, 60), doing_en: String(e?.doing_en || '').slice(0, 100),
+        busy: Boolean(e?.busy),
+    })).filter(e => toMin(e.from) != null && toMin(e.to) != null);
+}
+
+export function schedulePrompt({ npc, card, era, setting }) {
+    return `Write a believable daily routine for ${npc.name}${card ? ` (card: ${String(card).slice(0, 1200)})` : ''}. Setting: ${setting || 'unknown'}${era ? ` (${era})` : ''}.
+Cover the whole day (sleep included) for weekdays and weekend if they differ, 4-8 blocks. busy = true when they are working or tied up and can't just drop it.
+Reply with ONE line of JSON: {"schedule":[{"days":"all|weekdays|weekend","from":"HH:MM","to":"HH:MM","where_ru":"где, 1-3 слова","doing_ru":"что делает, 2-5 слов","doing_en":"what they do, short","busy":bool}]}`;
+}
+
+// ------------------------------------------------------------------ side quests
+
+export function questPrompt({ state, setting, user }) {
+    const npcs = Object.values(state.npcs || {}).slice(-6).map(n => n.name).join(', ') || 'none yet';
+    const goals = (state.goals || []).filter(g => g.status === 'active').map(g => g.title).join('; ') || 'none';
+    return `Invent ONE side quest the world offers ${user} in an interactive story, small and concrete (an errand, a favour, a mystery, a job, a rescue, a delivery, a rumour to chase), fitting the setting and the current situation, solvable in a few scenes.
+Setting: ${setting || 'unknown'}. Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Known characters: ${npcs}. ${user}'s current goals: ${goals}. Level ${state.level}. Money: ${state.money} ${state.currency}.
+Reply with ONE line of JSON: {"title_ru":"короткое название задания","giver":"who offers it (a known character or a new minor one)","hook_en":"how it shows up in the story: 1-2 sentences for the narrator","reward_money":int,"reward_xp":3-8,"reward_ru":"награда словами, коротко"}`;
+}
+
+export function addOffer(s, q) {
+    if (!q?.title_ru) return null;
+    const offer = { id: uid(), title: String(q.title_ru).slice(0, 70), giver: String(q.giver || '').slice(0, 40), hook_en: String(q.hook_en || '').slice(0, 300), reward_money: Math.max(0, Math.round(Number(q.reward_money) || 0)), reward_xp: clamp(Math.round(Number(q.reward_xp) || 4), 2, 10), reward_ru: String(q.reward_ru || '').slice(0, 60), turn: s.turn, status: 'offered', hooks: 0 };
+    s.offers = [...(s.offers || []).filter(o => o.status === 'offered' || o.status === 'taken').slice(-4), offer];
+    s.lastOfferTurn = s.turn;
+    return offer;
 }
 
 /** Thresholds for a stage with this character, the game's pace and the player's passion. */
@@ -338,6 +398,10 @@ export function ensureState(s) {
     s.scene ??= 0;
     s.pace ??= 'medium';
     s.era ??= '';
+    s.gear ??= {};
+    s.offers ??= [];
+    s.pending ??= [];
+    s.enc ??= null;
     s.level ??= 1; s.xp ??= 0; s.unspent ??= 0;
     for (const n of Object.values(s.npcs || {})) ensureNpc(n);
     return s;
@@ -393,8 +457,68 @@ export function tierOf(trust) {
 
 /** Modifier the player gets for a skill right now (skill + harm penalty). */
 export function modifier(state, skill) {
-    return (state.skills[skill] ?? 0) + HARM[clamp(state.harm, 0, 3)].penalty;
+    return (state.skills?.[skill] ?? 1) + HARM[clamp(state.harm, 0, 3)].penalty + (gearFor(state, skill)?.bonus || 0);
 }
+
+// ------------------------------------------------------------------ gear
+
+/** The best item the player carries for this skill: { name, bonus } or null. Bonuses don't stack. */
+export function gearFor(state, skill) {
+    let best = null;
+    for (const [name, g] of Object.entries(state.gear || {})) {
+        if (g.skill !== skill || !(g.bonus > 0) || (g.consumable && !(g.qty > 0))) continue;
+        if (!best || g.bonus > best.bonus) best = { name, bonus: g.bonus };
+    }
+    return best;
+}
+
+const CONDOM = /презерв|condom|резинк/i;
+
+/** Adds an item; extractor/shop objects carry a skill bonus, plain strings don't. */
+export function addItem(s, raw, notes = []) {
+    const it = typeof raw === 'string' ? { name_ru: raw } : (raw || {});
+    const name = String(it.name_ru || it.name || '').trim().slice(0, 40);
+    if (!name) return;
+    const qty = clamp(Math.round(Number(it.qty) || 1), 1, 99);
+    const key = Object.keys(s.gear).find(k => k.toLowerCase() === name.toLowerCase()) || name;
+    const g = s.gear[key] ?? { skill: '', bonus: 0, consumable: false, qty: 0, desc: '' };
+    if (SKILLS[it.skill]) g.skill = it.skill;
+    if (Number(it.bonus) > 0) g.bonus = clamp(Math.round(Number(it.bonus)), 0, 2);
+    g.consumable = Boolean(it.consumable ?? g.consumable) || CONDOM.test(name);
+    if (it.desc_ru) g.desc = String(it.desc_ru).slice(0, 80);
+    g.qty = (g.qty || 0) + qty;
+    s.gear[key] = g;
+    if (!s.items.some(x => x.toLowerCase() === key.toLowerCase())) s.items.push(key);
+    notes.push({ kind: 'item', name: key, delta: qty });
+}
+
+export function useItem(s, name, n = 1, notes = []) {
+    const key = Object.keys(s.gear || {}).find(k => k.toLowerCase() === String(name).toLowerCase())
+        ?? Object.keys(s.gear || {}).find(k => k.toLowerCase().includes(String(name).toLowerCase()));
+    const i = s.items.findIndex(x => x.toLowerCase() === String(key || name).toLowerCase());
+    if (!key && i < 0) return false;
+    const g = key ? s.gear[key] : null;
+    if (g && g.consumable && g.qty > n) { g.qty -= n; notes.push({ kind: 'item', name: key, delta: -n }); return true; }
+    if (key) delete s.gear[key];
+    if (i >= 0) { notes.push({ kind: 'item', name: s.items[i], delta: -1 }); s.items.splice(i, 1); }
+    return true;
+}
+
+/** "Нож (+1 Сила), Презервативы ×3" — for the narrator, the referee and the card. */
+export function itemsLine(state) {
+    return (state.items || []).map((name) => {
+        const g = state.gear?.[name];
+        if (!g) return name;
+        const bits = [];
+        if (g.skill && g.bonus) bits.push(`+${g.bonus} ${SKILLS[g.skill].en.toLowerCase()}`);
+        return `${name}${g.consumable && g.qty > 1 ? ` ×${g.qty}` : ''}${bits.length ? ` (${bits.join(', ')})` : ''}`;
+    }).join(', ');
+}
+export const hasCondoms = (state) => Object.entries(state.gear || {}).some(([k, g]) => CONDOM.test(k) && g.qty > 0);
+
+/** Exposed for encounters: wounds through the normal harm track. */
+export function hurt(s, n, events = [], notes = []) { applyHarm(s, n, events, notes); return s; }
+export function levelUpState(s, notes = []) { levelUp(s, notes); return s; }
 
 /**
  * How a character's feelings change a check aimed at them.
@@ -745,6 +869,10 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
     if (trackerLine?.weather) s.weather = trackerLine.weather;
     else if (report?.weather) s.weather = report.weather;
 
+    s.pending = [];
+    for (const o of s.offers || []) if (o.status === 'offered') o.hooks = (o.hooks || 0) + 1;
+    // an offer nobody picked up fades after a while
+    s.offers = (s.offers || []).filter(o => !(o.status === 'offered' && o.hooks > 12));
     if (!report) return { state: s, notes, events };
 
     // relationships, romance, intimacy
@@ -821,6 +949,34 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         }
         if ((acts.includes('sex') || acts.includes('anal')) && n.protection) {
             if (n.protection === 'none') npc.unprotected += 1; else npc.protected += 1;
+            if (n.protection === 'condom' && !(report.items_used || []).some(x => CONDOM.test(typeof x === 'string' ? x : x?.name_ru || ''))) {
+                const k = Object.keys(s.gear).find(x => CONDOM.test(x) && s.gear[x].qty > 0);
+                if (k) useItem(s, k, 1, notes);
+            }
+        }
+        // witnesses: everyone else in the room now knows how far it went with this character
+        if (acts.length) {
+            const st = Math.max(...acts.map(a => ACTS.find(x => x.id === a).stage));
+            for (const other of report.npcs || []) {
+                const ok = String(other?.name || '').trim().toLowerCase();
+                if (!ok || ok === key || other.present === false || !s.npcs[ok]) continue;
+                ensureNpc(s.npcs[ok]);
+                if ((s.npcs[ok].knows[key] || 0) < st) { s.npcs[ok].knows[key] = st; notes.push({ kind: 'knows', name: s.npcs[ok].name, about: npc.name }); }
+            }
+        }
+        for (const about of (Array.isArray(n.learned_about) ? n.learned_about : []).slice(0, 3)) {
+            const ak = String(about || '').trim().toLowerCase();
+            const target = s.npcs[ak] ?? Object.values(s.npcs).find(x => x.name.toLowerCase() === ak);
+            if (!target || target === npc) continue;
+            ensureNpc(target);
+            const st = Math.max(1, target.stage || 1);
+            if ((npc.knows[target.name.toLowerCase()] || 0) < st) { npc.knows[target.name.toLowerCase()] = st; notes.push({ kind: 'knows', name: npc.name, about: target.name }); }
+        }
+        const moment = String(n.moment_ru || '').trim();
+        if (moment) {
+            npc.diary.push({ time: s.time, ru: moment.slice(0, 120), en: String(n.moment_en || '').slice(0, 160) });
+            if (npc.diary.length > 40) npc.diary.shift();
+            notes.push({ kind: 'moment', name: npc.name, text: moment.slice(0, 80) });
         }
         for (const raw of (Array.isArray(n.positions_ru) ? n.positions_ru : []).slice(0, 3)) {
             const t = String(raw || '').trim().slice(0, 30);
@@ -878,14 +1034,9 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
     // money & items
     const dm = clamp(Math.round(Number(report.money) || 0), -100000, 100000);
     if (dm) { s.money = Math.max(0, s.money + dm); notes.push({ kind: 'money', delta: dm }); }
-    for (const it of (report.items_gained || []).slice(0, 4)) {
-        const name = String(it).trim().slice(0, 40);
-        if (name && !s.items.some(x => x.toLowerCase() === name.toLowerCase())) { s.items.push(name); notes.push({ kind: 'item', name, delta: 1 }); }
-    }
-    for (const it of (report.items_lost || []).slice(0, 4)) {
-        const i = s.items.findIndex(x => x.toLowerCase() === String(it).trim().toLowerCase());
-        if (i >= 0) { notes.push({ kind: 'item', name: s.items[i], delta: -1 }); s.items.splice(i, 1); }
-    }
+    for (const it of (report.items_gained || []).slice(0, 4)) addItem(s, it, notes);
+    for (const it of (report.items_lost || []).slice(0, 4)) useItem(s, typeof it === 'string' ? it : it?.name_ru || it?.name || '', 99, notes);
+    for (const it of (report.items_used || []).slice(0, 4)) useItem(s, typeof it === 'string' ? it : it?.name_ru || it?.name || '', Math.max(1, Math.round(Number(it?.qty) || 1)), notes);
 
     // goals
     for (const g of (report.goals || []).slice(0, 4)) {
@@ -895,13 +1046,23 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         let goal = s.goals.find(x => x.title.toLowerCase() === key || similar(x.title, title));
         if (!goal && g.status === 'new' && s.goals.filter(x => x.status === 'active').length < MAX_GOALS) {
             goal = { id: uid(), title, status: 'active', since: s.turn };
+            const offer = (s.offers || []).find(o => o.status === 'offered' && (o.title.toLowerCase() === key || similar(o.title, title)));
+            if (offer) { offer.status = 'taken'; goal.offer = offer.id; goal.title = offer.title; }
             s.goals.push(goal);
-            notes.push({ kind: 'goal_new', title });
+            notes.push({ kind: 'goal_new', title: goal.title, quest: Boolean(offer) });
         } else if (goal && goal.status === 'active' && (g.status === 'done' || g.status === 'failed')) {
             goal.status = g.status;
             goal.closed = s.turn;
-            if (g.status === 'done') { notes.push({ kind: 'goal_done', title: goal.title }); xp(4 + learner); }
-            else notes.push({ kind: 'goal_failed', title: goal.title });
+            if (g.status === 'done') {
+                notes.push({ kind: 'goal_done', title: goal.title });
+                const offer = goal.offer && (s.offers || []).find(o => o.id === goal.offer);
+                if (offer) {
+                    offer.status = 'done';
+                    if (offer.reward_money) { s.money += offer.reward_money; notes.push({ kind: 'money', delta: offer.reward_money }); }
+                    xp(offer.reward_xp + learner, 'задание');
+                } else xp(4 + learner);
+            }
+            else { notes.push({ kind: 'goal_failed', title: goal.title }); const offer = goal.offer && (s.offers || []).find(o => o.id === goal.offer); if (offer) offer.status = 'failed'; }
         }
     }
     s.goals = [...s.goals.filter(g => g.status === 'active'), ...s.goals.filter(g => g.status !== 'active').slice(-8)];
@@ -973,6 +1134,14 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
     if (n.likes.length) parts.push(`known turn-ons: ${n.likes.join(', ')}`);
     if (n.spots.length) parts.push(`weak spots (strong reaction when touched): ${n.spots.join(', ')}`);
     if (n.limits.length) parts.push(`limits they have set: ${n.limits.join(', ')}`);
+    if (state) {
+        const act = activityAt(n, state.time);
+        if (act) parts.push(`by their routine they should be ${act.doing_en || act.doing_ru}${act.where_ru ? ` (${act.where_ru})` : ''} now${act.busy ? ' — busy, with obligations' : ''}`);
+        const known = Object.entries(n.knows || {}).filter(([k, st]) => st >= 2 && state.npcs?.[k]).map(([k, st]) => `${state.npcs[k].name} (${STAGES[st].en})`);
+        if (known.length && (n.attraction >= 30 || n.affection >= 30 || n.stage >= 2)) parts.push(`KNOWS ${userName} has been intimate with ${known.join(', ')}: reacts in character — jealous, hurt, possessive, competitive, curious or fine with it, depending on who they are and what they feel for ${userName}`);
+        const recent = (n.diary || []).slice(-3).map(d => d.en || d.ru);
+        if (recent.length) parts.push(`shared history: ${recent.join(' / ')}`);
+    }
     return `${parts.join('; ')}; #${n.color}`;
 }
 
@@ -990,6 +1159,11 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
     if (progress.length) parts.push(`Progress: ${progress.join(', ')}`);
     lines.push(`STATE: ${parts.join(' · ')}`);
     if (goals.length) lines.push(`${userName}'s goals: ${goals.join('; ')}`);
+    const inv = itemsLine(state);
+    lines.push(`${userName} carries: ${inv || 'nothing of note'}${hasCondoms(state) ? '' : ' (no condoms)'}`);
+    if (state.pending?.length) lines.push(`Since the last reply: ${state.pending.join('; ')}.`);
+    const hook = (state.offers || []).find(o => o.status === 'offered' && o.hooks <= 3);
+    if (hook) lines.push(`SIDE QUEST HOOK (weave it in naturally within the next reply or two, through ${hook.giver || 'someone or something in the scene'}; ${userName} decides whether to take it): ${hook.hook_en}`);
     const traits = traitsBlock(state, userName);
     if (traits) lines.push(traits);
     const present = Object.values(state.npcs).filter(n => n.present);
@@ -1033,7 +1207,7 @@ export function stateSummary(state0) {
         const r = readiness(n, ro);
         return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}, intimacy reached: ${STAGE_IDS[r.reached]}, willing now up to: ${STAGE_IDS[r.ready]}${n.experience ? `, ${n.experience}` : ''})`;
     }).join('; ') || 'none';
-    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills (0-6): ${skills}. Money: ${state.money}. Items: ${state.items.join(', ') || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}\nNPCs: ${npcs}`;
+    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills (0-6): ${skills}. Money: ${state.money}. Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
 }
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {
@@ -1081,12 +1255,12 @@ ${String(reply || '').slice(0, 3500)}
 
 Reply with ONE line of minified JSON, nothing else:
 {"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"${MOOD_IDS.join('|')}","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
-"npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"start_stage":0..8,"start_experience":"virgin|inexperienced|experienced|very|","start_pace":"fast|normal|slow","intimacy":["kiss"|"makeout"|"grope"|"hands"|"oral_her"|"oral_you"|"sex"|"anal"|"kink"],"protection":"condom|pill|other|none|","positions_ru":[],"place_ru":"","her_orgasm":0..3,"user_orgasm":0..3,"likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
-"harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[],"items_lost":[],
+"npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"start_stage":0..8,"start_experience":"virgin|inexperienced|experienced|very|","start_pace":"fast|normal|slow","intimacy":["kiss"|"makeout"|"grope"|"hands"|"oral_her"|"oral_you"|"sex"|"anal"|"kink"],"protection":"condom|pill|other|none|","positions_ru":[],"place_ru":"","her_orgasm":0..3,"user_orgasm":0..3,"learned_about":[],"moment_ru":"","moment_en":"","likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
+"harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[{"name_ru":"","skill":"might|finesse|insight|charm|resolve|lore|passion|","bonus":0|1|2,"consumable":bool,"qty":int}],"items_lost":[],"items_used":[{"name_ru":"","qty":int}],"encounter":{"kind":"nsfw|combat|","partner":""},
 "goals":[{"title_ru":"","status":"new|done|failed"}],
 "clocks":[{"name":"","kind":"progress|threat","tick":1|2,"size":4|6|8}]}
 
-Rules: start_* only for a character who is NOT in the game state yet: where their feelings toward ${user} stand already, from the card and the story so far (a stranger ~0, an old friend trust 30+, a character who secretly wants ${user} attraction 40+; openness 20 for an average person, lower for shy or innocent, higher for bold or experienced ones; start_stage = how far they have ALREADY gone with ${user} before the game: 0 none, 1 flirting, 2 kissed, 3 made out, 4 petting, 5 naked touching, 6 oral, 7 sex, 8 anything (a wife or long-time lover is 7-8); start_experience from the card (virgin, inexperienced, experienced, very) or empty if unknown; start_pace fast for characters made for quick sex (succubus, nymphomaniac, sex worker on the job, desperate heat), slow for very shy, chaste or guarded ones, else normal). trust/affection/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. trust = how safe the character feels with ${user}; affection = emotional attachment, love; attraction = physical desire for ${user}. lust = the character's arousal change in this exchange (flirting +5..10, making out +15..25, sex +25..40, cold shower or interruption −20..−40). openness: +1..3 only when the character willingly tried something new or bolder with ${user}. intimacy: acts that physically happened between ${user} and that character in THIS exchange (kiss = kissing; makeout = deep, heated making out; grope = touching through or under clothes; hands = naked touching, fingering, handjob; oral_her = ${user} pleasures them orally; oral_you = they pleasure ${user} orally; sex = penetrative sex; anal; kink = toys, bondage, other kinks). protection: for sex/anal only — what was used, none if nothing, empty otherwise. positions_ru: sex positions used, 1-3 Russian words each. place_ru: where it happened, 2-4 Russian words. her_orgasm: how many times that character climaxed in this exchange; user_orgasm: how many times ${user} did. likes_ru / weak_spots_ru / limits_ru: ONLY newly revealed things in Russian, 1-4 words (a turn-on they showed or said; a body spot that made them react strongly; something they refused or set as a boundary). harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
+Rules: start_* only for a character who is NOT in the game state yet: where their feelings toward ${user} stand already, from the card and the story so far (a stranger ~0, an old friend trust 30+, a character who secretly wants ${user} attraction 40+; openness 20 for an average person, lower for shy or innocent, higher for bold or experienced ones; start_stage = how far they have ALREADY gone with ${user} before the game: 0 none, 1 flirting, 2 kissed, 3 made out, 4 petting, 5 naked touching, 6 oral, 7 sex, 8 anything (a wife or long-time lover is 7-8); start_experience from the card (virgin, inexperienced, experienced, very) or empty if unknown; start_pace fast for characters made for quick sex (succubus, nymphomaniac, sex worker on the job, desperate heat), slow for very shy, chaste or guarded ones, else normal). trust/affection/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. trust = how safe the character feels with ${user}; affection = emotional attachment, love; attraction = physical desire for ${user}. lust = the character's arousal change in this exchange (flirting +5..10, making out +15..25, sex +25..40, cold shower or interruption −20..−40). openness: +1..3 only when the character willingly tried something new or bolder with ${user}. intimacy: acts that physically happened between ${user} and that character in THIS exchange (kiss = kissing; makeout = deep, heated making out; grope = touching through or under clothes; hands = naked touching, fingering, handjob; oral_her = ${user} pleasures them orally; oral_you = they pleasure ${user} orally; sex = penetrative sex; anal; kink = toys, bondage, other kinks). protection: for sex/anal only — what was used, none if nothing, empty otherwise. positions_ru: sex positions used, 1-3 Russian words each. place_ru: where it happened, 2-4 Russian words. her_orgasm: how many times that character climaxed in this exchange; user_orgasm: how many times ${user} did. likes_ru / weak_spots_ru / limits_ru: ONLY newly revealed things in Russian, 1-4 words (a turn-on they showed or said; a body spot that made them react strongly; something they refused or set as a boundary). learned_about: names of OTHER known characters this character just found out ${user} is romantic or intimate with (they saw, heard or were told). moment_ru / moment_en: only when something significant happened between ${user} and this character (first meeting, a confession, a fight, a gift, a promise, a betrayal, a first time, a secret shared): one short line in Russian and in English; otherwise empty. items_gained: what ${user} got; skill+bonus only for gear that really helps a skill (a knife +1 might, lockpicks +1 finesse, fine clothes +1 charm, a holy charm +1 resolve, a medkit +1 lore, condoms are consumable with qty); items_used: consumables ${user} used up. encounter: ONLY if this reply ends right as sex is starting (nsfw) or a fight / chase / tense standoff is breaking out (combat) and it is not already under way; else empty kind. harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
 }
 
 export function parseJsonLine(text) {
