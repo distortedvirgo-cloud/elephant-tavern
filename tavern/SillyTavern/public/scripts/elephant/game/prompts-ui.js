@@ -123,7 +123,7 @@ async function aiEdit(ask) {
 
 Player's request:
 <request>
-${ask.slice(0, 1500)}
+${ask.slice(0, 4000)}
 </request>
 
 Prompt templates (id — purpose, then the current text):
@@ -131,7 +131,7 @@ Prompt templates (id — purpose, then the current text):
 ${catalog}
 </templates>
 
-Reply with ONE line of JSON: {"changes":[{"id":"template id from the list","what":"exactly what to change in this template, one or two sentences in English"}],"reply_ru":"одно-два предложения игроку по-русски: что именно будет изменено; если просьба не про поведение игры или её нельзя выполнить правкой промптов — объясни почему и оставь changes пустым"}
+Reply with ONE line of JSON: {"changes":[{"id":"template id from the list","what":"exactly what to change in this template, in English; if the player gave exact text to insert, say where it goes and that it is inserted verbatim"}],"reply_ru":"одно-два предложения игроку по-русски: что именно будет изменено; если просьба не про поведение игры или её нельзя выполнить правкой промптов — объясни почему и оставь changes пустым"}
 Pick only the templates that really need to change (usually one to three). Use only ids from the list. narrator_extra is the place for new standing rules for the storyteller that fit nowhere else.`, 500, { json: true });
     const j = parseJson(pick);
     const wanted = (Array.isArray(j?.changes) ? j.changes : []).filter(c => pool.some(([id]) => id === c?.id) && String(c?.what || '').trim()).slice(0, 4);
@@ -139,14 +139,18 @@ Pick only the templates that really need to change (usually one to three). Use o
     for (const c of wanted) {
         const cur = P.textOf(c.id);
         const text = await D.callHelper(ss, 'You edit one prompt template. Output only the complete new template text, nothing else.',
-            `Rewrite this prompt template so that it does the following: ${String(c.what).slice(0, 500)}
-(The player's request, for context: ${ask.slice(0, 600)})
+            `Rewrite this prompt template so that it does the following: ${String(c.what).slice(0, 1200)}
+
+The player's request (any exact text they give to add goes in word for word):
+<request>
+${ask.slice(0, 4000)}
+</request>
 
 Rules: change only what the request needs and keep everything else word for word. Keep the template's language (English instructions stay English). Keep every {{placeholder}} in double braces exactly as it is. Output the complete new template and nothing else: no comments, no explanations, no code fences.
 
 <template>
 ${cur}
-</template>`, Math.min(4000, Math.round(cur.length / 2.2) + 500));
+</template>`, Math.min(6000, Math.round((cur.length + ask.length) / 2.2) + 600));
         const clean = String(text || '').replace(/^```[a-z]*\n?|\n?```$/g, '').replace(/^<template>\n?|\n?<\/template>$/g, '').trim();
         if (clean && clean !== cur.trim()) out.changes.push({ id: c.id, what: String(c.what), before: cur, after: clean });
     }

@@ -1560,6 +1560,7 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
             disaster: `It goes badly wrong: ${record.fail_en || 'the worst plausible consequence'} — make it hurt and raise the stakes.`,
         }[record.outcome];
         lines.push(`OUTCOME of ${userName}'s attempt to ${record.action_en || 'act'} (${record.position}): ${o.en} — ${consequence.charAt(0).toUpperCase()}${consequence.slice(1)}${/[.!?]$/.test(consequence) ? '' : '.'}`);
+        lines.push(`The OUTCOME only decides how well ${userName}'s action goes. What ${userName} is doing, and why, is exactly what ${userName} wrote; if the summary above reads the action differently, follow ${userName}'s own words.`);
         if (record.intimacy_push) lines.push(['crit', 'success', 'near'].includes(record.outcome)
             ? `${record.target} gives in to ${userName}'s push this time: they let it go one step further than they meant to.`
             : `${record.target} does not give in: they stop ${userName} and cool off a little (in character, not cruel).`);
@@ -1589,7 +1590,7 @@ export function conditionsLine(state, userName = '{{user}}') {
 /** Who the player is (persona description): every helper model gets it with the game state. */
 let PERSONA = '';
 export function setPersona(text) { PERSONA = String(text || '').trim().slice(0, 1500); }
-export const personaLine = () => (PERSONA ? `{{user}} (the player) — this is who they are, and it is true even when other characters don't know it: ${PERSONA}` : '');
+export const personaLine = (user = '{{user}}') => (PERSONA ? `${user} (the player) — this is who they are, and it is true even when other characters don't know it: ${PERSONA}` : '');
 
 export function stateSummary(state0) {
     const state = ensureState(clone(state0));
@@ -1606,7 +1607,7 @@ export function stateSummary(state0) {
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {
     return P.render('referee', {
-        user, char, state: [personaLine(), stateSummary(state)].filter(Boolean).join('\n'),
+        user, char, state: [personaLine(user), stateSummary(state).replaceAll('{{user}}', user)].filter(Boolean).join('\n'),
         narration: String(lastNarration || '').slice(-1800), action: String(action || '').slice(0, 1200),
         eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('referee_format', { user }),
     });
@@ -1614,7 +1615,7 @@ export function refereePrompt({ state, lastNarration, action, user, char }) {
 
 export function extractorPrompt({ state, userText, reply, user, char, memoryState = '' }) {
     return P.render('extractor', {
-        user, char, state: [personaLine(), stateSummary(state)].filter(Boolean).join('\n'),
+        user, char, state: [personaLine(user), stateSummary(state).replaceAll('{{user}}', user)].filter(Boolean).join('\n'),
         memory: memoryState ? `\nStory state card:\n${memoryState.slice(0, 2000)}\n` : '',
         player: String(userText || '').slice(0, 1200), reply: String(reply || '').slice(0, 3500),
         eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('extractor_format', { user }),
