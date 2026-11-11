@@ -395,6 +395,11 @@ body.et-shell .mes:not([is_user="true"]) .mes_text q {
     transition: color 1.2s ease;
 }
 
+/* …unless the line carries its speaker's own colour (one colour per voice). */
+body.et-shell .mes .mes_text font[color] q,
+body.et-shell .mes .mes_text font[color] em,
+body.et-shell .mes .mes_text font[color] i { color: inherit; }
+
 body.et-shell .mes .mes_buttons {
     gap: 2px;
     font-size: 15px;
@@ -831,3 +836,9 @@ body.et-shell #extensionsMenuButton { display: none !important; }
 body.et-shell .mes .et-cost { margin-top: 6px; font-size: 11px; color: var(--et-muted); opacity: 0.75; text-align: right; font-variant-numeric: tabular-nums; }
 .et-hub-cost { margin: -6px 2px 12px; font-size: 13px; color: var(--et-muted); cursor: pointer; }
 .et-hub-cost b { color: var(--et-text); font-weight: 600; }
+
+/* a blade's arc */
+#et-slash { position: fixed; left: -10vw; top: 46dvh; width: 120vw; height: 3px; z-index: 4400; pointer-events: none; opacity: 0; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(0); transform-origin: left center; background: linear-gradient(90deg, transparent, #fff 30%, #fff 70%, transparent); box-shadow: 0 0 18px 4px rgba(255, 255, 255, 0.7); }
+#et-slash.et-go { animation: et-slash 0.42s cubic-bezier(.2, .8, .2, 1); }
+@keyframes et-slash { 0% { opacity: 1; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(0); } 45% { opacity: 1; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(1); } 100% { opacity: 0; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { #et-slash.et-go { animation: none; } }

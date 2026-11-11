@@ -10,6 +10,8 @@
  */
 import { oai_settings } from '../../openai.js';
 import { ctx, toast, haptic, log } from '../stage/helper.js';
+import { power_user } from '../../power-user.js';
+import { initPersona, setUserAvatar, getUserAvatars } from '../../personas.js';
 import { DNA_VERSION, stylePrefixFor, negativeFor, styleNegative } from '../stage/imagegen.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
@@ -140,6 +142,188 @@ async function createCharacter(card, avatarB64) {
     return avatar;
 }
 
+// ------------------------------------------------------------------ persona for the open card
+const PERSONA_PROMPT = `Create the PLAYER's persona for a roleplay with this character card. The persona is who {{user}} is in this story.
+<card name="{{name}}">
+{{card}}
+</card>
+<request>
+{{request}}
+</request>
+Rules:
+- The persona must fit THIS card: its world, era, tone and opening scene. If the card's scenario already says who {{user}} is to {{char}} (a role, a job, a relation), keep that and build on it. For a character from an existing franchise the persona fits the canon world: an original person in it, or the canon character the request names.
+- Follow the request where it speaks (gender, role, look, personality, a canon character). Where it is silent or empty, invent a specific, playable protagonist who makes this story more interesting: a reason to be in the opening scene and a tie or tension with {{char}}.
+- An adult (18+).
+- Write in English. Refer to the player as {{user}} and to the card's character as {{char}} (literally these macros).
+- name: a name that fits the setting{{name_rule}}.
+- title: 2–5 words, the role in this story ("ship's new navigator").
+- description: 120–200 words of plain facts the storyteller can use: gender and age; appearance and clothes; background and occupation; what {{user}} is good at and bad at; manner of speaking; who {{user}} is to {{char}} and what they want from each other. Only who {{user}} is: no events of the story, no lines of dialogue, nothing {{user}} will do or feel later.
+- danbooru_tags: appearance tags for an anime image model, lowercase, spaces not underscores: count tag first (1boy / 1girl / 1other), then hair, eyes, build, outfit, accessories. For an existing franchise character start with their exact Danbooru character tag and copyright tag. Max 35 words.
+- summary_ru: one or two sentences in Russian — who this is and what ties them to the character.
+
+Reply with ONE JSON object:
+{"name":"","title":"","description":"","danbooru_tags":"","summary_ru":""}`;
+
+let pdraft = null;
+
+function openCard() {
+    const c = ctx();
+    if (c.groupId) return null;
+    const ch = c.characters?.[Number(c.characterId)];
+    return ch?.avatar ? ch : null;
+}
+
+function cardText(ch) {
+    const d = ch.data ?? ch;
+    const cut = (s, n) => String(s || '').trim().slice(0, n);
+    return [
+        cut(d.description, 3500) && `Description:\n${cut(d.description, 3500)}`,
+        cut(d.personality, 500) && `Personality: ${cut(d.personality, 500)}`,
+        cut(d.scenario, 1200) && `Scenario: ${cut(d.scenario, 1200)}`,
+        cut(d.first_mes, 1800) && `Opening scene:\n${cut(d.first_mes, 1800)}`,
+    ].filter(Boolean).join('\n\n');
+}
+
+function parsePersona(text) {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Модель не вернула персону — попробуйте ещё раз');
+    const o = JSON.parse(m[0]);
+    if (!o.name || !o.description) throw new Error('Персона неполная — попробуйте ещё раз');
+    o.name = String(o.name).trim().slice(0, 40);
+    o.title = String(o.title || '').trim().slice(0, 60);
+    o.description = String(o.description).trim();
+    o.danbooru_tags = String(o.danbooru_tags || '').replace(/_/g, ' ').trim();
+    o.summary_ru = String(o.summary_ru || '').trim();
+    return o;
+}
+
+async function savePersona(p, avatarB64, ch, link) {
+    const c = ctx();
+    const avatarId = `${Date.now()}-${p.name.replace(/[^a-zA-Z0-9]/g, '') || 'persona'}.png`;
+    let file;
+    if (avatarB64) {
+        const bin = Uint8Array.from(atob(avatarB64), x => x.charCodeAt(0));
+        file = new File([bin], 'avatar.png', { type: avatarB64.startsWith('/9j/') ? 'image/jpeg' : 'image/png' });
+    } else {
+        file = new File([await (await fetch('img/user-default.png')).blob()], 'avatar.png', { type: 'image/png' });
+    }
+    const fd = new FormData();
+    fd.append('avatar', file);
+    fd.append('overwrite_name', avatarId);
+    const res = await fetch('/api/avatars/upload', { method: 'POST', headers: c.getRequestHeaders({ omitContentType: true }), cache: 'no-cache', body: fd });
+    if (!res.ok) throw new Error(`Не удалось сохранить аватар персоны (${res.status})`);
+    await initPersona(avatarId, p.name, p.description, p.title);
+    if (link && ch?.avatar) {
+        // one persona per card: the new one replaces an older link to this card
+        for (const d of Object.values(power_user.persona_descriptions)) if (Array.isArray(d.connections)) d.connections = d.connections.filter(x => !(x.type === 'character' && x.id === ch.avatar));
+        power_user.persona_descriptions[avatarId].connections = [{ type: 'character', id: ch.avatar }];
+    }
+    c.saveSettingsDebounced();
+    await getUserAvatars(true, avatarId);
+    await setUserAvatar(avatarId, { toastPersonaNameChange: false });
+    return avatarId;
+}
+
+function openPersona() {
+    const ch = openCard();
+    if (!ch) { toast().info('Откройте чат с персонажем — персона создаётся под конкретную карточку'); return; }
+    ensureSheet();
+    renderPersonaForm();
+    $('#ef-sheet').addClass('ef-open');
+    $('body').addClass('ef-sheet-open');
+}
+
+function renderPersonaForm(prev = {}) {
+    const ch = openCard();
+    $('#ef-sheet .ef-body').html(`
+        <h3 class="ef-title">🧑 Персона для «${escapeHtml(ch?.name || '')}»</h3>
+        <p class="ef-note">Кем ты будешь в этой истории? Модель прочитает карточку и придумает героя под её мир и первую сцену. Поле можно оставить пустым — тогда она выберет сама.</p>
+        <textarea id="ef_p_request" class="text_pole" rows="4" placeholder="Например: «парень, наёмник с тёмным прошлым, её старый знакомый» или «новенькая в команде, наивная, но упрямая»">${escapeHtml(prev.request || '')}</textarea>
+        <input id="ef_p_name" class="text_pole" type="text" maxlength="40" placeholder="Имя (необязательно)" value="${escapeHtml(prev.name || '')}">
+        <label class="ef-check"><input type="checkbox" id="ef_p_avatar" ${prev.withAvatar === false ? '' : 'checked'}><span>Нарисовать аватар</span></label>
+        <label class="ef-check"><input type="checkbox" id="ef_p_link" ${prev.link === false ? '' : 'checked'}><span>Привязать к этой карточке — будет включаться сама</span></label>
+        <div class="ef-model">Модель текста: <b>${escapeHtml(textModel() || 'не выбрана')}</b></div>
+        <button class="ef-btn" id="ef_p_go"><i class="fa-solid fa-wand-magic-sparkles"></i> Создать персону</button>`);
+    $('#ef_p_go').on('click', generatePersona);
+}
+
+async function generatePersona() {
+    const ch = openCard();
+    if (!ch) return toast().info('Откройте чат с персонажем');
+    const form = { request: String($('#ef_p_request').val() || '').trim(), name: String($('#ef_p_name').val() || '').trim(), withAvatar: $('#ef_p_avatar').prop('checked'), link: $('#ef_p_link').prop('checked') };
+    const model = textModel();
+    if (!model) return toast().warning('Подключите NanoGPT и выберите модель');
+    try {
+        progress(`Читаю карточку ${ch.name} и придумываю героя…`);
+        const prompt = PERSONA_PROMPT.replace('{{name}}', ch.name).replace('{{card}}', cardText(ch))
+            .replace('{{request}}', form.request || '(empty: choose what fits this card best)')
+            .replace('{{name_rule}}', form.name ? `; the player chose "${form.name}", use exactly it` : '');
+        const p = parsePersona(await complete(model, prompt, 1500));
+        if (form.name) p.name = form.name;
+        let avatar = null;
+        if (form.withAvatar && p.danbooru_tags) {
+            progress(`Рисую ${p.name}…`);
+            try { avatar = await drawAvatar(p); } catch (e) { toast().warning(e.message); }
+        }
+        pdraft = { p, avatar, form, chAvatar: ch.avatar };
+        renderPersonaPreview();
+        haptic('heartbeat');
+        log('persona forged', p.name, ch.name);
+    } catch (e) {
+        toast().error(e.message || String(e), 'Генератор');
+        renderPersonaForm(form);
+    } finally {
+        $('#ef-sheet').removeClass('ef-busy');
+    }
+}
+
+function renderPersonaPreview() {
+    const { p, avatar, form } = pdraft;
+    const ch = openCard();
+    const img = avatar ? `data:image/${avatar.startsWith('/9j/') ? 'jpeg' : 'png'};base64,${avatar}` : '';
+    $('#ef-sheet .ef-body').html(`
+        <div class="ef-hero">
+            ${img ? `<img src="${img}" alt="">` : '<div class="ef-noimg">🧑</div>'}
+            <div><h3>${escapeHtml(p.name)}</h3>${p.title ? `<span class="ef-chip">${escapeHtml(p.title)}</span>` : ''}
+            <p>${escapeHtml(p.summary_ru)}</p></div>
+        </div>
+        <label class="ef-lbl">Описание — можно поправить</label>
+        <textarea id="ef_p_desc" class="text_pole" rows="9">${escapeHtml(p.description)}</textarea>
+        <details class="ef-sec"><summary>Теги для картинок</summary><div class="ef-text">${escapeHtml(p.danbooru_tags)}</div></details>
+        <button class="ef-btn" id="ef_p_save"><i class="fa-solid fa-check"></i> Сохранить и играть за ${escapeHtml(p.name)}</button>
+        <div class="ef-row">
+            <button class="ef-btn ef-ghost" id="ef_p_again"><i class="fa-solid fa-rotate"></i> Другой вариант</button>
+            <button class="ef-btn ef-ghost" id="ef_p_redraw"><i class="fa-solid fa-image"></i> ${avatar ? 'Перерисовать' : 'Нарисовать'}</button>
+        </div>
+        <button class="ef-link" id="ef_p_edit">Изменить запрос</button>`);
+    const keep = () => { pdraft.p.description = String($('#ef_p_desc').val() || '').trim() || pdraft.p.description; };
+    $('#ef_p_save').on('click', async function () {
+        keep();
+        if (!ch || ch.avatar !== pdraft.chAvatar) return toast().warning('Открыта другая карточка — вернитесь к той, для которой создавалась персона');
+        this.disabled = true;
+        try {
+            progress('Сохраняю персону…');
+            await savePersona(pdraft.p, pdraft.avatar, ch, form.link);
+            close();
+            toast().success(`Теперь ты — ${pdraft.p.name}${form.link ? `. Персона привязана к «${ch.name}»` : ''}`);
+            pdraft = null;
+        } catch (e) {
+            toast().error(e.message);
+            renderPersonaPreview();
+        } finally {
+            $('#ef-sheet').removeClass('ef-busy');
+        }
+    });
+    $('#ef_p_again').on('click', () => { renderPersonaForm(form); generatePersona(); });
+    $('#ef_p_redraw').on('click', async () => {
+        keep();
+        try { progress(`Рисую ${pdraft.p.name}…`); pdraft.avatar = await drawAvatar(pdraft.p); } catch (e) { toast().warning(e.message); }
+        $('#ef-sheet').removeClass('ef-busy');
+        renderPersonaPreview();
+    });
+    $('#ef_p_edit').on('click', () => { keep(); renderPersonaForm(form); });
+}
+
 // ------------------------------------------------------------------ UI
 
 function escapeHtml(s) {
@@ -265,6 +449,9 @@ function addHubTile() {
     const $t = $('<button class="et-tile" data-ef-tile><i class="fa-solid fa-user-plus"></i><span>Создать персонажа</span></button>');
     $t.on('click', () => { globalThis.ElephantStage?.closeSheets?.(true); open(); });
     $tiles.prepend($t);
+    const $p = $('<button class="et-tile" data-ef-tile="persona"><i class="fa-solid fa-user-pen"></i><span>Персона для карточки</span></button>');
+    $p.on('click', () => { globalThis.ElephantStage?.closeSheets?.(true); openPersona(); });
+    $t.after($p);
 }
 
 export async function init() {
@@ -273,6 +460,7 @@ export async function init() {
     const c = ctx();
     if (c.SlashCommandParser && c.SlashCommand) {
         c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({ name: 'forge', helpString: 'Elephant: генератор персонажей.', callback: async () => { open(); return ''; } }));
+        c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({ name: 'forge-persona', helpString: 'Elephant: персона игрока для открытой карточки.', callback: async () => { openPersona(); return ''; } }));
     }
     const st = globalThis.ElephantStage;
     if (st && !st.__efBack) {
@@ -280,5 +468,5 @@ export async function init() {
         st.handleBack = () => ($('#ef-sheet').hasClass('ef-busy') ? true : close()) || original();
         st.__efBack = true;
     }
-    globalThis.ElephantCore = { ...(globalThis.ElephantCore || {}), forge: { open, parseCard } };
+    globalThis.ElephantCore = { ...(globalThis.ElephantCore || {}), forge: { open, parseCard, openPersona, parsePersona } };
 }

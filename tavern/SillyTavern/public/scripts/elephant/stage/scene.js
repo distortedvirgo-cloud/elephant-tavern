@@ -26,12 +26,22 @@ export const MOODS = {
     gloom:    { label: 'Мрачно',      icon: '🌑', accent: '#8a93a6', accent2: '#4d5566', bgA: '#09090c', bgB: '#0e0f13', glow: 0.12, haptic: null },
     uncanny:  { label: 'Странно',     icon: '👁️', accent: '#7dffb2', accent2: '#c47dff', bgA: '#07110c', bgB: '#0e0a15', glow: 0.3, haptic: 'heartbeat' },
     festive:  { label: 'Праздник',    icon: '🎉', accent: '#ffd166', accent2: '#ff6fb5', bgA: '#18120c', bgB: '#1e1311', glow: 0.32, haptic: 'tick' },
+    noir:     { label: 'Нуар',        icon: '🚬', accent: '#cfd3da', accent2: '#8b6f4e', bgA: '#0b0b0d', bgB: '#131315', glow: 0.14, haptic: null },
+    neon:     { label: 'Неон',        icon: '🌃', accent: '#ff4fd8', accent2: '#3df2ff', bgA: '#0d0718', bgB: '#150a26', glow: 0.4, haptic: 'tick' },
+    sacred:   { label: 'Свет',        icon: '🕊️', accent: '#ffe9a8', accent2: '#bfe3ff', bgA: '#15130c', bgB: '#1b1a12', glow: 0.34, haptic: null },
+    nightmare:{ label: 'Кошмар',      icon: '🕷️', accent: '#b0183a', accent2: '#5b2a8c', bgA: '#070508', bgB: '#10060c', glow: 0.3, haptic: 'heartbeat' },
+    wild:     { label: 'Дикая природа', icon: '🌲', accent: '#9bd67a', accent2: '#e0b866', bgA: '#0b130c', bgB: '#101a10', glow: 0.2, haptic: null },
+    abyss:    { label: 'Глубина',     icon: '🌊', accent: '#5cc8ff', accent2: '#3a6bd9', bgA: '#06101a', bgB: '#081626', glow: 0.26, haptic: null },
+    frost:    { label: 'Стужа',       icon: '🧊', accent: '#bfe9ff', accent2: '#8fa8d9', bgA: '#0c1218', bgB: '#101823', glow: 0.22, haptic: null },
+    rage:     { label: 'Ярость',      icon: '💢', accent: '#ff3b2f', accent2: '#ff8a3d', bgA: '#1c0705', bgB: '#2a0a06', glow: 0.42, haptic: 'rumble' },
+    triumph:  { label: 'Триумф',      icon: '🏆', accent: '#ffd766', accent2: '#fff1b8', bgA: '#17130a', bgB: '#211a0c', glow: 0.4, haptic: 'tick' },
+    sleepy:   { label: 'Дрёма',       icon: '😴', accent: '#a9b4d9', accent2: '#d9c2a9', bgA: '#0e0f16', bgB: '#13141d', glow: 0.14, haptic: null },
 };
 
 /** "calm|cozy|…" for prompts: every module asks for the same list. */
 export const MOOD_IDS = Object.keys(MOODS);
 
-export const WEATHER = { clear: '☀️', rain: '🌧️', storm: '⛈️', snow: '❄️', fog: '🌫️', ash: '🌋' };
+export const WEATHER = { clear: '☀️', rain: '🌧️', storm: '⛈️', snow: '❄️', fog: '🌫️', ash: '🌋', wind: '🍃', blizzard: '🌨️', sandstorm: '🏜️' };
 export const TIMES = { day: 'день', night: 'ночь', dusk: 'сумерки', dawn: 'рассвет' };
 
 const KEYWORDS = {
@@ -90,6 +100,21 @@ const EVENT_WORDS = {
     kiss: ['kiss', 'kisses', 'kissed', 'поцел', 'целует'],
     magic: ['spell', 'casts', 'glowing runes', 'magic surges', 'заклинан', 'колдует', 'магия вспых'],
     heartbeat: ['heart pounding', 'heartbeat', 'heart races', 'сердце колот', 'сердцебиен'],
+    fire: ['bursts into flame', 'catches fire', 'fireball', 'flames roar', 'вспыхивает плам', 'загорел', 'огненный шар'],
+    ice: ['freezes solid', 'ice spreads', 'frost creeps', 'покрывается льдом', 'замерза'],
+    water: ['splash', 'plunges into', 'wave crashes', 'всплеск', 'ныряет', 'волна накры'],
+    smoke: ['smoke bomb', 'smoke fills', 'cloud of smoke', 'дымовая', 'клубы дыма'],
+    heal: ['wound closes', 'healing light', 'heals', 'рана затягива', 'исцеля'],
+    poison: ['poisoned', 'venom', 'toxic fumes', 'отравлен', 'яд растека'],
+    shatter: ['shatters', 'glass breaks', 'window explodes', 'разбивается вдребезги', 'осколки'],
+    gunshot: ['gunshot', 'fires the gun', 'pulls the trigger', 'выстрел', 'спускает курок'],
+    slash: ['slashes', 'blade cuts', 'sword swings', 'рубит', 'взмах клинка', 'полоснул'],
+    quake: ['ground shakes', 'earthquake', 'the floor trembles', 'земля дрожит', 'землетряс'],
+    coins: ['coins spill', 'tosses a purse', 'gold clinks', 'монеты рассып', 'звон монет'],
+    confetti: ['confetti', 'fireworks', 'конфетти', 'фейерверк'],
+    dark: ['shadows surge', 'darkness swallows', 'dark magic', 'тьма сгуща', 'тёмная магия'],
+    holy: ['holy light', 'divine light', 'blessing', 'священный свет', 'благословен'],
+    stars: ['level up', 'triumphant', 'eureka'],
 };
 
 const INDOOR = ['room', 'hall', 'tavern', 'inn', 'house', 'chamber', 'library', 'kitchen', 'bedroom', 'office', 'cave', 'castle', 'комнат', 'зал', 'таверн', 'дом', 'библиотек', 'кухн', 'спальн', 'пещер', 'замок'];
@@ -158,7 +183,7 @@ ${message}
 </message>
 
 Answer with ONE line of minified JSON, nothing else:
-{"mood":"${MOOD_IDS.join('|')}","intensity":0.0-1.0,"weather":"clear|rain|storm|snow|fog|ash","time":"day|night|dusk|dawn","indoor":true|false,"location":"2-4 words in Russian","events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"changed":true|false}
+{"mood":"${MOOD_IDS.join('|')}","intensity":0.0-1.0,"weather":"${Object.keys(WEATHER).join('|')}","time":"day|night|dusk|dawn","indoor":true|false,"location":"2-4 words in Russian","events":[${Object.keys(EVENT_WORDS).map(e => `"${e}"`).join('|')}],"changed":true|false}
 "changed" = the location or situation clearly changed compared to the previous scene. "events" = only things that physically happen in THIS message (usually empty). Keep weather/time from the previous scene unless the message changes them.`;
 }
 
@@ -194,6 +219,9 @@ export function ambientFor(scene) {
         if (scene.weather === 'snow') layers.push('snow');
         if (scene.weather === 'ash') layers.push('ash');
         if (scene.weather === 'fog') layers.push('fog');
+        if (scene.weather === 'wind') layers.push('leaves');
+        if (scene.weather === 'blizzard') layers.push('blizzard');
+        if (scene.weather === 'sandstorm') layers.push('sandstorm');
         if (scene.time === 'night' && scene.weather === 'clear') layers.push(scene.mood === 'romance' || scene.mood === 'calm' ? 'fireflies' : 'stars');
     } else if (scene.weather === 'fog') {
         layers.push('fog');
@@ -210,7 +238,17 @@ export function ambientFor(scene) {
         case 'dream': layers.push('fireflies'); break;
         case 'gloom': layers.push(scene.indoor ? 'dust' : 'ash'); break;
         case 'uncanny': layers.push('fog'); break;
-        case 'festive': layers.push('sparkles'); break;
+        case 'festive': layers.push('confetti'); break;
+        case 'noir': layers.push(scene.indoor ? 'smoke' : 'rain'); break;
+        case 'neon': layers.push(scene.indoor ? 'sparkles' : 'rain'); break;
+        case 'sacred': layers.push('motes'); break;
+        case 'nightmare': layers.push('smoke'); break;
+        case 'wild': layers.push(scene.time === 'night' ? 'fireflies' : 'leaves'); break;
+        case 'abyss': layers.push('bubbles'); break;
+        case 'frost': layers.push('snow'); break;
+        case 'rage': layers.push('embers'); break;
+        case 'triumph': layers.push('motes'); break;
+        case 'sleepy': layers.push('dust'); break;
         default: if (scene.indoor && !layers.length) layers.push('dust');
     }
     return [...new Set(layers)].slice(0, 2);

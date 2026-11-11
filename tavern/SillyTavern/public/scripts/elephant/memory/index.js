@@ -23,6 +23,7 @@
 import {
     TRANSLATE_PROMPTS, OLD_TRANSLATE_DEFAULTS, hashText, hasCyrillic, maskProtected, unmaskProtected,
     cleanTranslation, mergeGlossary, buildContextPairs, escapeHtml,
+    keepSpeechColours,
 } from './translate.js';
 
 export const MODULE = 'elephant_memory';
@@ -772,7 +773,7 @@ async function translateChunk(text, idx, priorPairs) {
     }), 'translator', s.translateMaxTokens);
     const out = cleanTranslation(raw);
     if (!out) throw new Error('empty translation');
-    return unmaskProtected(out, parts);
+    return keepSpeechColours(text, unmaskProtected(out, parts));
 }
 
 function pairsBefore(i) {
@@ -908,7 +909,7 @@ export async function translateForDisplay(idx, { force = false } = {}) {
         const out = cleanTranslation(raw);
         // Чат сменился или сообщение изменилось, пока шёл перевод
         if (!out || c.getCurrentChatId?.() !== chatId || hashText(ctx().chat[idx]?.mes) !== src) return false;
-        const text = unmaskProtected(out, parts);
+        const text = keepSpeechColours(m.mes, unmaskProtected(out, parts));
         m.extra.em_tr = { src, text };
         m.extra.display_text = text;
         refreshMessage(idx);

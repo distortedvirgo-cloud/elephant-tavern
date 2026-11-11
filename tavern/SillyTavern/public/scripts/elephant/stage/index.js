@@ -590,6 +590,14 @@ function shake(strength = 'normal') {
     el.classList.add(strength === 'hard' ? 'et-shake-hard' : 'et-shake');
 }
 
+/** A blade's arc across the screen. */
+function slash() {
+    let el = document.getElementById('et-slash');
+    if (!el) { el = document.createElement('div'); el.id = 'et-slash'; document.body.appendChild(el); }
+    el.style.setProperty('--et-slash-rot', `${Math.random() < 0.5 ? -24 : 24}deg`);
+    el.classList.remove('et-go'); void el.offsetWidth; el.classList.add('et-go');
+}
+
 function playEvents(list, mesId = null) {
     const s = S();
     if (!s.effects || !list.length) return;
@@ -604,6 +612,22 @@ function playEvents(list, mesId = null) {
             case 'lightning': flash('rgba(220,230,255,.75)', 180); setTimeout(() => flash('rgba(220,230,255,.5)', 140), 260); if (s.haptics) haptic('rumble'); break;
             case 'kiss': effects.burst('hearts'); if (s.haptics) haptic('heartbeat'); break;
             case 'magic': effects.burst('magic'); flash('rgba(170,130,255,.22)', 500); break;
+            case 'fire': effects.burst('fire'); flash('rgba(255,120,30,.3)', 600); if (s.haptics) haptic('rumble'); break;
+            case 'ice': effects.burst('ice'); flash('rgba(190,235,255,.35)', 500); break;
+            case 'water': effects.burst('water'); flash('rgba(90,170,255,.2)', 500); break;
+            case 'smoke': effects.burst('smoke'); break;
+            case 'heal': effects.burst('heal'); flash('rgba(120,255,160,.18)', 700); break;
+            case 'poison': effects.burst('poison'); flash('rgba(120,200,40,.2)', 700); break;
+            case 'shatter': effects.burst('shatter'); shake(); flash('rgba(255,255,255,.3)', 160); if (s.haptics) haptic('hit'); break;
+            case 'gunshot': flash('rgba(255,245,210,.85)', 120); shake('hard'); effects.burst('sparks'); if (s.haptics) haptic('hit'); break;
+            case 'slash': slash(); if (s.haptics) haptic('tick'); break;
+            case 'quake': shake('hard'); setTimeout(() => shake('hard'), 620); setTimeout(() => shake(), 1240); if (s.haptics) haptic('rumble'); break;
+            case 'coins': effects.burst('coins'); if (s.haptics) haptic('tick'); break;
+            case 'confetti': effects.burst('confetti'); if (s.haptics) haptic('tick'); break;
+            case 'dark': effects.burst('dark'); flash('rgba(40,0,70,.45)', 700); break;
+            case 'holy': effects.burst('holy'); flash('rgba(255,245,200,.4)', 800); break;
+            case 'stars': effects.burst('stars'); flash('rgba(255,225,120,.2)', 500); break;
+            case 'flashbang': flash('rgba(255,255,255,.98)', 1600); if (s.haptics) haptic('rumble'); break;
             case 'heartbeat':
                 document.body.classList.remove('et-pulse'); void document.body.offsetWidth; document.body.classList.add('et-pulse');
                 if (s.haptics) haptic('heartbeat');

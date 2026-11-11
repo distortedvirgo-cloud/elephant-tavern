@@ -12,7 +12,7 @@
  * Levels per character: off · effects · full (effects + illustrations).
  */
 import { ctx, currentCharacter, haptic, log, whenRevealed } from '../stage/helper.js';
-import { MOOD_IDS } from '../stage/scene.js';
+import { MOOD_IDS, WEATHER as WEATHER_MAP } from '../stage/scene.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 const MODULE = 'elephant_power';
@@ -20,10 +20,13 @@ const PROMPT_KEY = 'elephant_power';
 const DEFAULTS = { defaultLevel: 'effects', perChar: {} };
 
 const MOODS = MOOD_IDS;
-const WEATHER = ['clear', 'rain', 'storm', 'snow', 'fog', 'ash'];
+const WEATHER = Object.keys(WEATHER_MAP);
 const TIMES = ['day', 'night', 'dusk', 'dawn'];
-const FX = ['hit', 'blood', 'explosion', 'lightning', 'kiss', 'magic', 'heartbeat', 'shake'];
-const PARTICLES = ['rain', 'storm', 'snow', 'fog', 'embers', 'petals', 'sparkles', 'fireflies', 'stars', 'ash', 'dust', 'none'];
+const FX = ['hit', 'slash', 'gunshot', 'blood', 'explosion', 'shatter', 'quake', 'shake', 'lightning', 'flashbang', 'fire', 'ice', 'water', 'smoke', 'magic', 'dark', 'holy', 'heal', 'poison', 'kiss', 'heartbeat', 'coins', 'confetti', 'stars'];
+/** Screen states: how the whole screen looks for a few seconds (what the player's eyes and head go through). */
+const SCREENS = ['dizzy', 'sway', 'tunnel', 'gray', 'negative', 'vhs', 'zoom', 'frost', 'burn', 'underwater', 'wounded', 'dream', 'spotlight'];
+const HAPTICS = ['tick', 'hit', 'heartbeat', 'rumble'];
+const PARTICLES = ['rain', 'storm', 'snow', 'blizzard', 'sandstorm', 'wind', 'fog', 'smoke', 'embers', 'ash', 'dust', 'petals', 'leaves', 'sparkles', 'motes', 'fireflies', 'lanterns', 'stars', 'bubbles', 'hearts', 'confetti', 'digital', 'bloodrain', 'none'];
 
 function S() {
     const es = ctx().extensionSettings;
@@ -47,7 +50,8 @@ Keys (use only what the moment needs):
 mood=${MOODS.join('|')} · weather=${WEATHER.join('|')} · time=${TIMES.join('|')}
 fx=${FX.join(',')} (comma-separated, things that physically happen now)
 tint=#rrggbb (recolours the whole interface for this scene) · particles=${PARTICLES.join('|')}
-title="short title card" (a new chapter, a place, a turning point) · glitch=1-3 (the screen distorts — for the uncanny, the supernatural, a lie unravelling) · dark=1-5 (seconds of blackout)
+screen=${SCREENS.join('|')} (one or two, comma-separated: what the reader's own eyes go through — a blow to the head, drink, fear, cold, heat, water, a wound, a dream, a single lit face) · hold=2-10 (seconds the screen state lasts)
+title="short title card" (a new chapter, a place, a turning point) · shout="ONE OR TWO WORDS" (a word that slams onto the screen: a scream, an order, a sound) · glitch=1-3 (the screen distorts — for the uncanny, the supernatural, a lie unravelling) · dark=1-5 (seconds of blackout) · haptic=${HAPTICS.join('|')} (the phone itself reacts)
 whisper="one short line ${char} says straight to the reader, outside the story" (breaking the fourth wall — rare, eerie or intimate)${level === 'full' ? '\nimage=auto|pov|scene|portrait (illustrate this exact moment — at most once per scene; auto picks the frame)' : ''}`;
 }
 
@@ -74,6 +78,11 @@ export function parseStage(text) {
     if (PARTICLES.includes(out.particles)) cmd.particles = out.particles;
     if (/^#?[0-9a-f]{6}$/i.test(out.tint || '')) cmd.tint = out.tint.startsWith('#') ? out.tint : `#${out.tint}`;
     if (out.fx) cmd.fx = out.fx.split(/[,\s]+/).map(x => x.trim().toLowerCase()).filter(x => FX.includes(x)).slice(0, 3);
+    if (out.screen) { const sc = out.screen.split(/[,\s]+/).map(x => x.trim().toLowerCase()).filter(x => SCREENS.includes(x)).slice(0, 2); if (sc.length) cmd.screen = sc; }
+    if (cmd.screen) cmd.hold = Math.max(2, Math.min(10, Number(out.hold) || 4));
+    if (out.shout) cmd.shout = out.shout.slice(0, 28);
+    if (HAPTICS.includes(out.haptic)) cmd.haptic = out.haptic;
+    if (cmd.fx && !cmd.fx.length) delete cmd.fx;
     if (out.title) cmd.title = out.title.slice(0, 60);
     if (out.whisper) cmd.whisper = out.whisper.slice(0, 160);
     if (out.glitch) cmd.glitch = Math.max(1, Math.min(3, Number(out.glitch) || 1));
@@ -84,6 +93,7 @@ export function parseStage(text) {
 
 // ------------------------------------------------------------------ effects
 
+let demoAt = -1;
 let active = null; // { mesId, cmd } — the scene override for the newest reply
 
 function sceneOverride(next) {
@@ -132,6 +142,30 @@ function whisper(text, who) {
     haptic('heartbeat');
 }
 
+/** A word that slams onto the screen. */
+function shout(text) {
+    const el = layer('ep-shout');
+    el.innerHTML = `<span>${escapeHtml(text)}</span>`;
+    el.classList.remove('ep-show'); void el.offsetWidth; el.classList.add('ep-show');
+    globalThis.ElephantStage?.shake?.('hard');
+    haptic('hit');
+}
+
+const screenTimers = {};
+/** Puts the whole screen into a state for a few seconds. */
+function screenState(name, seconds) {
+    const b = document.body;
+    const cls = `ep-screen-${name}`;
+    const el = layer(`ep-ov-${name}`);
+    el.className = 'ep-ov';
+    clearTimeout(screenTimers[name]);
+    b.classList.remove(cls); el.classList.remove('ep-show'); void el.offsetWidth;
+    const ms = ['negative', 'zoom'].includes(name) ? 900 : seconds * 1000;
+    el.style.setProperty('--ep-hold', `${ms}ms`);
+    b.classList.add(cls); el.classList.add('ep-show');
+    screenTimers[name] = setTimeout(() => { b.classList.remove(cls); el.classList.remove('ep-show'); }, ms);
+}
+
 function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
@@ -149,6 +183,9 @@ export function perform(cmd, mesId, level = 'full') {
             for (const f of cmd.fx) if (f === 'shake') st.shake?.('hard');
             st.playEvents(cmd.fx.filter(f => f !== 'shake'));
         }
+        if (cmd.screen) for (const sc of cmd.screen) screenState(sc, cmd.hold || 4);
+        if (cmd.haptic) haptic(cmd.haptic);
+        if (cmd.shout) shout(cmd.shout);
         if (cmd.glitch) glitch(cmd.glitch);
         if (cmd.title) titleCard(cmd.title);
         if (cmd.whisper) setTimeout(() => whisper(cmd.whisper, c.name2), cmd.title ? 2200 : 300);
@@ -163,10 +200,10 @@ function settingsHtml() {
     const ch = currentCharacter();
     const s = S();
     const opt = (v, label, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${label}</option>`;
-    const levels = (cur) => opt('off', 'Нет', cur) + opt('effects', 'Эффекты: настроение, цвет, титры, глитч, шёпот', cur) + opt('full', 'Полная: эффекты + сам рисует кадры', cur);
+    const levels = (cur) => opt('off', 'Нет', cur) + opt('effects', 'Эффекты: настроение, погода, частицы, состояния экрана, титры, шёпот', cur) + opt('full', 'Полная: эффекты + сам рисует кадры', cur);
     return `<div class="et-group" id="ep_settings">
         <h4 class="et-h">⚡ Сила персонажа</h4>
-        <p class="et-note">Персонаж может управлять приложением в сильные моменты: менять настроение и погоду, перекрашивать интерфейс, показывать титры, глитчить и гасить экран, шептать тебе поверх истории. Стоит ~250 токенов входа на ответ (кэшируется).</p>
+        <p class="et-note">Персонаж может управлять приложением в сильные моменты: менять настроение и погоду, перекрашивать интерфейс, пускать частицы и вспышки (огонь, лёд, выстрел, взмах клинка…), туманить и качать экран, показывать титры и крик во весь экран, глитчить и гасить экран, шептать тебе поверх истории. Стоит ~450 токенов входа на ответ (кэшируется).</p>
         ${ch && !ch.group ? `<label class="et-field">${escapeHtml(ch.name)}
             <select id="ep_level" class="text_pole">${opt('', `По умолчанию (${{ off: 'нет', effects: 'эффекты', full: 'полная' }[s.defaultLevel]})`, s.perChar[ch.key] ?? '')}${levels(s.perChar[ch.key] ?? '')}</select>
         </label>` : ''}
@@ -184,7 +221,7 @@ export async function init() {
     const c = ctx();
     const ev = c.eventSource;
     const et = c.eventTypes ?? c.event_types;
-    globalThis.ElephantCore = { ...(globalThis.ElephantCore || {}), sceneOverride, power: { perform, parseStage, levelFor } };
+    globalThis.ElephantCore = { ...(globalThis.ElephantCore || {}), sceneOverride, power: { perform, parseStage, levelFor, FX, SCREENS, PARTICLES } };
 
     ev.on(et.CHAT_CHANGED, () => { active = null; updatePrompt(); });
     ev.on(et.MESSAGE_RECEIVED, (id, type) => {
@@ -215,7 +252,18 @@ export async function init() {
     $(document).on('change', '#ep_default', function () { S().defaultLevel = this.value; c.saveSettingsDebounced(); updatePrompt(); });
     $(document).on('click', '#ep_demo', () => {
         globalThis.ElephantStage?.closeSheets?.();
-        perform({ mood: 'mystery', tint: '#7a5cff', particles: 'sparkles', title: 'Глава II', glitch: 2, whisper: 'Я знаю, что ты читаешь это.' }, (c.chat?.length ?? 1) - 1, 'effects');
+        const demos = [
+            { mood: 'mystery', tint: '#7a5cff', particles: 'sparkles', title: 'Глава II', glitch: 2, whisper: 'Я знаю, что ты читаешь это.' },
+            { mood: 'rage', fx: ['slash', 'blood'], shout: 'ХВАТИТ!', screen: ['wounded'], hold: 4 },
+            { mood: 'abyss', particles: 'bubbles', screen: ['underwater'], hold: 6, title: 'Глубина' },
+            { mood: 'frost', weather: 'blizzard', fx: ['ice'], screen: ['frost'], hold: 6 },
+            { mood: 'neon', particles: 'digital', screen: ['vhs'], hold: 5, fx: ['gunshot'] },
+            { mood: 'sacred', fx: ['holy', 'heal'], particles: 'motes', screen: ['dream'], hold: 5 },
+            { mood: 'triumph', fx: ['confetti', 'coins'], title: 'Победа' },
+            { mood: 'nightmare', particles: 'smoke', fx: ['dark'], screen: ['tunnel', 'dizzy'], hold: 6, whisper: 'Не оборачивайся.' },
+        ];
+        demoAt = (demoAt + 1) % demos.length;
+        perform(demos[demoAt], (c.chat?.length ?? 1) - 1, 'effects');
     });
     updatePrompt();
 }

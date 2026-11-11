@@ -110,6 +110,50 @@ export function unmaskProtected(text, parts) {
     return t;
 }
 
+const FONT_RE = /<font\s+color\s*=\s*["']?(#?[0-9a-fA-F]{3,8})["']?[^>]*>([\s\S]*?)<\/font>/g;
+const QUOTE_RE = /«[^»]*»|“[^”]*”|„[^“”]*[“”]|"[^"\n]*"/g;
+
+/** Quoted lines of a text in order, each with the colour of the <font> it sits in (or null). */
+export function speechColours(text) {
+    const t = String(text ?? '');
+    const fonts = [...t.matchAll(FONT_RE)].map(m => ({ from: m.index, to: m.index + m[0].length, color: m[1] }));
+    const plainFonts = fonts.length;
+    const quotes = [...t.matchAll(QUOTE_RE)].map((m) => {
+        const from = m.index, to = m.index + m[0].length;
+        const f = fonts.find(x => x.from < to && x.to > from);
+        return f ? f.color : null;
+    });
+    return { quotes, fonts: plainFonts };
+}
+
+/**
+ * Translators sometimes drop or mangle <font color> around speech, and every voice loses its colour.
+ * If the translation has fewer intact colour tags than the original, the colours are put back by order:
+ * the n-th quoted line of the translation takes the colour of the n-th quoted line of the original.
+ */
+export function keepSpeechColours(original, translated) {
+    const src = speechColours(original);
+    if (!src.fonts || !src.quotes.some(Boolean)) return translated;
+    const tr = String(translated ?? '');
+    const open = (tr.match(/<font\b[^>]*>/gi) ?? []).length;
+    const closed = (tr.match(/<\/font>/gi) ?? []).length;
+    const now = speechColours(tr);
+    const wanted = src.quotes.filter(Boolean).length;
+    if (open === closed && open >= src.fonts && now.quotes.filter(Boolean).length >= wanted) return tr;
+    // rebuild: drop what is left of the colour tags, colour the quoted lines again
+    const bare = tr.replace(/<\/?font\b[^>]*>/gi, '');
+    const count = (bare.match(QUOTE_RE) ?? []).length;
+    if (!count) return tr;
+    const one = new Set(src.quotes.filter(Boolean));
+    let i = 0;
+    return bare.replace(QUOTE_RE, (q) => {
+        // same number of lines: one to one; otherwise only a single-voice message is safe to recolour
+        const color = count === src.quotes.length ? src.quotes[i] : (one.size === 1 && !src.quotes.includes(null) ? [...one][0] : null);
+        i++;
+        return color ? `<font color=${color.startsWith('#') ? color : '#' + color}>${q}</font>` : q;
+    });
+}
+
 /** Убирает обёртки, которые модели иногда добавляют вокруг перевода. */
 export function cleanTranslation(text) {
     let t = String(text ?? '').trim();

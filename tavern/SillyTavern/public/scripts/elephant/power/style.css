@@ -62,3 +62,47 @@ body[class*="ep-glitch-"] #et-backdrop { filter: hue-rotate(80deg) contrast(1.3)
 @media (prefers-reduced-motion: reduce) {
     body[class*="ep-glitch-"] #sheld { animation: none; }
 }
+
+/* shout: a word slams onto the screen */
+#ep-shout { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; z-index: 4495; display: grid; place-items: center; pointer-events: none; opacity: 0; }
+#ep-shout span { font-family: Impact, 'Arial Black', sans-serif; font-size: clamp(44px, 17vw, 96px); line-height: 0.95; text-align: center; padding: 0 16px; color: #fff; text-transform: uppercase; letter-spacing: 0.02em; transform: rotate(-4deg); text-shadow: 0 0 34px var(--et-accent, #ff5d5d), 4px 4px 0 rgba(0, 0, 0, 0.85); overflow-wrap: anywhere; }
+#ep-shout.ep-show { animation: ep-shout 1.7s cubic-bezier(.2, .9, .2, 1); }
+@keyframes ep-shout { 0% { opacity: 0; transform: scale(2.6); } 14% { opacity: 1; transform: scale(0.94); } 22% { transform: scale(1.03); } 30% { transform: scale(1); } 80% { opacity: 1; transform: scale(1.02); } 100% { opacity: 0; transform: scale(1.12); } }
+
+/* screen states: overlays */
+.ep-ov { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; z-index: 4470; pointer-events: none; opacity: 0; }
+.ep-ov.ep-show { animation: ep-ov var(--ep-hold, 4000ms) ease-in-out; }
+@keyframes ep-ov { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+#ep-ov-tunnel { background: radial-gradient(ellipse at center, transparent 22%, rgba(0, 0, 0, 0.82) 62%, #000 100%); }
+#ep-ov-spotlight { background: radial-gradient(circle at 50% 42%, transparent 0, transparent 26%, rgba(0, 0, 0, 0.9) 48%); }
+#ep-ov-frost { box-shadow: inset 0 0 90px 30px rgba(200, 235, 255, 0.55), inset 0 0 26px 8px rgba(255, 255, 255, 0.7); background: radial-gradient(ellipse at center, transparent 55%, rgba(190, 230, 255, 0.18) 100%); }
+#ep-ov-burn { box-shadow: inset 0 0 100px 30px rgba(255, 110, 20, 0.5), inset 0 0 30px 8px rgba(255, 210, 90, 0.5); }
+#ep-ov-burn.ep-show { animation: ep-ov var(--ep-hold, 4000ms) ease-in-out, ep-flicker 0.22s steps(2) infinite; }
+@keyframes ep-flicker { 0% { filter: brightness(1); } 100% { filter: brightness(1.35); } }
+#ep-ov-wounded { box-shadow: inset 0 0 110px 34px rgba(170, 0, 20, 0.6); }
+#ep-ov-wounded.ep-show { animation: ep-ov var(--ep-hold, 4000ms) ease-in-out, ep-throb 0.9s ease-in-out infinite; }
+@keyframes ep-throb { 0%, 100% { filter: brightness(0.75); } 50% { filter: brightness(1.3); } }
+#ep-ov-underwater { background: linear-gradient(180deg, rgba(40, 140, 220, 0.3), rgba(10, 50, 120, 0.42)); }
+#ep-ov-dream { background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0) 40%, rgba(240, 225, 255, 0.34) 100%); }
+#ep-ov-vhs { background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px); mix-blend-mode: multiply; }
+#ep-ov-negative { background: #fff; mix-blend-mode: difference; }
+
+/* screen states: what happens to the chat column */
+body.ep-screen-dizzy #sheld { animation: ep-dizzy 2.6s ease-in-out infinite; }
+@keyframes ep-dizzy { 0%, 100% { filter: blur(0); transform: rotate(0) scale(1); } 25% { filter: blur(2.2px); transform: rotate(0.8deg) scale(1.015); } 50% { filter: blur(0.6px); transform: rotate(-0.6deg) scale(1); } 75% { filter: blur(2.6px); transform: rotate(0.5deg) scale(1.02); } }
+body.ep-screen-sway #sheld { animation: ep-sway 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes ep-sway { 0%, 100% { transform: rotate(-1.4deg) translateX(-4px); } 50% { transform: rotate(1.4deg) translateX(4px); } }
+body.ep-screen-gray #sheld, body.ep-screen-gray #et-backdrop, body.ep-screen-gray #et-fx { filter: grayscale(1) contrast(1.1); transition: filter 0.8s; }
+body.ep-screen-vhs #sheld { animation: ep-vhs 0.5s steps(3) infinite; filter: saturate(1.5) contrast(1.15); }
+@keyframes ep-vhs { 0% { transform: translateX(0); } 33% { transform: translateX(-1.5px) skewX(0.3deg); } 66% { transform: translateX(1.5px); } 100% { transform: translateX(0); } }
+body.ep-screen-zoom #sheld { animation: ep-zoom 0.9s cubic-bezier(.2, .9, .2, 1); }
+@keyframes ep-zoom { 0% { transform: scale(1); } 22% { transform: scale(1.09); } 100% { transform: scale(1); } }
+body.ep-screen-underwater #sheld { animation: ep-water 3.4s ease-in-out infinite; filter: blur(0.5px) saturate(0.85); }
+@keyframes ep-water { 0%, 100% { transform: skewX(-0.7deg) translateY(-2px); } 50% { transform: skewX(0.7deg) translateY(2px); } }
+body.ep-screen-dream #sheld { filter: blur(0.7px) brightness(1.12) saturate(1.2); transition: filter 1s; }
+body.ep-screen-frost #sheld { filter: saturate(0.6) brightness(1.06); transition: filter 1s; }
+body.ep-screen-tunnel #sheld { filter: brightness(0.86); transition: filter 0.6s; }
+
+@media (prefers-reduced-motion: reduce) {
+    body[class*="ep-screen-"] #sheld, #ep-shout.ep-show { animation: none; }
+}

@@ -21,6 +21,18 @@ const AMBIENT = {
     petals: { count: 26, spawn: p => base(p, { r: rand(3, 6), vx: rand(10, 40), vy: rand(30, 60), a: rand(0.6, 0.9), color: '255,170,200', kind: 'petal', spin: rand(-2, 2), sway: rand(0.6, 1.4) }) },
     fog: { count: 7, spawn: p => base(p, { r: rand(160, 320), vx: rand(-8, 8), vy: rand(-2, 2), a: rand(0.05, 0.11), color: '200,205,220', kind: 'fog' }) },
     sparkles: { count: 30, spawn: p => base(p, { r: rand(0.8, 2), vx: rand(-6, 6), vy: rand(-18, -4), a: 0.9, color: '200,170,255', glow: 10, pulse: rand(1, 3), life: rand(2, 5), anywhere: true }) },
+    leaves: { count: 24, spawn: p => base(p, { r: rand(4, 7), vx: rand(30, 90), vy: rand(30, 70), a: rand(0.6, 0.9), color: ['214,140,60', '190,160,70', '170,90,50', '120,150,70'][Math.floor(rand(0, 4))], kind: 'petal', spin: rand(-3, 3), sway: rand(0.8, 1.8) }) },
+    blizzard: { count: 150, spawn: p => base(p, { r: rand(1, 2.6), vx: rand(-260, -140), vy: rand(120, 240), a: rand(0.5, 0.95), color: '240,248,255', sway: rand(1, 2.4) }) },
+    sandstorm: { count: 120, spawn: p => base(p, { len: rand(4, 12), vx: rand(380, 620), vy: rand(-10, 40), a: rand(0.2, 0.5), color: '222,190,130', kind: 'streak' }) },
+    wind: { count: 26, spawn: p => base(p, { len: rand(40, 110), vx: rand(500, 800), vy: rand(-6, 6), a: rand(0.06, 0.16), color: '230,240,255', kind: 'streak' }) },
+    bubbles: { count: 30, spawn: p => base(p, { r: rand(2, 7), vx: rand(-6, 6), vy: rand(-70, -25), a: rand(0.25, 0.55), color: '170,225,255', kind: 'ring', sway: rand(0.8, 2), fromBottom: true }) },
+    smoke: { count: 9, spawn: p => base(p, { r: rand(120, 260), vx: rand(-10, 10), vy: rand(-14, -4), a: rand(0.07, 0.14), color: '70,70,78', kind: 'fog' }) },
+    hearts: { count: 16, spawn: p => base(p, { r: rand(5, 10), vx: rand(-8, 8), vy: rand(-45, -20), a: rand(0.45, 0.8), color: '255,120,170', kind: 'heart', sway: rand(0.6, 1.4), fromBottom: true }) },
+    confetti: { count: 46, spawn: p => base(p, { r: rand(3, 5.5), vx: rand(-20, 20), vy: rand(60, 130), a: rand(0.7, 1), color: ['255,209,102', '255,111,181', '120,200,255', '150,230,150', '200,150,255'][Math.floor(rand(0, 5))], kind: 'petal', spin: rand(-6, 6), sway: rand(1, 2.4) }) },
+    digital: { count: 60, spawn: p => base(p, { len: rand(8, 26), vx: 0, vy: rand(160, 420), a: rand(0.2, 0.6), color: '90,255,150', kind: 'line' }) },
+    bloodrain: { count: 80, spawn: p => base(p, { len: rand(10, 22), vx: -40, vy: rand(460, 700), a: rand(0.3, 0.6), color: '190,30,40', kind: 'line' }) },
+    lanterns: { count: 14, spawn: p => base(p, { r: rand(3, 6), vx: rand(-6, 6), vy: rand(-22, -8), a: rand(0.6, 0.95), color: '255,190,110', glow: 18, pulse: rand(0.3, 0.8), sway: rand(0.3, 0.8), fromBottom: true }) },
+    motes: { count: 34, spawn: p => base(p, { r: rand(0.8, 2.2), vx: rand(-5, 5), vy: rand(-14, -4), a: rand(0.5, 0.9), color: '255,236,170', glow: 10, pulse: rand(0.5, 1.4), life: rand(4, 8), anywhere: true }) },
     ash: { count: 34, spawn: p => base(p, { r: rand(1, 2.4), vx: rand(-20, 20), vy: rand(10, 30), a: rand(0.2, 0.5), color: '160,150,150', sway: rand(0.4, 1) }) },
 };
 
@@ -118,6 +130,42 @@ export class Effects {
                 break;
             case 'blood':
                 make(18, () => { const ang = rand(Math.PI * 1.1, Math.PI * 1.9), sp = rand(120, 300); return { kind: 'drop', x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(1.5, 3.5), a: 0.9, life: rand(0.6, 1.1), age: 0, g: 700, color: '170,20,30' }; });
+                break;
+            case 'fire':
+                make(34, () => ({ kind: 'glow', x: cx + rand(-70, 70), y: cy + rand(20, 90), vx: rand(-30, 30), vy: rand(-260, -110), r: rand(2, 5), a: 1, life: rand(0.6, 1.3), age: 0, color: ['255,150,50', '255,200,90', '255,90,40'][Math.floor(rand(0, 3))] }));
+                break;
+            case 'ice':
+                make(28, () => { const ang = rand(0, TAU), sp = rand(140, 380); return { kind: 'spark', x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(1.2, 2.8), a: 1, life: rand(0.5, 1), age: 0, color: '190,235,255' }; });
+                break;
+            case 'water':
+                make(30, () => { const ang = rand(Math.PI * 1.15, Math.PI * 1.85), sp = rand(160, 380); return { kind: 'drop', x: cx + rand(-30, 30), y: cy + 40, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(1.5, 3.5), a: 0.85, life: rand(0.7, 1.2), age: 0, g: 760, color: '130,200,255' }; });
+                break;
+            case 'smoke':
+                make(12, () => ({ kind: 'puff', x: cx + rand(-60, 60), y: cy + rand(-20, 60), vx: rand(-40, 40), vy: rand(-70, -20), r: rand(40, 90), a: 0.28, life: rand(1.4, 2.4), age: 0, color: '150,150,160' }));
+                break;
+            case 'heal':
+                make(26, () => ({ kind: 'glow', x: cx + rand(-90, 90), y: cy + rand(0, 110), vx: rand(-8, 8), vy: rand(-120, -50), r: rand(1.5, 3.5), a: 1, life: rand(1, 2), age: 0, color: '140,255,170' }));
+                break;
+            case 'poison':
+                make(20, () => ({ kind: 'ring', x: cx + rand(-80, 80), y: cy + rand(20, 100), vx: rand(-10, 10), vy: rand(-90, -40), r: rand(3, 8), a: 0.9, life: rand(1, 1.9), age: 0, color: '150,230,80' }));
+                break;
+            case 'confetti':
+                make(60, () => { const ang = rand(Math.PI * 1.1, Math.PI * 1.9), sp = rand(220, 520); return { kind: 'drop', x: cx, y: cy + 80, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(2, 4), a: 1, life: rand(1.4, 2.4), age: 0, g: 520, color: ['255,209,102', '255,111,181', '120,200,255', '150,230,150', '200,150,255'][Math.floor(rand(0, 5))] }; });
+                break;
+            case 'coins':
+                make(18, () => { const ang = rand(Math.PI * 1.2, Math.PI * 1.8), sp = rand(200, 420); return { kind: 'glow', x: cx, y: cy + 40, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(3, 5), a: 1, life: rand(0.9, 1.5), age: 0, g: 900, color: '255,210,90' }; });
+                break;
+            case 'shatter':
+                make(36, () => { const ang = rand(0, TAU), sp = rand(120, 460); return { kind: 'spark', x: cx, y: cy - 40, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(1, 3), a: 1, life: rand(0.6, 1.2), age: 0, g: 900, color: '235,245,255' }; });
+                break;
+            case 'dark':
+                make(26, () => { const ang = rand(0, TAU), d = rand(120, 260); return { kind: 'glow', x: cx + Math.cos(ang) * d, y: cy + Math.sin(ang) * d, vx: -Math.cos(ang) * d * 0.9, vy: -Math.sin(ang) * d * 0.9, r: rand(2, 5), a: 1, life: rand(0.8, 1.2), age: 0, color: '120,60,190' }; });
+                break;
+            case 'holy':
+                make(30, () => ({ kind: 'glow', x: cx + rand(-110, 110), y: cy - 200 + rand(-40, 40), vx: rand(-6, 6), vy: rand(60, 160), r: rand(1.5, 3.5), a: 1, life: rand(1, 1.8), age: 0, color: '255,240,180' }));
+                break;
+            case 'stars':
+                make(22, () => { const ang = rand(0, TAU), sp = rand(60, 220); return { kind: 'glow', x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: rand(1.5, 3), a: 1, life: rand(0.9, 1.6), age: 0, color: '255,225,120' }; });
                 break;
             default:
                 return;
@@ -241,6 +289,34 @@ export class Effects {
                 c.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
                 break;
             }
+            case 'streak':
+                c.strokeStyle = col;
+                c.lineWidth = 1;
+                c.beginPath();
+                c.moveTo(p.x, p.y);
+                c.lineTo(p.x - p.len, p.y - p.vy * 0.02);
+                c.stroke();
+                break;
+            case 'ring':
+                c.strokeStyle = col;
+                c.lineWidth = 1;
+                c.beginPath();
+                c.arc(p.x, p.y, p.r, 0, TAU);
+                c.stroke();
+                break;
+            case 'heart': {
+                const s = p.r;
+                c.save();
+                c.translate(p.x, p.y);
+                c.fillStyle = col;
+                c.beginPath();
+                c.moveTo(0, s * 0.3);
+                c.bezierCurveTo(-s, -s * 0.5, -s * 0.4, -s * 1.2, 0, -s * 0.5);
+                c.bezierCurveTo(s * 0.4, -s * 1.2, s, -s * 0.5, 0, s * 0.3);
+                c.fill();
+                c.restore();
+                break;
+            }
             case 'petal':
                 c.save();
                 c.translate(p.x, p.y);
@@ -286,6 +362,23 @@ export class Effects {
             c.moveTo(b.x, b.y);
             c.lineTo(b.x - b.vx * 0.03, b.y - b.vy * 0.03);
             c.stroke();
+            return;
+        }
+        if (b.kind === 'ring') {
+            c.strokeStyle = col;
+            c.lineWidth = 1.2;
+            c.beginPath();
+            c.arc(b.x, b.y, b.r, 0, TAU);
+            c.stroke();
+            return;
+        }
+        if (b.kind === 'puff') {
+            const r = b.r * (1.6 - k * 0.6);
+            const g = c.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+            g.addColorStop(0, col);
+            g.addColorStop(1, `rgba(${b.color},0)`);
+            c.fillStyle = g;
+            c.fillRect(b.x - r, b.y - r, r * 2, r * 2);
             return;
         }
         if (b.kind === 'glow') {
