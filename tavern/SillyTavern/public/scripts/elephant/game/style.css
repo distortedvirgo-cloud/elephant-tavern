@@ -678,3 +678,18 @@ body.eg-in-enc #ec-ideas { display: none !important; }
 .eg-act > span { min-height: 22px; }
 .eg-act:not(.eg-got) { opacity: 0.55; }
 .eg-last { margin-top: 8px; }
+
+/* ---------------------------------------------------------------- encounter cards v2: stakes on the card */
+.eg-ecard { gap: 5px; padding: 9px 10px; }
+.eg-ecard .eg-edetail { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 11px; line-height: 1.3; color: rgba(225, 219, 240, 0.72); white-space: normal; }
+.eg-ecard .eg-efx { display: flex; flex-wrap: wrap; gap: 3px; }
+.eg-ecard .eg-efx i { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: #f3ecff; white-space: nowrap; }
+.eg-ecard .eg-pct { display: inline; width: auto; font-size: 11.5px; font-weight: 800; }
+.eg-ecard .eg-pct[data-p="hi"] { color: #7ee3b0; } .eg-ecard .eg-pct[data-p="mid"] { color: #ffd76b; } .eg-ecard .eg-pct[data-p="lo"] { color: #ff9c9c; }
+.eg-ecard.eg-edge { border-color: rgba(255, 215, 107, 0.6); box-shadow: 0 0 12px rgba(255, 215, 107, 0.18); }
+.eg-edge-line { margin: 6px 0; padding: 5px 10px; border-radius: 10px; font-size: 11.5px; font-weight: 600; color: #ffe08a; background: rgba(255, 215, 107, 0.09); border: 1px solid rgba(255, 215, 107, 0.3); }
+.eg-enc-tools { display: flex; justify-content: center; margin-top: 8px; }
+.eg-focus { font: inherit; font-size: 12.5px; font-weight: 700; padding: 7px 14px; border-radius: 999px; color: #e9f4ff; background: rgba(120, 190, 255, 0.1); border: 1px solid rgba(120, 190, 255, 0.35); }
+.eg-focus small { font-weight: 500; opacity: 0.75; margin-left: 4px; }
+.eg-focus.eg-on { background: rgba(120, 190, 255, 0.3); border-color: #8fd0ff; box-shadow: 0 0 14px rgba(120, 190, 255, 0.35); }
+.eg-focus:disabled { opacity: 0.35; }

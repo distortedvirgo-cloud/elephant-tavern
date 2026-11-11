@@ -443,7 +443,25 @@ export function loveStatus(n) {
 
 export const NPC_COLORS = ['7ec8e3', 'e3b77e', 'c3a6ff', '8fe3a8', 'ff9fb2', 'e3e07e', '7ee3d4', 'ffb38a', 'a6c8ff', 'd9a6ff', 'b4e37e', 'ff8f8f'];
 
-export const STRESS_MAX = 9;
+/*
+ * "Силы" (energy): the player's spendable reserve. Internally it is still `stress` = how much is
+ * spent (0 = fresh, STRESS_MAX = empty), so old saves and prompts keep working.
+ * Spend 1 to pull yourself together (+2 to a roll); disasters and hard scenes drain it; rest,
+ * good scenes, victories and calming items give it back. At 0 the hero is spent: -1 to every roll
+ * until at least half is back.
+ */
+export const STRESS_MAX = 6;
+export const energyOf = (s) => STRESS_MAX - clamp(s?.stress ?? 0, 0, STRESS_MAX);
+/** Changes the strain by delta (+ drains energy, - restores) and keeps the "spent" flag honest. */
+export function strain(s, delta, notes = null, why = '') {
+    const before = s.stress ?? 0;
+    s.stress = clamp(before + delta, 0, STRESS_MAX);
+    const d = s.stress - before;
+    if (d && notes) notes.push({ kind: 'stress', delta: d, why });
+    if (s.stress >= STRESS_MAX && !s.spent) { s.spent = true; if (notes) notes.push({ kind: 'spent' }); }
+    else if (s.spent && s.stress <= STRESS_MAX / 2) { s.spent = false; if (notes) notes.push({ kind: 'recovered' }); }
+    return d;
+}
 export const MAX_LEVEL = 30;
 /** XP to go from `level` to the next one: 6, 7, 9, 10 … ~48 at the top. */
 export const xpNeed = (level) => Math.round(4.5 + 1.5 * level);
@@ -498,7 +516,10 @@ export function ensureState(s) {
     s.enc ??= null;
     // eroge is the default way to play: saves from before v3 are switched on once
     if ((s.v || 2) < 3) { s.eroge = true; s.v = 3; }
-    if (s.v < 4) { for (const n of Object.values(s.npcs || {})) ensureNpc(n); dedupeNpcs(s); s.v = 4; }
+    if (s.v < 4) { for (const n of Object.values(s.npcs || {})) ensureNpc(n); dedupeNpcs(s); }
+    if (s.v < 5) { s.stress = clamp(Math.round((s.stress || 0) * 6 / 9), 0, STRESS_MAX); s.spent = s.stress >= STRESS_MAX; }
+    s.spent ??= false;
+    s.v = 5;
     s.eroge ??= true;
     s.econ ??= null;
     s.ledger ??= [];
@@ -559,7 +580,7 @@ export function consumeItem(s, name, userName = 'The player') {
     if (!g || !ITEM_EFFECTS[g.effect]) return null;
     const notes = [];
     if (g.effect === 'heal') { if (!(s.harm > 0)) return null; notes.push({ kind: 'harm', from: s.harm, to: s.harm - 1 }); s.harm -= 1; }
-    if (g.effect === 'calm') { if (!(s.stress > 0)) return null; const d = Math.min(3, s.stress); s.stress -= d; notes.push({ kind: 'stress', delta: -d, why: name }); }
+    if (g.effect === 'calm') { if (!(s.stress > 0)) return null; strain(s, -3, notes, name); }
     useItem(s, name, 1, notes);
     s.pending = [...(s.pending || []), `${userName} used ${name} (${g.effect === 'heal' ? 'wounds treated' : 'nerves settled'}; already counted)`];
     return notes;
@@ -630,7 +651,8 @@ export function newState(setup = {}) {
     const skills = {};
     for (const k of Object.keys(SKILLS)) skills[k] = clamp(Number(setup.skills?.[k] ?? 1), 0, START_MAX);
     return {
-        v: 4,
+        v: 5,
+        spent: false,
         pace: PACES[setup.pace] ? setup.pace : 'medium',
         eroge: setup.eroge === undefined ? true : Boolean(setup.eroge),
         econ: null,
@@ -672,7 +694,7 @@ export function tierOf(trust) {
 
 /** Modifier the player gets for a skill right now (skill + harm penalty). */
 export function modifier(state, skill) {
-    return (state.skills?.[skill] ?? 1) + HARM[clamp(state.harm, 0, 3)].penalty + (gearFor(state, skill)?.bonus || 0);
+    return (state.skills?.[skill] ?? 1) + HARM[clamp(state.harm, 0, 3)].penalty + (gearFor(state, skill)?.bonus || 0) - (state.spent ? 1 : 0);
 }
 
 // ------------------------------------------------------------------ gear
@@ -843,11 +865,7 @@ export function resolveCheck(state, check, opts = {}) {
     let mod = setup.mod;
     const notes = [];
     if (opts.push) {
-        if (s.stress < STRESS_MAX) {
-            s.stress += 1;
-            mod += 1;
-            notes.push({ kind: 'stress', delta: 1, why: 'Надавить' });
-        }
+        if (s.stress < STRESS_MAX) { strain(s, 1, notes, 'Собраться'); mod += 2; }
     }
     if (opts.rerolled) s.perkUsed.second_chance = s.scene;
     const dice = opts.dice || rollDice(opts.rng, setup.adv ? 3 : 2);
@@ -878,18 +896,17 @@ export function resolveCheck(state, check, opts = {}) {
             break;
         case 'near':
             if (threat) tickThreat(1);
-            else if (!cool) { s.stress = clamp(s.stress + 1, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: 1, why: 'цена' }); }
             xp(1);
             break;
         case 'fail':
             tickThreat(pos.tick);
             if (pos.harm && !threat) applyHarm(s, 1, events, notes);
-            if (position !== 'controlled' && !cool) { s.stress = clamp(s.stress + 1, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: 1, why: 'провал' }); }
             xp(2 + learner);
             break;
         case 'disaster':
             tickThreat(pos.tick + 1);
             applyHarm(s, Math.max(0, (position === 'desperate' ? 2 : 1) - (hasPerk(s, 'tough') ? 1 : 0)), events, notes);
+            if (!cool) strain(s, 1, notes, 'катастрофа');
             xp(3 + learner);
             break;
         default:
@@ -912,10 +929,6 @@ export function resolveCheck(state, check, opts = {}) {
         }
     }
     levelUp(s, notes);
-    if (s.stress >= STRESS_MAX) {
-        events.push({ kind: 'breakdown' });
-        s.stress = 4;
-    }
 
     const record = {
         id: uid(),
@@ -1275,7 +1288,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
     if (dh > 0) applyHarm(s, 1, events, notes);
     else if (dh < 0 && s.harm > 0) { notes.push({ kind: 'harm', from: s.harm, to: s.harm - 1 }); s.harm -= 1; }
     const ds = clamp(Math.round(Number(report.stress) || 0), -3, 2);
-    if (ds) { s.stress = clamp(s.stress + ds, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: ds }); }
+    if (ds) strain(s, ds, notes);
 
     // money & items
     // every movement needs a kind and a reason; purchases the shop already charged are skipped
@@ -1336,7 +1349,6 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
     }
 
     levelUp(s, notes);
-    if (s.stress >= STRESS_MAX) { events.push({ kind: 'breakdown' }); s.stress = 4; }
     return { state: s, notes, events };
 }
 
@@ -1420,7 +1432,7 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
     const harm = state.harm ? `${HARM[state.harm].ru === 'Ушибы' ? 'bruised' : state.harm === 2 ? 'wounded' : 'badly wounded'}` : 'unhurt';
     const parts = [`${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}`];
     if (state.location) parts.push(state.location);
-    parts.push(`${userName}: ${harm}${state.stress >= 6 ? ', frayed nerves' : ''}`);
+    parts.push(`${userName}: ${harm}${state.spent ? ', completely spent: slower, clumsier, short of breath and patience (show it)' : state.stress >= STRESS_MAX - 1 ? ', running on the last of his strength' : ''}`);
     if (threats.length) parts.push(`Looming: ${threats.join(', ')}`);
     if (progress.length) parts.push(`Progress: ${progress.join(', ')}`);
     lines.push(`STATE: ${parts.join(' · ')}`);
@@ -1478,7 +1490,7 @@ export function stateSummary(state0) {
         const r = readiness(n, ro);
         return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}, intimacy reached: ${STAGE_IDS[r.reached]}, willing now up to: ${STAGE_IDS[r.ready]}${n.experience ? `, ${n.experience}` : ''})`;
     }).join('; ') || 'none';
-    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills (0-6): ${skills}. Money: ${state.money} ${state.currency} (price scale: ${scaleLine(state)}). Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
+    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, energy ${energyOf(state)}/${STRESS_MAX}${state.spent ? ' (spent)' : ''}. Skills (0-6): ${skills}. Money: ${state.money} ${state.currency} (price scale: ${scaleLine(state)}). Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
 }
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {

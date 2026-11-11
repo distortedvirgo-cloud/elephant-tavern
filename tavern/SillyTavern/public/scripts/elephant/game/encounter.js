@@ -39,7 +39,7 @@ export const BARS = {
     foe:      { ru: 'Стойкость', icon: '🛡' },
     distance: { ru: 'Дистанция', icon: '📏' },
     harm:     { ru: 'Раны', icon: '♥', max: 3 },
-    stress:   { ru: 'Стресс', icon: '⚡', max: E.STRESS_MAX },
+    stress:   { ru: 'Силы', icon: '⚡', max: E.STRESS_MAX },
 };
 
 /* What a partner can like. Options and preferences share this list, so the engine can match them. */
@@ -146,10 +146,16 @@ export const KINDS_COMBAT = ['attack', 'defend', 'trick', 'flee', 'talk', 'item'
 
 export const COMPLICATIONS = ['interrupt', 'laugh', 'pullback', 'clumsy', 'cold'];
 const OUT_MULT = { crit: 2, success: 1, near: 0.6, fail: 0.2, disaster: 0 };
-const MAX_ROUNDS = 10;
+const MAX_ROUNDS = 12;
 /* How hard each partner is to bring over the edge, and how hard they push back. */
-const HER_F = { duet: 1, duel: 0.6, her_lead: 1.05, your_lead: 1 };
-const PUSH_F = { duet: 1, duel: 1.35, her_lead: 1.05, your_lead: 0.85 };
+const HER_F = { duet: 1.1, duel: 0.8, her_lead: 1.1, your_lead: 1.1 };
+const PUSH_F = { duet: 0.8, duel: 1.0, her_lead: 0.8, your_lead: 0.7 };
+/** With an edge (an opening you made), the next strike or caress is easier and lands harder. */
+const EDGE_MOD = 2, EDGE_MULT = 1.5, FOCUS_MOD = 2;
+const SETUP_KINDS = { nsfw: ['redirect', 'resist', 'please'], combat: ['trick', 'defend', 'talk'] };
+const PAYOFF_KINDS = { nsfw: ['act', 'obey', 'defy'], combat: ['attack', 'item'] };
+export const usesEdge = (enc, option) => Boolean(enc?.edge) && PAYOFF_KINDS[enc.kind].includes(option.kind);
+export const makesEdge = (enc, option) => SETUP_KINDS[enc.kind].includes(option.kind);
 
 // ------------------------------------------------------------------ start
 
@@ -275,11 +281,11 @@ export function findNpc(s, name) {
 
 // ------------------------------------------------------------------ odds for a card
 
-export function optionSetup(state, option) {
+export function optionSetup(state, option, { focus = false } = {}) {
     const s = E.ensureState(clone(state));
     const enc = s.enc;
     const nsfw = enc?.kind === 'nsfw';
-    let dc = nsfw ? 6 + option.power : 7 + (targetOf(enc)?.power ?? enc?.power ?? 2) + (option.power - 2);
+    let dc = nsfw ? 5 + option.power : 6 + (targetOf(enc)?.power ?? enc?.power ?? 2) + (option.power - 2);
     if (!nsfw && option.kind === 'defend') dc -= 1;
     if (!nsfw && option.kind === 'flee') dc += 1;
     if (nsfw && enc.variant === 'duel') dc -= Math.round((enc.bars.control || 0) / 40);
@@ -291,11 +297,58 @@ export function optionSetup(state, option) {
         if (option.stage > r.ready) { locked = true; dc += 2 * (option.stage - r.ready); }
     }
     dc = clamp(dc + E.DIFFICULTY[s.difficulty].dc, 4, 18);
-    const mod = E.modifier(s, option.skill);
+    const edge = usesEdge(enc, option);
+    const canFocus = E.energyOf(s) > 0;
+    const mod = E.modifier(s, option.skill) + (edge ? EDGE_MOD : 0) + (focus && canFocus ? FOCUS_MOD : 0);
     const adv = E.hasAdvantage(s, option.skill);
     const lucky = E.hasPerk(s, 'lucky');
     const o = E.odds(mod, dc, 'risky', { adv, lucky });
-    return { dc, mod, adv, lucky, locked, odds: o };
+    return { dc, mod, adv, lucky, locked, edge, focus: Boolean(focus && canFocus), odds: o };
+}
+
+/**
+ * What a card does if it works, as short chips for the card itself: the player sees the stakes
+ * before choosing. Likes already discovered are shown; undiscovered ones stay a surprise.
+ */
+export function previewOption(state, option) {
+    const enc = state?.enc;
+    if (!enc) return [];
+    const out = [];
+    const edge = usesEdge(enc, option);
+    const m = edge ? EDGE_MULT : 1;
+    const k = option.kind;
+    if (enc.kind === 'combat') {
+        const base = (10 + 8 * option.power) * m;
+        if (enc.variant === 'chase') {
+            const step = Math.round(1.4 * base * ({ attack: 1, trick: 1.1, flee: 1, item: 1.1, defend: 0.5, talk: 0.4 }[k] ?? 0.8));
+            out.push(`📏 ${enc.role === 'chaser' ? '−' : '+'}${step}`);
+        } else if (k === 'flee') out.push('🚪 выйти из боя');
+        else {
+            const share = { attack: 1, trick: 0.85, talk: enc.variant === 'standoff' ? 1 : 0.3, item: 1.1, defend: 0.35 }[k] ?? 0.6;
+            out.push(`🛡 −${Math.round(base * share)}`);
+        }
+        if (['defend', 'flee', 'trick'].includes(k)) out.push('🤺 отбивает удар');
+    } else {
+        const npc = findNpc(state, targetName(enc));
+        const B = enc.bars;
+        const moodF = 0.5 + (B.mood ?? B.comfort ?? 60) / 100;
+        const gain = Math.round((5 + 6 * option.power) * moodF * (1 + (npc?.lust ?? 30) / 300) * (enc.variant === 'duel' ? 1 + (B.control || 0) / 200 : 1) * HER_F[enc.variant] * m);
+        if (k === 'resist') out.push(`🔥 −${Math.round((12 + 6 * option.power) * m)} тебе`);
+        else if (k === 'redirect') out.push(`💗 +${Math.round(gain * 0.6)}`, '↩ сбивает её ход');
+        else if (k === 'defy') out.push(enc.forced ? '🏃 вырваться' : '↩ перехватить', `💗 +${Math.round(gain * 0.8)}`);
+        else if (enc.variant === 'her_lead' && (k === 'please' || k === 'obey')) out.push(`👑 +${Math.round((9 + 6 * option.power) * m)}`, `💗 +${Math.round(gain * 0.6)}`);
+        else out.push(`💗 +${gain}`);
+        const found = npc?.prefsFound || [];
+        const prefs = npc?.prefs || { loves: [], likes: [], dislikes: [] };
+        const known = option.tags.filter(t => found.includes(t));
+        if (known.some(t => prefs.loves.includes(t))) out.push('✨ её слабость');
+        else if (known.some(t => prefs.likes.includes(t))) out.push('💗 ей нравится');
+        if (known.some(t => prefs.dislikes.includes(t))) out.push('👎 не любит');
+        if (option.tags[0] && option.tags[0] === enc.lastTag) out.push('↻ повтор');
+    }
+    if (edge) out.push('⚡ с преимуществом');
+    else if (makesEdge(enc, option) && !enc.edge) out.push('→ ⚡ преимущество');
+    return out;
 }
 
 // ------------------------------------------------------------------ a round
@@ -305,22 +358,26 @@ export function optionSetup(state, option) {
  * Resolves one round: the player's option with these dice, then the partner's telegraphed move.
  * Returns { state, round } — the round record is also stored as state.enc.lastRound.
  */
-export function resolveRound(state, option0, { dice = null, free = false } = {}) {
+export function resolveRound(state, option0, { dice = null, free = false, focus = false } = {}) {
     let s = E.ensureState(clone(state));
     const enc = s.enc;
     if (!enc || enc.status !== 'active') return { state: s, round: null };
     const option = cleanOptions([option0], enc.kind)[0] || { ru: '…', en: '…', skill: 'passion', power: 1, tags: [], kind: 'act', stage: 0 };
-    const set = optionSetup(s, option);
+    const set = optionSetup(s, option, { focus });
     const roll = dice || E.rollDice(Math.random, set.adv ? 3 : 2);
     const outcome = E.classifyDice(roll, set.mod, set.dc, 'risky', { lucky: set.lucky });
-    const mult = OUT_MULT[outcome];
+    const usedEdge = set.edge;
+    const mult = OUT_MULT[outcome] * (usedEdge ? EDGE_MULT : 1);
+    const focusNotes = [];
+    if (set.focus) E.strain(s, 1, focusNotes, 'Собраться');
+    if (usedEdge) enc.edge = false;
     const tgt = targetOf(enc);
     if (tgt && enc.kind === 'combat' && enc.bars.foe != null) enc.bars.foe = tgt.bar;
     if (tgt && enc.kind === 'nsfw') enc.bars.her = tgt.bar;
     const B = enc.bars;
     const before = clone(B);
     const hitAlly = Boolean(tgt && tgt.side === 'ally' && enc.kind === 'combat' && ['attack', 'trick'].includes(option.kind));
-    const notes = [];
+    const notes = focusNotes;
     const v = enc.variant;
     enc.round += 1;
     let intentLands = true;
@@ -362,7 +419,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
 
         switch (option.kind) {
             case 'resist': {
-                B.you = clamp(B.you - Math.round((7 + 4 * option.power) * mult), 0, 100);
+                B.you = clamp(B.you - Math.round((12 + 6 * option.power) * mult), 0, 100);
                 if (v === 'her_lead' && mult >= 1) B.approval = clamp(B.approval + 8, 0, 100);
                 break;
             }
@@ -374,7 +431,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
             }
             case 'obey':
             case 'please': {
-                const a = Math.round((5 + 5 * option.power) * mult * pref * (option.kind === 'obey' ? 1.1 : 1));
+                const a = Math.round((9 + 6 * option.power) * mult * pref * (option.kind === 'obey' ? 1.1 : 1));
                 if (v === 'her_lead') B.approval = clamp(B.approval + a, 0, 100);
                 B.her = clamp(B.her + Math.round(gain * (v === 'her_lead' ? 0.6 : 1)), 0, 100);
                 B.you = clamp(B.you + 2 * option.power, 0, 100);
@@ -409,7 +466,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
                 B.her = clamp(B.her - (dis ? 15 : 5), 0, 100);
                 if (B.comfort != null) B.comfort = clamp(B.comfort - 15, 0, 100);
                 if (B.approval != null && v === 'her_lead' && option.kind !== 'defy') B.approval = clamp(B.approval - (dis ? 8 : 3), 0, 100);
-                intentMult = 1.5;
+                intentMult = 1.25;
                 if (dis) { complication = COMPLICATIONS[Math.floor(Math.random() * COMPLICATIONS.length)]; notes.push({ kind: 'complication', text: complication }); }
             }
         }
@@ -431,6 +488,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
             B.her = 30;
             if (B.mood != null) B.mood = clamp(B.mood + 10, 0, 100);
             if (v === 'her_lead') B.approval = clamp(B.approval + 25, 0, 100);
+            if (v === 'duet' || v === 'your_lead') B.you = clamp(B.you + 15, 0, 100); // watching her come pulls him along
             if (tgt) tgt.peaks = (tgt.peaks || 0) + 1;
             notes.push({ kind: 'enc_peak', name: targetName(enc), n: tgt ? tgt.peaks : enc.herPeaks });
         }
@@ -499,7 +557,8 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
             notes.push({ kind: 'molest', name: vic?.name || '{{user}}' });
         }
         if (outcome === 'crit') intentLands = false;
-        else if (outcome === 'success' && ['defend', 'flee', 'trick'].includes(k)) intentLands = false;
+        else if ((outcome === 'success' || outcome === 'near') && ['defend', 'flee'].includes(k)) intentLands = false;
+        else if (outcome === 'success' && k === 'trick') intentLands = false;
         const intent = enc.intent;
         const p = intent?.power ?? 1;
         let harm = 0;
@@ -509,21 +568,21 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
                 B.distance = clamp(B.distance + (enc.role === 'chaser' ? p * 5 : -p * 5), 0, 100);
                 if (outcome === 'disaster') harm = 1;
             } else if (v === 'standoff') {
-                stress = p;
+                stress = outcome === 'success' ? 0 : 1;
             } else if (outcome === 'success') {
-                if (p >= 3) harm = 1;
+                // a clean success keeps you out of reach
+            } else if (outcome === 'near') {
+                if (p >= 3) harm = 1; else stress = 1;
             } else {
-                harm = p >= 2 ? 1 : 0;
-                stress = p === 1 ? 1 : 0;
-                if (outcome === 'disaster') harm += 1;
+                if (p >= 2) harm = 1; else stress = 1;
+                if (outcome === 'disaster') stress += 1;
             }
         }
-        if (outcome === 'disaster') stress += 1;
         if (harm && E.hasPerk(s, 'tough') && outcome === 'disaster') harm -= 1;
         if (stress && E.hasPerk(s, 'cool')) stress = Math.max(0, stress - 1);
         const ev = [];
         if (harm) s = E.hurt(s, harm, ev, notes);
-        if (stress) { s.stress = clamp(s.stress + stress, 0, E.STRESS_MAX); notes.push({ kind: 'stress', delta: stress }); }
+        if (stress) E.strain(s, stress, notes);
         // item use
         if (k === 'item' && option.item) E.useItem(s, option.item, 1, notes);
         const enc2 = s.enc;
@@ -532,13 +591,16 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         else if (v === 'chase' && B.distance <= 0) enc2.status = enc2.role === 'chaser' ? 'won' : 'lost';
         else if (v === 'chase' && B.distance >= 100) enc2.status = enc2.role === 'chaser' ? 'lost' : 'won';
         else if (B.foe != null && (enc2.participants?.length ? !aliveFoes(enc2).length : B.foe <= 0)) enc2.status = 'won';
-        else if (v === 'standoff' && s.stress >= E.STRESS_MAX - 1) enc2.status = 'lost';
+        else if (v === 'standoff' && s.stress >= E.STRESS_MAX) enc2.status = 'lost';
         effect = mult >= 1 ? 'good' : mult > 0 ? 'weak' : 'nothing';
         var round = { harm, stress };
         s.enc.bars = B;
     }
     const encNow = s.enc;
-    if (encNow.status === 'active' && encNow.round >= MAX_ROUNDS + Math.min(8, 3 * Math.max(0, foesOf(encNow).length - 1))) encNow.status = 'ended';
+    // an opening: a successful set-up move (or any brilliant one) makes the next strike easier and stronger
+    const baseMult = OUT_MULT[outcome];
+    if (!refused && !usedEdge && ((baseMult >= 1 && makesEdge(encNow, option)) || outcome === 'crit')) { encNow.edge = true; notes.push({ kind: 'edge' }); }
+    if (encNow.status === 'active' && encNow.round >= MAX_ROUNDS + Math.min(8, 3 * Math.max(0, foesOf(encNow).length - 1))) encNow.status = (encNow.kind === 'nsfw' && encNow.herPeaks && ['duet', 'your_lead'].includes(encNow.variant)) ? 'won' : 'ended';
 
     const rec = {
         round: encNow.round,
@@ -547,7 +609,7 @@ export function resolveRound(state, option0, { dice = null, free = false } = {})
         hitAlly,
         option: { ru: option.ru, en: option.en, skill: option.skill, power: option.power, kind: option.kind, tags: option.tags },
         free,
-        dice: roll, dc: set.dc, mod: set.mod, adv: set.adv,
+        dice: roll, dc: set.dc, mod: set.mod, adv: set.adv, usedEdge, focus: set.focus, edge: Boolean(encNow.edge),
         outcome,
         effect,
         refused,
@@ -622,9 +684,11 @@ export function finishEncounter(state, notes = []) {
             npc.bestStars = Math.max(npc.bestStars || 0, res.stars);
             res.rel = d;
         }
-        if (v === 'duel' && enc.status === 'lost') { s.stress = clamp(s.stress + 2, 0, E.STRESS_MAX); notes.push({ kind: 'stress', delta: 2 }); }
+        if (v === 'duel' && enc.status === 'lost') E.strain(s, 1, notes);
+        if (good && res.stars >= 2) E.strain(s, -2, notes, 'хорошо было');
     } else {
         res.xp = enc.status === 'won' ? 2 + enc.power : enc.status === 'fled' ? 1 : 2;
+        if (enc.status === 'won') E.strain(s, -1, notes, 'победа');
     }
     if (E.hasPerk(s, 'fast_learner') && enc.status === 'lost') res.xp += 1;
     s.xp += res.xp;
@@ -667,6 +731,9 @@ export function encounterBlock(state, userName = '{{user}}') {
     const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/\{target\}/g, who).replace(/^\*|\*$/g, '')}")`;
     if (r.refused) lines.push(`THIS ROUND: ${act} — ${who} stops it or turns it down: ${enc.kind === 'nsfw' ? 'not that, not now; in character, the mood dips but she stays in the scene' : 'it fails'}.`);
     else lines.push(`THIS ROUND: ${act} goes ${OUT_EN[r.outcome]}${enc.kind === 'nsfw' ? ` (effect on ${who}: ${r.effect})` : ''}.`);
+    if (r.usedEdge) lines.push(`${userName} uses the opening made a moment ago: the move comes easier and lands with extra force.`);
+    if (r.focus) lines.push(`${userName} pulls himself together for this one: focused, deliberate, spending real effort.`);
+    if (r.edge && !r.usedEdge) lines.push(enc.kind === 'nsfw' ? `It leaves ${who} off her rhythm, open to whatever ${userName} does next.` : `It leaves ${who} off balance and open for a moment: show the opening.`);
     if (!r.refused && (r.outcome === 'fail' || r.outcome === 'disaster')) {
         const dis = r.outcome === 'disaster';
         if (enc.kind === 'nsfw') {

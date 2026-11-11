@@ -74,7 +74,10 @@
         </label>
         <label class="et-field">Стиль картинок
             <select class="text_pole" data-et-key="images.style">
-                <option value="glossy">Глянец — плотный контур, блестящая кожа, тёплый цвет</option>
+                <option value="bold">Плотный контур — плоский цвет, взрослые пропорции</option>
+                <option value="flat">Плоский цвет — чище и проще, высокие фигуры</option>
+                <option value="vivid">Насыщенный — яркий тёплый цвет, пышные формы</option>
+                <option value="glossy">Глянец — блестящая кожа, фигуры пониже</option>
                 <option value="glossy_plump">Глянец пухлый — мягче формы, мультяшнее</option>
                 <option value="glossy_soft">Глянец мягкий — нежнее лица и тени</option>
                 <option value="western">Западный арт — тонкий контур, приглушённые цвета, реалистичные пропорции</option>
@@ -104,7 +107,10 @@
             <label class="et-field">Внешность — <b id="et_dna_name"></b>
                 <textarea id="et_dna" class="text_pole" rows="3" placeholder="Сгенерируется из карточки при первой картинке"></textarea>
             </label>
-            <p class="et-note">Эти теги держат персонажа узнаваемым от кадра к кадру. Можно поправить руками.</p>
+            <label class="et-field">Точный тег на Danbooru (для известных персонажей)
+                <input type="text" id="et_dna_tag" class="text_pole" placeholder="souryuu asuka langley, neon genesis evangelion">
+            </label>
+            <p class="et-note">Тег персонажа и тег франшизы через запятую — полностью, как на Danbooru. Он вставляется в каждый промпт как есть, сокращённые варианты убираются. Для своего персонажа оставь пустым. Теги внешности ниже держат персонажа узнаваемым от кадра к кадру, их тоже можно править.</p>
             <div class="et-inline">
                 <button class="menu_button" data-et-do="dna"><i class="fa-solid fa-dna"></i> Из карточки заново</button>
                 <button class="menu_button" data-et-do="test"><i class="fa-solid fa-camera-retro"></i> Нарисовать сейчас</button>

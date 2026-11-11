@@ -362,7 +362,7 @@ async function encounterTurn(before, text, narration) {
     if (pendingRound && pendingRound.text.trim() === text.trim()) {
         const p = pendingRound;
         pendingRound = null;
-        const res = X.resolveRound(before, p.option, { dice: p.dice });
+        const res = X.resolveRound(before, p.option, { dice: p.dice, focus: p.focus });
         showDeltas(res.round);
         return res;
     }
@@ -504,6 +504,7 @@ function ensureEncDom() {
             if (!$ta.val()) $ta.val('*I gently stop her.* "Not tonight."').trigger('input').trigger('focus');
         });
     $('#eg-enc').on('click', '[data-act="enc-end"]', endEncounter)
+        .on('click', '[data-act="enc-focus"]', () => { encFocus = !encFocus; renderEnc(currentState()); haptic('tick'); })
         .on('click', '[data-act="enc-min"]', () => { S().encMin = !S().encMin; ctx().saveSettingsDebounced(); renderEnc(currentState()); haptic('tick'); })
         .on('click', '[data-act="tgt-add"]', function () {
             const st = currentState();
@@ -558,7 +559,9 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
     const v = X.VARIANTS[enc.variant];
     const B = { ...enc.bars };
     if (v.bars.includes('harm')) B.harm = 3 - (st.harm ?? 0);
-    if (v.bars.includes('stress')) B.stress = st.stress ?? 0;
+    if (v.bars.includes('stress')) B.stress = E.energyOf(st);
+    const energy = E.energyOf(st);
+    if (!energy) encFocus = false;
     const bars = v.bars.filter(k => B[k] != null).map(k => encBar(k, B[k], enc)).join('');
     const P = enc.participants || [];
     const tgt = X.targetOf(enc);
@@ -570,12 +573,14 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
     const cards = waiting
         ? `<div class="eg-enc-wait"><i class="fa-solid fa-dice fa-spin"></i> ${resolved ? 'Раунд разыгран — ждём ответ…' : enc.round ? 'Готовлю следующий ход…' : 'Готовлю сцену…'}</div>`
         : enc.options.map((o, i) => {
-            const set = X.optionSetup(st, o);
+            const set = X.optionSetup(st, o, { focus: encFocus });
             const pct = Math.round(set.odds.atLeastSuccess * 100);
-            return `<button class="eg-ecard eg-ek-${o.kind}${o.say ? ' eg-say' : ''}" data-opt="${i}">
+            const fx = X.previewOption(st, o);
+            return `<button class="eg-ecard eg-ek-${o.kind}${o.say ? ' eg-say' : ''}${set.edge ? ' eg-edge' : ''}" data-opt="${i}">
                 <b class="eg-elabel">${o.say ? '💬 ' : ''}${escapeHtml(o.ru)}</b>
-                ${o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
-                <small>${E.SKILLS[o.skill]?.icon || ''} ${pct}%${set.locked ? ' · 🔒 рано' : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
+                ${o.detail_ru ? `<span class="eg-edetail">${escapeHtml(o.detail_ru)}</span>` : o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
+                ${fx.length ? `<span class="eg-efx">${fx.map(x => `<i>${escapeHtml(x)}</i>`).join('')}</span>` : ''}
+                <small>${E.SKILLS[o.skill]?.icon || ''} <b class="eg-pct" data-p="${pct >= 70 ? 'hi' : pct >= 45 ? 'mid' : 'lo'}">${pct}%</b>${set.locked ? ' · 🔒 рано' : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
             </button>`;
         }).join('');
     if (min) {
@@ -594,17 +599,19 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
         ${enc.pose ? `<div class="eg-pose">${enc.kind === 'nsfw' ? '🌀' : '📍'} ${escapeHtml(enc.pose)}</div>` : ''}
         ${enc.forced ? `<div class="eg-forced">⚠️ ${escapeHtml(enc.partner)} не спрашивает${enc.escape ? ' · ты почти вырвался' : ' · вырваться: 2 удачных рывка'}</div>` : ''}
         ${enc.intent && !loading ? `<div class="eg-intent">${enc.kind === 'nsfw' ? '💭' : '⚠️'} <b>${escapeHtml(enc.intent.who || enc.partner)}:</b> ${escapeHtml(enc.intent.ru)}</div>` : ''}
+        ${enc.edge && !waiting ? `<div class="eg-edge-line">⚡ Преимущество: следующий ${enc.kind === 'nsfw' ? 'шаг' : 'удар'} легче и в полтора раза сильнее</div>` : ''}
         ${waiting ? '' : targets}
         <div class="eg-ecards">${cards}</div>
-        ${waiting ? '' : '<div class="eg-enc-foot">или напиши своё действие — кубик бросится сам</div>'}`).addClass('eg-show');
+        ${waiting ? '' : `<div class="eg-enc-tools"><button class="eg-focus${encFocus ? ' eg-on' : ''}" data-act="enc-focus" ${energy ? '' : 'disabled'}>⚡ Собраться <small>+2 к броску · −1 сила (${energy})</small></button></div><div class="eg-enc-foot">или напиши своё действие — кубик бросится сам</div>`}`).addClass('eg-show');
 }
 
 /** A tapped card: roll right in the panel, then send the move as the player's message. */
+let encFocus = false; // "Собраться" is armed for the next card
 async function playCard(i) {
     const st = currentState();
     const o = st.enc?.options?.[i];
     if (!o || $('#eg-enc').hasClass('eg-rolling')) return;
-    const set = X.optionSetup(st, o);
+    const set = X.optionSetup(st, o, { focus: encFocus });
     const dice = E.rollDice(Math.random, set.adv ? 3 : 2);
     const outcome = E.classifyDice(dice, set.mod, set.dc, 'risky', { lucky: set.lucky });
     const tone = E.OUTCOMES[outcome].tone;
@@ -625,7 +632,8 @@ async function playCard(i) {
     await new Promise(r => setTimeout(r, 700));
     $p.removeClass('eg-rolling');
     const sendText = X.aimText(st.enc, o.en);
-    pendingRound = { text: sendText, option: o, dice };
+    pendingRound = { text: sendText, option: o, dice, focus: set.focus };
+    encFocus = false;
     const $ta = $('#send_textarea');
     $ta.val(sendText).trigger('input');
     $('#send_but').trigger('click');
@@ -820,7 +828,7 @@ function renderHud(state = currentState()) {
     $h.find('.eg-weather').text(WEATHER_ICON[state.weather] || '');
     $h.find('.eg-money').text(`${state.currency} ${state.money}`);
     $h.find('.eg-harm').html(`<b class="eg-lbl">♥</b>${pips(3 - state.harm, 3, 'eg-pip eg-pip-hp')}`).attr('title', E.HARM[state.harm].ru);
-    $h.find('.eg-stress').html(`<b class="eg-lbl">⚡</b>${pips(state.stress, E.STRESS_MAX, 'eg-pip eg-pip-st')}`);
+    $h.find('.eg-stress').html(`<b class="eg-lbl">⚡</b>${pips(E.energyOf(state), E.STRESS_MAX, 'eg-pip eg-pip-st')}`);
     const clocks = state.clocks.filter(c => c.filled < c.size).sort((a, b) => (b.kind === 'threat') - (a.kind === 'threat') || b.filled / b.size - a.filled / a.size).slice(0, 2);
     $h.find('.eg-clocks').html(clocks.map(c => `<span class="eg-hud-clock">${clockSvg(c)}<span>${escapeHtml(c.name)}</span></span>`).join(''));
     $h.toggleClass('eg-lowhp', state.harm >= 2);
@@ -885,7 +893,7 @@ function showCheckCard(state, v) {
         const nDice = adv ? 3 : 2;
 
         const render = () => {
-            const mod = baseMod + (push ? 1 : 0);
+            const mod = baseMod + (push ? 2 : 0);
             const o = E.odds(mod, dc, pos, { adv, lucky });
             const pct = Math.round(o.atLeastSuccess * 100);
             const nearPct = Math.round(o.near * 100);
@@ -909,7 +917,7 @@ function showCheckCard(state, v) {
                 <div class="eg-dice">${'<div class="eg-die">?</div>'.repeat(nDice)}<div class="eg-roll-result"></div></div>
                 <div class="eg-actions">
                     <button class="eg-btn eg-btn-roll"><i class="fa-solid fa-dice"></i> Бросить</button>
-                    <button class="eg-btn eg-btn-push ${push ? 'eg-on' : ''}" ${canPush ? '' : 'disabled'}>⚡ Надавить <small>+1 · стресс</small></button>
+                    <button class="eg-btn eg-btn-push ${push ? 'eg-on' : ''}" ${canPush ? '' : 'disabled'}>⚡ Собраться <small>+2 · −1 сила</small></button>
                 </div>
                 <button class="eg-link eg-btn-cancel">Отменить ход</button>`);
         };
@@ -922,7 +930,7 @@ function showCheckCard(state, v) {
             $card.find('.eg-actions, .eg-btn-cancel, .eg-after').css('visibility', 'hidden');
             const dice = E.rollDice(Math.random, nDice);
             await animateDice($card, dice);
-            const mod = baseMod + (push ? 1 : 0);
+            const mod = baseMod + (push ? 2 : 0);
             const outcome = E.classifyDice(dice, mod, dc, pos, { lucky });
             const o = E.OUTCOMES[outcome];
             const [a, b] = E.bestTwo(dice);
@@ -1025,7 +1033,10 @@ function noteLines(notes = [], state = null) {
             case 'tier': out.push({ text: `${n.name} — ${E.TIERS.find(t => t.id === n.to)?.ru}`, tone: 'gold' }); break;
             case 'npc_new': out.push({ text: `Новое знакомство: ${n.name}`, tone: 'info' }); break;
             case 'clock': out.push({ text: `${n.name} ${n.to}/${n.size}`, tone: 'warn' }); break;
-            case 'stress': out.push({ text: `Стресс ${n.delta > 0 ? '+' : ''}${n.delta}`, tone: n.delta > 0 ? 'bad' : 'good' }); break;
+            case 'stress': out.push({ text: `⚡ Силы ${n.delta > 0 ? '−' : '+'}${Math.abs(n.delta)}`, sub: n.why || '', tone: n.delta > 0 ? 'warn' : 'good' }); break;
+            case 'spent': out.push({ text: '😮‍💨 Силы кончились: −1 ко всем броскам, пока не отдохнёшь', tone: 'bad' }); break;
+            case 'recovered': out.push({ text: '💪 Силы вернулись', tone: 'good' }); break;
+            case 'edge': out.push({ text: '⚡ Преимущество!', sub: 'следующий ход легче и сильнее', tone: 'gold' }); break;
             case 'harm': out.push({ text: n.to > n.from ? `Рана: ${E.HARM[n.to].ru}` : `Легче: ${E.HARM[n.to].ru}`, tone: n.to > n.from ? 'bad' : 'good' }); break;
             case 'xp': out.push({ text: `+${n.delta} опыта${n.why ? ` · ${n.why}` : ''}`, tone: 'info' }); break;
             case 'money': { const k = E.MONEY_KINDS[n.op]; out.push({ text: `${k ? k.icon + ' ' : ''}${n.delta > 0 ? '+' : '−'}${Math.abs(n.delta)} ${cur}${k ? ` · ${k.ru}` : ''}`, sub: [n.why, n.who].filter(Boolean).join(' · '), tone: n.delta > 0 ? 'good' : 'bad' }); break; }
@@ -1327,7 +1338,7 @@ function heroHtml(s) {
         ${picks ? `<div class="eg-perks">${Object.entries(E.PERKS).filter(([id]) => !E.hasPerk(s, id)).map(([id, p]) => `<button class="eg-perk" data-perk="${id}"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></button>`).join('')}</div>` : ''}`;
     const hints = {
         hp: 'Раны дают штраф ко всем броскам: чем тяжелее, тем больше. Проходят от отдыха, лечения и вещей с пометкой 🩹. Смертельная рана — поражение.',
-        st: `Растёт от провалов, кнопки «Надавить» и тяжёлых сцен. Падает от сна, отдыха, приятных сцен и вещей с пометкой 🍵. На ${E.STRESS_MAX} — срыв: герой теряет самообладание, стресс падает до 4.`,
+        st: `Запас, который ты тратишь сам: «Собраться» даёт +2 к броску за 1 силу — и в обычных проверках, и в боях и сценах. Ещё силы уходят от катастроф и тяжёлых сцен. Возвращаются от сна, отдыха, еды, приятных сцен, побед и вещей с пометкой 🍵. На нуле герой выдохся: −1 ко всем броскам, пока не вернётся хотя бы половина.`,
         mn: `Деньги меняются только по событию: тебе заплатили, наградили, ты нашёл, добыл, продал, купил или потерял. Каждое движение с причиной — в Журнале.${s.econ ? ` Цены в этом мире: обед ≈ ${s.econ.meal} ${escapeHtml(s.currency)}, день работы ≈ ${s.econ.day} ${escapeHtml(s.currency)}.` : ''}`,
     };
     return `
@@ -1341,7 +1352,7 @@ function heroHtml(s) {
         </div>
         <div class="eg2-stats">
             <button class="eg2-stat" data-hint="hp"><small>Здоровье</small><b>${E.HARM[s.harm].ru}</b><span>${pips(3 - s.harm, 3, 'eg-pip eg-pip-hp')}</span></button>
-            <button class="eg2-stat" data-hint="st"><small>Стресс</small><b>${s.stress} из ${E.STRESS_MAX}</b><span>${pips(s.stress, E.STRESS_MAX, 'eg-pip eg-pip-st')}</span></button>
+            <button class="eg2-stat" data-hint="st"><small>Силы</small><b>${s.spent ? 'Выдохся' : `${E.energyOf(s)} из ${E.STRESS_MAX}`}</b><span>${pips(E.energyOf(s), E.STRESS_MAX, 'eg-pip eg-pip-st')}</span></button>
             <button class="eg2-stat" data-hint="mn"><small>Деньги</small><b>${escapeHtml(s.currency)} ${s.money}</b><span class="eg-muted">${s.ledger?.length ? `${s.ledger.at(-1).amount > 0 ? '+' : '−'}${Math.abs(s.ledger.at(-1).amount)} недавно` : 'что это?'}</span></button>
         </div>
         ${Object.entries(hints).map(([k, t]) => `<p class="eg2-hint" data-for="${k}" hidden>${t}</p>`).join('')}

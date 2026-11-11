@@ -42,7 +42,7 @@ const DEFAULTS = {
         every: 8,
         mode: 'auto',  // auto (pov when the player is in the action, else a wide shot) | pov | scene | portrait
         size: 'auto',
-        style: 'glossy',    // glossy | glossy_plump | glossy_soft | western | comic | semireal | anime | art | custom
+        style: 'bold',      // bold | flat | vivid | glossy | glossy_plump | glossy_soft | western | comic | semireal | anime | art | custom
         artist: '',         // optional "@artist" for a specific look
         hires: true,        // 1.5K output: sharper details and anatomy
         stylePrefix: 'masterpiece, best quality',
@@ -71,6 +71,9 @@ export function S() {
     // 0.9.6: the anime default gave way to the western digital-art look (once; a later choice stays).
     if (!s.images.westernMigrated) { if (s.images.style === 'anime') s.images.style = 'western'; s.images.westernMigrated = true; }
     // 0.9.7: the glossy look from the user's references became the default.
+    // 1.4.2: the default look moved to "bold" (taller, adult proportions); only an untouched default is switched
+    if (!s.images.boldMigrated) { if (s.images.style === 'glossy' && !s.images.artist) s.images.style = 'bold'; s.images.boldMigrated = true; }
+    s.dnaTag ??= {};
     if (!s.images.glossyMigrated) { if (['anime', 'western'].includes(s.images.style)) s.images.style = 'glossy'; s.images.glossyMigrated = true; }
     // 0.9: "alternate" (POV/portrait in turns) became "auto" (the frame follows the scene).
     if (s.images.mode === 'alternate') s.images.mode = 'auto';
@@ -777,7 +780,7 @@ async function generateFor(mesId, mode, { auto = false } = {}) {
 
     const data = chatData();
     try {
-        const built = await buildPrompt({ ...s, ...im, dna: s.dna, helperProfile: s.helperProfile, allowMainModel: s.allowMainModel }, mode, mesId);
+        const built = await buildPrompt({ ...s, ...im, dna: s.dna, dnaTag: s.dnaTag, helperProfile: s.helperProfile, allowMainModel: s.allowMainModel }, mode, mesId);
         const prompt = built.prompt;
         mode = built.mode; // "auto" resolves to pov or scene here
         if (controller.signal.aborted) throw new DOMException('aborted', 'AbortError');
@@ -842,12 +845,20 @@ function bindSettings($root) {
             try {
                 const dna = await visualDna(S(), { force: true });
                 $root.find('#et_dna').val(dna);
+                $root.find('#et_dna_tag').val(S().dnaTag?.[currentCharacter()?.key] || '');
                 toast().success('Внешность обновлена');
             } catch (e) {
                 toast().error(e.message === 'no-helper' ? 'Нужна служебная модель' : e.message);
             } finally { this.disabled = false; }
         }
         if (what === 'test') { closeSheets(); generateFor(lastCharMessageId(), pickMode()); }
+    });
+    $root.on('change', '#et_dna_tag', function () {
+        const ch = currentCharacter();
+        if (!ch || ch.group) return;
+        S().dnaTag ??= {};
+        S().dnaTag[ch.key] = this.value.trim().toLowerCase().replace(/_/g, ' ');
+        ctx().saveSettingsDebounced();
     });
     $root.on('change', '#et_dna', function () {
         const ch = currentCharacter();
@@ -876,6 +887,7 @@ function refreshSettings($root) {
     $root.find('#et_dna_block').toggle(Boolean(ch && !ch.group));
     $root.find('#et_dna_name').text(ch?.name || '');
     $root.find('#et_dna').val(ch && !ch.group ? (s.dna[ch.key] || '') : '');
+    $root.find('#et_dna_tag').val(ch && !ch.group ? (s.dnaTag?.[ch.key] || '') : '');
     fillModels($root, false);
     document.dispatchEvent(new CustomEvent('et-settings-refresh'));
 }
