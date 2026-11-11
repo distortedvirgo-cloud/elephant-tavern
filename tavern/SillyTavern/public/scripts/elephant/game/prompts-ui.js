@@ -132,10 +132,10 @@ ${catalog}
 </templates>
 
 Reply with ONE line of JSON: {"changes":[{"id":"template id from the list","what":"exactly what to change in this template, in English; if the player gave exact text to insert, say where it goes and that it is inserted verbatim"}],"reply_ru":"одно-два предложения игроку по-русски: что именно будет изменено; если просьба не про поведение игры или её нельзя выполнить правкой промптов — объясни почему и оставь changes пустым"}
-Pick only the templates that really need to change (usually one to three). Use only ids from the list. narrator_extra is the place for new standing rules for the storyteller that fit nowhere else.`, 500, { json: true });
+Pick only the templates that really need to change (usually one to three). Use only ids from the list. narrator_extra is the place for new standing rules for the storyteller that fit nowhere else. Keep "what" short: never copy the player's text into it, the editor will see the request itself.`, 900, { json: true });
     const j = parseJson(pick);
     const wanted = (Array.isArray(j?.changes) ? j.changes : []).filter(c => pool.some(([id]) => id === c?.id) && String(c?.what || '').trim()).slice(0, 4);
-    const out = { reply: String(j?.reply_ru || '').slice(0, 400), changes: [] };
+    const out = { reply: String(j?.reply_ru || '').slice(0, 400) || (j ? '' : 'Модель ответила не по формату — попробуй ещё раз или поправь промпт вручную.'), changes: [] };
     for (const c of wanted) {
         const cur = P.textOf(c.id);
         const text = await D.callHelper(ss, 'You edit one prompt template. Output only the complete new template text, nothing else.',
