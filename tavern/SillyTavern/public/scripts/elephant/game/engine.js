@@ -475,9 +475,11 @@ export const XP_PER_LEVEL = xpNeed(1);
 export const TITLES = [[1, 'Новичок'], [3, 'Бродяга'], [6, 'Искатель'], [9, 'Бывалый'], [12, 'Ветеран'], [15, 'Герой'], [18, 'Чемпион'], [21, 'Мастер'], [24, 'Прославленный'], [27, 'Живая легенда'], [30, 'Легенда']];
 export const titleOf = (level) => { let t = TITLES[0][1]; for (const [l, n] of TITLES) if (level >= l) t = n; return t; };
 export const PERK_EVERY = 3;
+/** Perks a new hero picks at level 1, before the first one earned by levelling. */
+export const START_PERKS = 2;
 
 /*
- * Perks: one every PERK_EVERY levels. adv = roll 3 dice, keep the best two, for that skill.
+ * Perks: START_PERKS at level 1, then one every PERK_EVERY levels. adv = roll 3 dice, keep the best two, for that skill.
  */
 export const PERKS = {
     second_chance: { ru: 'Второй шанс', icon: '🔁', text: 'Раз за сцену можно перебросить проваленный бросок.' },
@@ -499,7 +501,7 @@ export const PERKS = {
 export const hasPerk = (s, id) => Array.isArray(s.perks) && s.perks.includes(id);
 export const hasAdvantage = (s, skill) => (s.perks || []).some(p => PERKS[p]?.adv === skill);
 /** Perk picks earned but not chosen yet. */
-export const perkPicks = (s) => Math.max(0, Math.floor((s.level || 1) / PERK_EVERY) - (s.perks?.length || 0));
+export const perkPicks = (s) => Math.max(0, START_PERKS + Math.floor((s.level || 1) / PERK_EVERY) - (s.perks?.length || 0));
 export function choosePerk(state, id) {
     const s = clone(state);
     if (!PERKS[id] || hasPerk(s, id) || perkPicks(s) <= 0) return state;

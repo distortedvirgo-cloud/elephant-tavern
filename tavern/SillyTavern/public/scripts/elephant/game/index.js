@@ -1384,7 +1384,7 @@ function heroHtml(s) {
     const nextPerk = (Math.floor(s.level / E.PERK_EVERY) + 1) * E.PERK_EVERY;
     const perksHtml = `
         <h4 class="eg-h">Перки ${picks ? `<small class="eg-gold">можно выбрать: ${picks}</small>` : `<small>следующий на ${Math.min(nextPerk, E.MAX_LEVEL)} уровне</small>`}</h4>
-        ${owned.length ? `<div class="eg-perks">${owned.map(p => `<div class="eg-perk eg-perk-own"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></div>`).join('')}</div>` : (picks ? '' : '<p class="eg-muted eg-small">Перк даётся каждые 3 уровня.</p>')}
+        ${owned.length ? `<div class="eg-perks">${owned.map(p => `<div class="eg-perk eg-perk-own"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></div>`).join('')}</div>` : (picks ? '<p class="eg-muted eg-small">На старте — два перка на выбор, дальше по одному каждые 3 уровня.</p>' : '<p class="eg-muted eg-small">Перк даётся каждые 3 уровня.</p>')}
         ${picks ? `<div class="eg-perks">${Object.entries(E.PERKS).filter(([id]) => !E.hasPerk(s, id)).map(([id, p]) => `<button class="eg-perk" data-perk="${id}"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></button>`).join('')}</div>` : ''}`;
     const hints = {
         hp: 'Раны дают штраф ко всем броскам: чем тяжелее, тем больше. Проходят от отдыха, лечения и вещей с пометкой 🩹. Смертельная рана — поражение.',

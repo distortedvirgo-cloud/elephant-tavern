@@ -258,3 +258,6 @@ export function openPrompts(deps) {
     bind();
     D.openSheet('eg-prompts');
 }
+
+/* tests only */
+export const _test = { aiEdit: (...a) => aiEdit(...a), setDeps: (d) => { D = d; } };
