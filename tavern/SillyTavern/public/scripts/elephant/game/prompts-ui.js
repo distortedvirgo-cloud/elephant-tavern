@@ -132,13 +132,23 @@ ${catalog}
 </templates>
 
 Reply with ONE line of JSON: {"changes":[{"id":"template id from the list","what":"exactly what to change in this template, in English; if the player gave exact text to insert, say where it goes and that it is inserted verbatim"}],"reply_ru":"одно-два предложения игроку по-русски: что именно будет изменено; если просьба не про поведение игры или её нельзя выполнить правкой промптов — объясни почему и оставь changes пустым"}
-Pick only the templates that really need to change (usually one to three). Use only ids from the list. narrator_extra is the place for new standing rules for the storyteller that fit nowhere else. Keep "what" short: never copy the player's text into it, the editor will see the request itself.`, 900, { json: true });
-    const j = parseJson(pick);
+Pick only the templates that really need to change (usually one to three). Use only ids from the list. narrator_extra is the place for new standing rules for the storyteller that fit nowhere else. Keep "what" short: never copy the player's text into it, the editor will see the request itself. Answer at once with the JSON line: no reasoning, no preamble, no code fences.`, 2500, { json: true });
+    const j = parseJson(pick) || salvage(pick);
     const wanted = (Array.isArray(j?.changes) ? j.changes : []).filter(c => pool.some(([id]) => id === c?.id) && String(c?.what || '').trim()).slice(0, 4);
     const out = { reply: String(j?.reply_ru || '').slice(0, 400) || (j ? '' : 'Модель ответила не по формату — попробуй ещё раз или поправь промпт вручную.'), changes: [] };
     for (const c of wanted) {
         const cur = P.textOf(c.id);
-        const text = await D.callHelper(ss, 'You edit one prompt template. Output only the complete new template text, nothing else.',
+        const empty = !cur.trim();
+        const text = await D.callHelper(ss, 'You edit one prompt template. Output only the complete new template text, nothing else.', empty
+            ? `This prompt template is empty: it holds extra standing rules added to the game's instructions. Write only the rule lines the change needs: ${String(c.what).slice(0, 1200)}
+
+The player's request (any exact text they give to add goes in word for word):
+<request>
+${ask.slice(0, 4000)}
+</request>
+
+Rules: English, one to five short lines starting with "- ", only what this change needs. No headings, no other rules, no explanations, no code fences. Output the lines and nothing else.`
+            :
             `Rewrite this prompt template so that it does the following: ${String(c.what).slice(0, 1200)}
 
 The player's request (any exact text they give to add goes in word for word):
@@ -150,15 +160,26 @@ Rules: change only what the request needs and keep everything else word for word
 
 <template>
 ${cur}
-</template>`, Math.min(6000, Math.round((cur.length + ask.length) / 2.2) + 600));
-        const clean = String(text || '').replace(/^```[a-z]*\n?|\n?```$/g, '').replace(/^<template>\n?|\n?<\/template>$/g, '').trim();
+</template>`, Math.min(4000, Math.round((cur.length + ask.length) / 2.2) + 1500));
+        const clean = stripThink(text).replace(/^```[a-z]*\n?|\n?```$/g, '').replace(/^<template>\n?|\n?<\/template>$/g, '').trim();
         if (clean && clean !== cur.trim()) out.changes.push({ id: c.id, what: String(c.what), before: cur, after: clean });
     }
     return out;
 }
 
+/** Reasoning models sometimes put their thinking in the answer. */
+const stripThink = (text) => String(text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*<\/think>/i, '').trim();
+
+/** A JSON answer cut off mid-way: take whatever complete {"id","what"} pairs it has. */
+function salvage(text) {
+    const s = stripThink(text);
+    const changes = [...s.matchAll(/"id"\s*:\s*"([\w-]+)"\s*,\s*"what"\s*:\s*"((?:[^"\\]|\\.)*)"/g)].map(m => ({ id: m[1], what: m[2].replace(/\\"/g, '"') }));
+    const r = s.match(/"reply_ru"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    return changes.length || r ? { changes, reply_ru: r ? r[1] : '' } : null;
+}
+
 function parseJson(text) {
-    const m = String(text || '').match(/\{[\s\S]*\}/);
+    const m = stripThink(text).match(/\{[\s\S]*\}/);
     if (!m) return null;
     try { return JSON.parse(m[0]); } catch { return null; }
 }
@@ -260,4 +281,4 @@ export function openPrompts(deps) {
 }
 
 /* tests only */
-export const _test = { aiEdit: (...a) => aiEdit(...a), setDeps: (d) => { D = d; } };
+export const _test = { aiEdit: (...a) => aiEdit(...a), salvage, setDeps: (d) => { D = d; } };

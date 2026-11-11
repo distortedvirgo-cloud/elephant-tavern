@@ -969,9 +969,21 @@ async function fillHelperModels($root, force) {
     try {
         const list = await loadHelperModels();
         const fmt = (v) => (v === null || v === undefined ? '?' : v < 1 ? v.toFixed(2) : v.toFixed(1));
-        list.sort((a, b) => (a.input ?? 99) - (b.input ?? 99));
+        // grouped by provider (the part of the id before "/"), alphabetical inside; the recommended helper first
+        const RECOMMENDED = ['deepseek/deepseek-v4.1-flash-1017'];
+        const label = (x) => `${x.name}  ·  $${fmt(x.input)} / $${fmt(x.output)}`;
+        const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'en', { numeric: true, sensitivity: 'base' });
+        const provider = (x) => (String(x.id).includes('/') ? String(x.id).split('/')[0] : 'other');
         $m.empty().append('<option value="">— не выбрана (профиль ниже) —</option>');
-        for (const x of list) $m.append($('<option>').val(x.id).text(`${x.name}  ·  $${fmt(x.input)} / $${fmt(x.output)}`));
+        const rec = list.filter(x => RECOMMENDED.includes(x.id));
+        if (rec.length) { const $g = $('<optgroup label="★ Рекомендуемая">'); for (const x of rec) $g.append($('<option>').val(x.id).text(label(x))); $m.append($g); }
+        const groups = {};
+        for (const x of list) (groups[provider(x)] ??= []).push(x);
+        for (const p of Object.keys(groups).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))) {
+            const $g = $('<optgroup>').attr('label', p);
+            for (const x of groups[p].sort(byName)) $g.append($('<option>').val(x.id).text(label(x)));
+            $m.append($g);
+        }
         if (current && !list.some(x => x.id === current)) $m.append($('<option>').val(current).text(current));
         $m.val(current || '');
         $m.data('loaded', true);
