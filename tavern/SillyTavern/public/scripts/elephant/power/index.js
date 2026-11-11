@@ -119,12 +119,14 @@ function titleCard(text) {
     const el = layer('ep-title');
     el.innerHTML = `<span>${escapeHtml(text)}</span>`;
     el.classList.remove('ep-show'); void el.offsetWidth; el.classList.add('ep-show');
+    globalThis.ElephantStage?.sound?.play('title');
 }
 
 function glitch(level) {
     const b = document.body;
     b.classList.remove('ep-glitch-1', 'ep-glitch-2', 'ep-glitch-3'); void b.offsetWidth;
     b.classList.add(`ep-glitch-${level}`);
+    globalThis.ElephantStage?.sound?.play('glitch');
     setTimeout(() => b.classList.remove(`ep-glitch-${level}`), 900 + level * 500);
     haptic(level >= 2 ? 'rumble' : 'tick');
 }
@@ -138,6 +140,7 @@ function blackout(seconds) {
 function whisper(text, who) {
     const el = layer('ep-whisper');
     el.innerHTML = `<small>${escapeHtml(who)}</small><span>${escapeHtml(text)}</span>`;
+    globalThis.ElephantStage?.sound?.play('whisper');
     el.classList.remove('ep-show'); void el.offsetWidth; el.classList.add('ep-show');
     haptic('heartbeat');
 }
@@ -148,6 +151,7 @@ function shout(text) {
     el.innerHTML = `<span>${escapeHtml(text)}</span>`;
     el.classList.remove('ep-show'); void el.offsetWidth; el.classList.add('ep-show');
     globalThis.ElephantStage?.shake?.('hard');
+    globalThis.ElephantStage?.sound?.play('shout');
     haptic('hit');
 }
 
@@ -180,7 +184,7 @@ export function perform(cmd, mesId, level = 'full') {
     if (cmd.dark) blackout(cmd.dark);
     setTimeout(() => {
         if (cmd.fx?.length && st) {
-            for (const f of cmd.fx) if (f === 'shake') st.shake?.('hard');
+            for (const f of cmd.fx) if (f === 'shake') { st.shake?.('hard'); st.sound?.play('quake'); }
             st.playEvents(cmd.fx.filter(f => f !== 'shake'));
         }
         if (cmd.screen) for (const sc of cmd.screen) screenState(sc, cmd.hold || 4);

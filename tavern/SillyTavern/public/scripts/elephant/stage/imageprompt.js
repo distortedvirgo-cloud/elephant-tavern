@@ -41,7 +41,7 @@ PROMPT: the Anima prompt, one line, in this order:
 Lowercase tags, spaces instead of underscores, no quality or style tags (the app adds them), no weights, max 90 words. If nothing physical is happening, show the characters' current poses and expressions instead.`;
 
 const HEAD = `Character visual reference — {{char}}: {{dna}}
-{{tagline}}
+{{tagline}}{{userline}}
 Other characters (only if they are part of the main action): their canon look if they are known characters, otherwise exactly what the story says about them.
 
 {{state}}Recent story (the last lines are the moment to draw):
@@ -53,6 +53,8 @@ Other characters (only if they are part of the main action): their canon look if
 const FRAME_POV = `a picture seen through the eyes of {{user}}, WITHOUT the "pov" tag (never write "pov" or "first-person view": that tag makes the image model draw hands and a body nobody asked for). The first-person feeling comes from the character instead: {{char}} faces the camera and looks at the viewer ("looking at viewer"), at the distance and angle the moment implies ("straight-on", "from above" when the viewer looks down at her, "from below" when she is over the viewer, "close-up", "upper body", "leaning forward", "reaching towards viewer", "incoming kiss"), doing exactly what the story says. {{user}} is NOT drawn and NOT counted: one character in front of the viewer is "1girl, solo" (or "1boy, solo"). {{user}}'s body enters the frame only when the last message makes it act, and then only that part, with precise tags instead of "pov": {{user}}'s hands doing something to her ("I take her face in my hands") → "pov hands" plus the exact action tag (hand on another's cheek, holding another's wrist, grabbing another's breast, undressing another); a sex act that needs {{user}}'s body → count {{user}} ("1boy" plus "faceless male", or "faceless female") with the act and position tags, nothing more of him than the act needs. When {{user}} only looks, talks, listens, sits or lies there: no hands, no arms, no legs, no second person. Show the location, lighting and time of day.`;
 
 const FRAME_SCENE = `a third-person shot of the scene, like a film still: {{user}} is NOT in the frame (no "pov" tag, no viewer's hands, no faceless partner standing for {{user}}); show the characters at the centre of the moment — what they are doing and what is being done to them — in their surroundings, framed around that interaction; the location, lighting and time of day.`;
+
+const FRAME_DUO = `a third-person shot with {{user}} IN the frame together with the character they are with: both are drawn and counted (e.g. "1boy, 1girl"), {{user}} from their look above ({{user}} is never "faceless" here and never a "pov" view), {{char}} from the reference; framed around what the two of them are doing to each other right now (an embrace, a kiss, a dance, a fight, sex seen from aside), with the location behind. Put the two looks in separate blocks so they don't blend.`;
 
 export const PROMPT_TEMPLATES = {
     portrait: `${HEAD}
@@ -67,6 +69,10 @@ ${ANIMA_RULES}`,
 Draw this exact moment as ${FRAME_SCENE}
 ${ANIMA_RULES}`,
 
+    duo: `${HEAD}
+Draw this exact moment as ${FRAME_DUO}
+${ANIMA_RULES}`,
+
     // The helper picks the frame: the player's eyes when they are in the action, a wide shot otherwise.
     auto: `${HEAD}
 First decide the FRAME for the last moment of the story:
@@ -77,11 +83,24 @@ Then draw it:
 - scene: ${FRAME_SCENE}
 Start your answer with one extra line before the others: FRAME: pov or FRAME: scene.
 ${ANIMA_RULES}`,
+
+    // Same, when the app knows what {{user}} looks like: a third option shows both from aside.
+    auto_duo: `${HEAD}
+First decide the FRAME for the last moment of the story:
+- pov — {{user}} is face to face with a character who speaks to or looks at {{user}}, or the moment is about what {{user}} sees.
+- duo — {{user}} and a character are physically together and the moment reads best from aside, with both bodies in view: an embrace, a kiss, a dance, carrying or holding each other, a fight between them, sex. Prefer duo for these about half the time, pov the other half.
+- scene — {{user}} is not directly involved: the moment is about other characters, or {{user}} only watches or is elsewhere.
+Then draw it:
+- pov: ${FRAME_POV}
+- duo: ${FRAME_DUO}
+- scene: ${FRAME_SCENE}
+Start your answer with one extra line before the others: FRAME: pov, FRAME: duo or FRAME: scene.
+${ANIMA_RULES}`,
 };
 
 /** The frame the helper chose in "auto" (defaults to scene). */
 export function extractFrame(out) {
-    const m = String(out ?? '').match(/FRAME\s*:\s*(pov|scene)/i);
+    const m = String(out ?? '').match(/FRAME\s*:\s*(pov|scene|duo)/i);
     return m ? m[1].toLowerCase() : 'scene';
 }
 

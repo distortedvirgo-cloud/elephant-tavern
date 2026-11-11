@@ -320,6 +320,9 @@ export function ensureNpc(n) {
     n.dislikes ??= [];
     n.aliases ??= [];
     n.statuses ??= [];
+    n.meets ??= [];
+    n.feel ??= null;
+    n.jealous ??= null;
     n.other ??= {};
     n.other.counts ??= {}; n.other.partners ??= []; n.other.orgasms ??= 0; n.other.past ??= null; n.other.sess ??= null; n.other.last ??= null;
     n.sess ??= null;
@@ -801,8 +804,42 @@ export function bondModifier(state, check) {
     return out;
 }
 
+/** An action that tries to get out of a condition: break the bonds, shake off the charm, come to. */
+const BREAK_FREE = /\b(free|break|escape|struggle|slip|untie|wriggle|resist|shake (it )?off|snap out|come to|fight (it|the)|cut (the|my) (rope|bond))|вырв|освобо|развяз|стряхн|сбрасыва|очнут|прийти в себя|сопротив|перегрыз|перерез/i;
+export const breaksFree = (check) => BREAK_FREE.test(`${check?.action_en || ''} ${check?.label_ru || ''}`);
+
+/**
+ * What conditions do to an ordinary check: the hero's own (bound, stunned, charmed…) and the target's
+ * (a charmed character is easy to talk into things, a sleeping one easy to slip past).
+ * Returns { delta, why, frees } — frees: a success lifts the hero's condition.
+ */
+export function conditionModifier(state, check) {
+    const out = { delta: 0, why: [], frees: false };
+    const add = (d, why) => { if (d) { out.delta += d; out.why.push(`${why} ${d > 0 ? '+' : '−'}${Math.abs(d)}`); } };
+    const sk = check?.skill;
+    const free = breaksFree(check);
+    const b = ST.blockOf(state);
+    if (b === 'act') { add(free ? 2 : 6, free ? 'приходишь в себя' : 'не можешь двигаться'); out.frees = free; }
+    else if (b === 'move') { if (free) out.frees = true; else if (['might', 'finesse', 'passion'].includes(sk)) add(4, 'связан'); }
+    if (ST.has(state, 'charmed')) { if (sk === 'resolve') { add(2, 'гипноз'); out.frees = out.frees || free; } else if (['charm', 'insight'].includes(sk)) add(1, 'гипноз'); }
+    if (ST.has(state, 'frightened') && sk === 'might') add(2, 'страх');
+    if (ST.has(state, 'blinded')) { if (sk === 'insight') add(2, 'не видишь'); else if (sk === 'finesse') add(1, 'не видишь'); }
+    if (ST.has(state, 'aroused')) { if (sk === 'resolve') add(1, 'возбуждение'); if (sk === 'passion') add(-1, 'возбуждение'); }
+    const name = String(check?.target || '').trim();
+    const npc = name ? (resolveNpc(state, name) || null) : null;
+    if (npc && ST.listOf(npc).length) {
+        if (ST.has(npc, 'charmed') && ['charm', 'passion'].includes(sk)) add(-3, 'она под гипнозом');
+        if (['asleep', 'paralyzed', 'bound', 'stunned'].some(id => ST.has(npc, id)) && ['finesse', 'might'].includes(sk)) add(-2, 'беззащитна');
+        if (ST.has(npc, 'frightened') && sk === 'charm') add(-2, 'напугана');
+        if (ST.has(npc, 'drunk') && ['charm', 'insight'].includes(sk)) add(-1, 'пьяна');
+        if (ST.has(npc, 'blinded') && sk === 'finesse') add(-2, 'не видит');
+    }
+    out.delta = clamp(out.delta, -4, 6);
+    return out;
+}
+
 export function effectiveDc(state, dc, check = null) {
-    return clamp(Math.round(Number(dc) || 8), 4, 16) + DIFFICULTY[state.difficulty].dc + (check ? bondModifier(state, check).delta : 0);
+    return clamp(Math.round(Number(dc) || 8), 4, 16) + DIFFICULTY[state.difficulty].dc + (check ? bondModifier(state, check).delta + conditionModifier(state, check).delta : 0);
 }
 
 /** Classify a total of 2d6 + mod. */
@@ -921,6 +958,13 @@ export function resolveCheck(state, check, opts = {}) {
         default:
     }
 
+    // Getting out of a condition: a success breaks the bonds, shakes off the charm, brings the hero round.
+    const cond = conditionModifier(state, { ...check, skill });
+    if (cond.frees && ['crit', 'success', 'near'].includes(outcome)) {
+        const gone = [...ST.free(s), ...(skill === 'resolve' && ST.remove(s, 'charmed') ? ['charmed'] : [])];
+        for (const id of gone) notes.push({ kind: 'status_end', name: '', id });
+    }
+
     // Trying to go further in intimacy than the character is ready for.
     const npc = check.intimacy_push ? findNpcIn(s, check.target) : null;
     if (npc) {
@@ -955,13 +999,22 @@ export function resolveCheck(state, check, opts = {}) {
         fail_en: String(check.fail_en || '').slice(0, 160),
         target: String(check.target || '').slice(0, 40),
         intimacy_push: Boolean(npc),
-        bond: bondModifier(state, { ...check, skill }).why,
+        bond: [...bondModifier(state, { ...check, skill }).why, ...cond.why],
         notes,
         events,
     };
     s.log = [record, ...s.log].slice(0, 30);
     return { state: s, record };
 }
+
+/** A character who cares about the player sees or learns about him with someone else: a jealous spell. */
+export function jealousNow(n, s, of, how = 'learned') {
+    if (!n || (n.affection < 40 && n.stage < 4 && n.attraction < 55)) return false;
+    n.jealous = { of: String(of).slice(0, 40), how, turn: s.turn, time: s.time };
+    return true;
+}
+/** The jealous spell lasts a while, then becomes just something she knows. */
+export const isJealous = (n, s) => Boolean(n?.jealous && s.turn - n.jealous.turn <= 8);
 
 function findNpcIn(s, name) {
     const q = String(name || '').trim().toLowerCase();
@@ -1154,8 +1207,18 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
         }
         ensureNpc(npc);
         touched.add(key);
+        const wasHere = npc.present && npc.seen >= s.turn - 1;
         npc.present = n.present !== false;
         npc.seen = s.turn;
+        // meetings: a new one starts when the character turns up again, or in a new scene
+        if (npc.present && (!wasHere || report?.scene_changed)) {
+            const last = npc.meets.at(-1);
+            const place = String(report?.location_ru || s.location || '').trim().slice(0, 40);
+            if (!last || last.turn !== s.turn) { npc.meets.push({ time: s.time, turn: s.turn, place }); if (npc.meets.length > 30) npc.meets.shift(); npc.meetCount = (npc.meetCount || npc.meets.length - 1) + 1; }
+        }
+        // how they feel right now, in a word or two
+        const feelRu = String(n.feel_ru || '').trim().slice(0, 32);
+        if (feelRu) npc.feel = { ru: feelRu, en: String(n.feel_en || '').trim().slice(0, 60), turn: s.turn };
         const dt = clamp(Math.round(Number(n.trust) || 0), -6, 6);
         const da = clamp(Math.round(Number(n.attraction) || 0), -5, 5);
         const df = clamp(Math.round(Number(n.affection) || 0), -5, 5);
@@ -1229,6 +1292,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
                 if (!ok || ok === key || other.present === false || !s.npcs[ok]) continue;
                 ensureNpc(s.npcs[ok]);
                 if ((s.npcs[ok].knows[key] || 0) < st) { s.npcs[ok].knows[key] = st; notes.push({ kind: 'knows', name: s.npcs[ok].name, about: npc.name }); }
+                if (jealousNow(s.npcs[ok], s, npc.name, 'saw')) notes.push({ kind: 'jealous', name: s.npcs[ok].name, about: npc.name });
             }
         }
         for (const about of (Array.isArray(n.learned_about) ? n.learned_about : []).slice(0, 3)) {
@@ -1237,7 +1301,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
             ensureNpc(target);
             const st = Math.max(1, target.stage || 1);
             const tk = keyOf(s, target);
-            if ((npc.knows[tk] || 0) < st) { npc.knows[tk] = st; notes.push({ kind: 'knows', name: npc.name, about: target.name }); }
+            if ((npc.knows[tk] || 0) < st) { npc.knows[tk] = st; notes.push({ kind: 'knows', name: npc.name, about: target.name }); if (jealousNow(npc, s, target.name, 'learned')) notes.push({ kind: 'jealous', name: npc.name, about: target.name }); }
         }
         const moment = String(n.moment_ru || '').trim();
         if (moment) {
@@ -1434,6 +1498,10 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
         if (act) parts.push(`by their routine they should be ${act.doing_en || act.doing_ru}${act.where_ru ? ` (${act.where_ru})` : ''} now${act.busy ? ' — busy, with obligations' : ''}`);
         const known = Object.entries(n.knows || {}).filter(([k, st]) => st >= 2 && state.npcs?.[k]).map(([k, st]) => `${state.npcs[k].name} (${STAGES[st].en})`);
         if (known.length && (n.attraction >= 30 || n.affection >= 30 || n.stage >= 2)) parts.push(`KNOWS ${userName} has been intimate with ${known.join(', ')}: reacts in character — jealous, hurt, possessive, competitive, curious or fine with it, depending on who they are and what they feel for ${userName}`);
+        if (isJealous(n, state)) parts.push(`JEALOUS right now: ${n.jealous.how === 'saw' ? 'saw' : 'found out about'} ${userName} with ${n.jealous.of} ${Math.max(0, state.turn - n.jealous.turn)} replies ago — it colours this scene: a sharp remark, coldness, a test, a scene, possessiveness or a hurt silence, the way this character would; not forgotten in one line`);
+        if (n.feel?.en && state.turn - n.feel.turn <= 6) parts.push(`mood: ${n.feel.en}`);
+        if (n.stage >= 1 && n.other?.last) parts.push(`has also been intimate with others in this story (${n.other.partners.slice(-3).join(', ') || n.other.last.who}; last: ${n.other.last.act} with ${n.other.last.who}): part of who they are now — they may hide it from ${userName}, confess it, or flaunt it, by their nature and how they feel about ${userName}`);
+        if (n.meetCount > 1) parts.push(`${n.meetCount} meetings with ${userName} so far`);
         const recent = (n.diary || []).slice(-3).map(d => d.en || d.ru);
         if (recent.length) parts.push(`shared history: ${recent.join(' / ')}`);
     }

@@ -218,6 +218,9 @@ async function savePersona(p, avatarB64, ch, link) {
         for (const d of Object.values(power_user.persona_descriptions)) if (Array.isArray(d.connections)) d.connections = d.connections.filter(x => !(x.type === 'character' && x.id === ch.avatar));
         power_user.persona_descriptions[avatarId].connections = [{ type: 'character', id: ch.avatar }];
     }
+    // the image model keeps the player's look for shots where both are in the frame
+    const stage = c.extensionSettings.elephant_stage;
+    if (stage && p.danbooru_tags) { stage.personaLook ??= {}; stage.personaLook[avatarId] = p.danbooru_tags; }
     c.saveSettingsDebounced();
     await getUserAvatars(true, avatarId);
     await setUserAvatar(avatarId, { toastPersonaNameChange: false });

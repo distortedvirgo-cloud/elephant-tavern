@@ -13,7 +13,8 @@
 import { MODULE, ctx, toast, log, listProfiles, helperProfileId, hasHelper, callHelper, loadHelperModels, memoryState, currentCharacter, haptic, inApp, whenRevealed } from './helper.js';
 import { Effects, AMBIENT_PRESETS } from './effects.js';
 import { MOODS, MOOD_IDS, heuristicScene, scenePrompt, parseSceneJson, ambientFor, describeScene } from './scene.js';
-import { SIZES, loadModels, visualDna, buildPrompt, generateImage, attachToMessage } from './imagegen.js';
+import * as SND from './sound.js';
+import { SIZES, loadModels, visualDna, personaLook, personaKey, buildPrompt, generateImage, attachToMessage } from './imagegen.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 
@@ -25,6 +26,9 @@ const DEFAULTS = {
     shell: true,
     effects: true,
     intensity: 1,
+    sound: true,
+    soundVol: 0.6,
+    soundAmbient: true,
     haptics: true,
     shake: true,
     sceneLLM: true,
@@ -75,6 +79,8 @@ export function S() {
     if (!s.images.csrMigrated) { if (['bold', 'glossy'].includes(s.images.style) && !s.images.artist) s.images.style = 'csr'; s.images.csrMigrated = true; s.images.boldMigrated = true; }
     if (!s.images.boldMigrated) { if (s.images.style === 'glossy' && !s.images.artist) s.images.style = 'bold'; s.images.boldMigrated = true; }
     s.dnaTag ??= {};
+    s.personaLook ??= {};
+    s.images.duo ??= true;
     if (!s.images.glossyMigrated) { if (['anime', 'western'].includes(s.images.style)) s.images.style = 'glossy'; s.images.glossyMigrated = true; }
     // 0.9: "alternate" (POV/portrait in turns) became "auto" (the frame follows the scene).
     if (s.images.mode === 'alternate') s.images.mode = 'auto';
@@ -567,6 +573,7 @@ function applyScene(next, { events = true } = {}) {
         if (lastMood && s.haptics && m.haptic) haptic(m.haptic);
         lastMood = moodId;
     }
+    SND.setScene({ ...scene, mood: moodId });
     if (events) playEvents(scene.events || []);
     updateHeader();
 }
@@ -605,6 +612,7 @@ function playEvents(list, mesId = null) {
     for (const ev of list) {
         if (played.has(ev)) continue;
         played.add(ev);
+        SND.play(ev);
         switch (ev) {
             case 'hit': shake(); flash('rgba(255,40,40,.28)'); effects.burst('sparks'); if (s.haptics) haptic('hit'); break;
             case 'blood': effects.burst('blood'); flash('rgba(140,0,0,.25)', 400); break;
@@ -757,7 +765,7 @@ function onStreamToken(text) {
 
 function pickMode() {
     const im = S().images;
-    return ['pov', 'scene', 'portrait', 'auto'].includes(im.mode) ? im.mode : 'auto';
+    return ['pov', 'scene', 'portrait', 'auto', 'duo'].includes(im.mode) ? im.mode : 'auto';
 }
 
 function maybeAutoImage(mesId, sceneChanged) {
@@ -805,7 +813,7 @@ async function generateFor(mesId, mode, { auto = false } = {}) {
 
     const data = chatData();
     try {
-        const built = await buildPrompt({ ...s, ...im, dna: s.dna, dnaTag: s.dnaTag, helperProfile: s.helperProfile, allowMainModel: s.allowMainModel }, mode, mesId);
+        const built = await buildPrompt({ ...s, ...im, dna: s.dna, dnaTag: s.dnaTag, personaLook: s.personaLook, helperProfile: s.helperProfile, allowMainModel: s.allowMainModel }, mode, mesId);
         const prompt = built.prompt;
         mode = built.mode; // "auto" resolves to pov or scene here
         if (controller.signal.aborted) throw new DOMException('aborted', 'AbortError');
@@ -877,6 +885,16 @@ function bindSettings($root) {
             } finally { this.disabled = false; }
         }
         if (what === 'test') { closeSheets(); generateFor(lastCharMessageId(), pickMode()); }
+        if (what === 'look') {
+            this.disabled = true;
+            try {
+                const look = await personaLook(S(), { force: true });
+                $root.find('#et_user_look').val(look);
+                toast().success(look ? 'Внешность игрока обновлена' : 'У персоны нет описания');
+            } catch (e) {
+                toast().error(e.message === 'no-helper' ? 'Нужна служебная модель' : e.message);
+            } finally { this.disabled = false; }
+        }
     });
     $root.on('change', '#et_dna_tag', function () {
         const ch = currentCharacter();
@@ -884,6 +902,13 @@ function bindSettings($root) {
         S().dnaTag ??= {};
         S().dnaTag[ch.key] = this.value.trim().toLowerCase().replace(/_/g, ' ');
         ctx().saveSettingsDebounced();
+    });
+    $root.on('change', '#et_user_look', function () {
+        const id = personaKey();
+        if (!id) return;
+        S().personaLook ??= {};
+        S().personaLook[id] = this.value.trim().toLowerCase().replace(/_/g, ' ');
+        save();
     });
     $root.on('change', '#et_dna', function () {
         const ch = currentCharacter();
@@ -913,6 +938,8 @@ function refreshSettings($root) {
     $root.find('#et_dna_name').text(ch?.name || '');
     $root.find('#et_dna').val(ch && !ch.group ? (s.dna[ch.key] || '') : '');
     $root.find('#et_dna_tag').val(ch && !ch.group ? (s.dnaTag?.[ch.key] || '') : '');
+    $root.find('#et_user_look_name').text(ctx().name1 || '');
+    $root.find('#et_user_look').val(s.personaLook?.[personaKey()] || '');
     fillModels($root, false);
     document.dispatchEvent(new CustomEvent('et-settings-refresh'));
 }
@@ -959,6 +986,7 @@ function onSettingChanged(key) {
         effects.setEnabled(s.effects);
         if (s.effects) { effects.layers = []; applyScene(scene, { events: false }); }
     }
+    if (['sound', 'soundVol', 'soundAmbient'].includes(key)) { SND.configure({ on: s.sound, vol: s.soundVol, amb: s.soundAmbient }); if (key === 'soundVol' || key === 'sound') { SND.unlock(); SND.play('hit'); } }
     if (key === 'shell') toast().info('Перезагрузите страницу, чтобы применить');
     if (key === 'keepAwake') globalThis.ElephantApp?.keepScreenOn(s.keepAwake);
     if (key === 'backdrop' || key === 'backdropDim') setBackdrop(s.backdrop ? chatData()?.sceneImage : '');
@@ -1043,6 +1071,8 @@ export async function init() {
         refreshSettings($panel);
     }
     effects.setEnabled(S().effects);
+    SND.init();
+    SND.configure({ on: S().sound, vol: S().soundVol, amb: S().soundAmbient });
     if (inApp() && S().keepAwake) globalThis.ElephantApp.keepScreenOn(true);
 
     addMessageButtons();
@@ -1062,7 +1092,7 @@ export async function init() {
     if (et.STREAM_TOKEN_RECEIVED) ev.on(et.STREAM_TOKEN_RECEIVED, onStreamToken);
     for (const e of [et.CHARACTER_PAGE_LOADED, et.CHARACTER_EDITED, et.SETTINGS_UPDATED]) if (e) ev.on(e, () => updateHeader());
 
-    globalThis.ElephantStage = { handleBack, openSheet, closeSheets, applyScene, externalScene, playEvents, generateFor, effects, shake, flash, getScene: () => scene, presets: AMBIENT_PRESETS, sizes: SIZES };
+    globalThis.ElephantStage = { handleBack, openSheet, closeSheets, applyScene, externalScene, playEvents, generateFor, sound: SND, effects, shake, flash, getScene: () => scene, presets: AMBIENT_PRESETS, sizes: SIZES };
     window.addEventListener('et-insets', () => effects.resize());
     onChatChanged();
     log('loaded', shellOn ? '(mobile shell)' : '(desktop)');

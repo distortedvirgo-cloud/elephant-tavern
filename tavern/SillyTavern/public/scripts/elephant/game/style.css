@@ -696,3 +696,13 @@ body.eg-in-enc #ec-ideas { display: none !important; }
 
 /* conditions on a fighter's chip */
 .eg-cond { font-style: normal; font-size: 11px; padding: 0 4px; border-radius: 8px; background: rgba(255, 90, 70, 0.14); border: 1px solid rgba(255, 90, 70, 0.3); color: #ffb9ae; white-space: nowrap; }
+
+/* relationships: mood, jealousy, counters editor */
+.eg-feel { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); }
+.eg-jealous { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: #ffb0a0; background: rgba(255, 70, 60, 0.12); border: 1px solid rgba(255, 90, 70, 0.35); }
+.eg-badge-cond { background: rgba(255, 90, 70, 0.12) !important; color: #ffb9ae !important; }
+.eg-fix-grid { display: grid; grid-template-columns: 1fr 64px 64px; gap: 5px 8px; align-items: center; font-size: 12.5px; margin: 8px 0; }
+.eg-fix-grid b { font-size: 11px; font-weight: 600; color: rgba(220, 214, 235, 0.6); text-align: center; }
+.eg-fix-grid input { width: 100%; box-sizing: border-box; padding: 5px 6px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(0, 0, 0, 0.25); color: inherit; font-size: 13px; text-align: center; }
+.eg-fix-row { display: flex; gap: 8px; }
+.eg-fix-row .menu_button:empty { display: none; }

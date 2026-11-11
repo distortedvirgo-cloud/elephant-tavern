@@ -24,6 +24,11 @@
         <label class="et-range">Интенсивность <b data-et-out="intensity"></b>
             <input type="range" min="0.2" max="1.5" step="0.1" data-et-key="intensity">
         </label>
+        <label class="et-check"><input type="checkbox" data-et-key="sound"><span>Звуки: удары, выстрелы, гром, магия, монеты</span></label>
+        <label class="et-check"><input type="checkbox" data-et-key="soundAmbient"><span>Фоновый звук сцены: дождь, ветер, камин, глубина</span></label>
+        <label class="et-range">Громкость <b data-et-out="soundVol"></b>
+            <input type="range" min="0" max="1" step="0.05" data-et-key="soundVol">
+        </label>
         <label class="et-check"><input type="checkbox" data-et-key="shake"><span>Тряска экрана при ударах и взрывах</span></label>
         <label class="et-check"><input type="checkbox" data-et-key="haptics"><span>Вибрация (удары, сердцебиение, смена настроения)</span></label>
         <label class="et-check"><input type="checkbox" data-et-key="backdrop"><span>POV-кадр становится фоном чата</span></label>
@@ -58,9 +63,10 @@
         </label>
         <label class="et-field">Что рисовать
             <select class="text_pole" data-et-key="images.mode">
-                <option value="auto">Авто: POV, когда ты участвуешь; иначе общий план</option>
+                <option value="auto">Авто: POV или вы вдвоём со стороны, когда ты участвуешь; иначе общий план</option>
                 <option value="pov">Всегда POV — сцена твоими глазами</option>
                 <option value="scene">Всегда общий план — без тебя в кадре</option>
+                <option value="duo">Всегда вдвоём — ты и персонаж со стороны</option>
                 <option value="portrait">Портрет — фокус на персонаже</option>
             </select>
         </label>
@@ -116,6 +122,14 @@
                 <button class="menu_button" data-et-do="dna"><i class="fa-solid fa-dna"></i> Из карточки заново</button>
                 <button class="menu_button" data-et-do="test"><i class="fa-solid fa-camera-retro"></i> Нарисовать сейчас</button>
             </div>
+        </div>
+        <div class="et-dna">
+            <label class="et-field">Твоя внешность — <b id="et_user_look_name"></b>
+                <textarea id="et_user_look" class="text_pole" rows="2" placeholder="1boy, short black hair, grey eyes, travelling cloak — возьмётся из описания персоны"></textarea>
+            </label>
+            <p class="et-note">Теги внешности текущей персоны. С ними на картинках появляются кадры «вы вдвоём со стороны». Пусто — ты остаёшься за кадром (POV).</p>
+            <label class="et-check"><input type="checkbox" data-et-key="images.duo"> <span>Рисовать меня в кадре</span></label>
+            <div class="et-inline"><button class="menu_button" data-et-do="look"><i class="fa-solid fa-user"></i> Из описания персоны</button></div>
         </div>
     </div>
 

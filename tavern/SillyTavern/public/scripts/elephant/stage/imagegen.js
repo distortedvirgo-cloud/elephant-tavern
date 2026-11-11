@@ -10,6 +10,8 @@
  * NanoGPT key you already saved for chat) and are attached to the message.
  */
 import { saveBase64AsFile } from '../../utils.js';
+import { power_user } from '../../power-user.js';
+import { user_avatar } from '../../personas.js';
 import { ctx, callHelper, memoryState, currentCharacter, recentMessages, clampWords, log } from './helper.js';
 
 export const SIZES = {
@@ -51,12 +53,33 @@ export async function visualDna(settings, { force = false } = {}) {
     return dna;
 }
 
+/** The player's look (current persona), from the persona generator or made once from its description. */
+export async function personaLook(settings, { force = false, generate = true } = {}) {
+    const id = user_avatar;
+    if (!id) return '';
+    settings.personaLook ??= {};
+    if (!force && settings.personaLook[id]) return settings.personaLook[id];
+    const desc = String(power_user.persona_descriptions?.[id]?.description || power_user.persona_description || '').trim();
+    if (!generate || !desc) return settings.personaLook[id] || '';
+    const name = power_user.personas?.[id] || ctx().name1;
+    const out = await callHelper(settings, DNA_SYSTEM, fill(DNA_PROMPT, { name, description: desc.replaceAll('{{user}}', name).slice(0, 4000) }), 260);
+    const look = clampWords(parseDna(out).look, 50);
+    settings.personaLook[id] = look;
+    ctx().saveSettingsDebounced();
+    return look;
+}
+export const personaKey = () => user_avatar;
+
 export async function buildPrompt(settings, mode, mesId) {
     const c = ctx();
     const dna = await visualDna(settings).catch(() => '');
     const state = memoryState();
     const exact = String(settings.dnaTag?.[currentCharacter()?.key] || '').trim();
+    // the player can be in the frame only when the app knows what they look like
+    const look = settings.duo === false ? '' : await personaLook(settings, { generate: ['duo', 'auto'].includes(mode) }).catch(() => '');
+    if (mode === 'duo' && !look) mode = 'pov';
     const vars = {
+        userline: look ? `{{user}}'s look (only when {{user}} is drawn): ${look}\n` : '',
         tagline: exact ? `Exact tag — ${c.name2}: ${exact}\n` : '',
         char: c.name2,
         user: c.name1,
@@ -66,7 +89,8 @@ export async function buildPrompt(settings, mode, mesId) {
         gaze: mode === 'portrait' ? 'at the viewer' : 'at the camera',
     };
     const custom = settings.prompts?.[mode];
-    const template = custom && /PROMPT:/.test(custom) ? custom : (PROMPT_TEMPLATES[mode] || PROMPT_TEMPLATES.auto);
+    const key = mode === 'auto' && look ? 'auto_duo' : mode;
+    const template = custom && /PROMPT:/.test(custom) ? custom : (PROMPT_TEMPLATES[key] || PROMPT_TEMPLATES.auto);
     const out = await callHelper(settings, PROMPT_SYSTEM, fill(template, vars), 800);
     log('image prompt draft', out);
     const frame = mode === 'auto' ? extractFrame(out) : mode;
@@ -78,6 +102,7 @@ export async function buildPrompt(settings, mode, mesId) {
     if (exact) prompt = enforceCharTag(prompt, exact);
     // "pov" is never sent (it draws idle hands); a wide shot also loses the viewer's hands.
     prompt = firstPerson(prompt);
+    if (frame === 'duo') prompt = prompt.split(',').map(t => t.trim()).filter(t => !/^(pov hands?|faceless (male|female)|solo)$/i.test(t)).join(', ');
     if (frame === 'scene') prompt = prompt.split(',').map(t => t.trim()).filter(t => !/^pov hands?$/i.test(t)).join(', ');
     return { prompt: clampWords(prompt, 120), mode: frame };
 }
@@ -94,7 +119,7 @@ export async function generateImage(settings, prompt, mode, signal) {
         model: settings.model,
         prompt: fullPrompt,
         // First person without the viewer's body: keep the model from adding hands and a second person on its own.
-        negative_prompt: [negativeFor(prompt, settings.negative), styleNegative(settings), mode === 'pov' && !viewerBody(prompt) ? 'pov, pov hands, disembodied limb, multiple views' : 'pov'].filter(Boolean).join(', '),
+        negative_prompt: [negativeFor(prompt, settings.negative), styleNegative(settings), mode === 'pov' && !viewerBody(prompt) ? 'pov, pov hands, disembodied limb, multiple views' : mode === 'duo' ? 'pov, pov hands, faceless male, faceless female, solo' : 'pov'].filter(Boolean).join(', '),
         width: size.width,
         height: size.height,
         resolution: `${size.width}x${size.height}`,
