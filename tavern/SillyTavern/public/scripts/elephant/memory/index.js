@@ -25,6 +25,7 @@ import {
     cleanTranslation, mergeGlossary, buildContextPairs, escapeHtml,
     keepSpeechColours,
 } from './translate.js';
+import { personaText } from '../stage/helper.js';
 
 export const MODULE = 'elephant_memory';
 const KEY_LONGTERM = 'elephant_memory_longterm';
@@ -502,10 +503,11 @@ async function updateState(data, settledEnd, chatId) {
         return;
     }
     const longTerm = [...data.arcs, ...data.scenes].map(e => e.text).join('\n\n') || '(none)';
+    const who = personaText();
     let newState = await callModel(s.prompts.chronicler_system, fillTemplate(s.prompts.state, {
         previous_state: data.state || '(empty)',
         long_term: longTerm,
-        messages,
+        messages: who ? `[Who ${names().user} (the player) really is — true even if characters in the story don't know it yet: ${who.slice(0, 1200)}]\n\n${messages}` : messages,
         max_words: s.stateMaxWords,
     }));
     if (!chatStillSame(chatId) || stopRequested) return;

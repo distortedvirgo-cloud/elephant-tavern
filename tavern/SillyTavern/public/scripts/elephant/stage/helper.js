@@ -67,6 +67,14 @@ export async function callHelper(settings, systemText, userText, maxTokens = 400
     return String(await c.generateRaw({ prompt: messages, responseLength: maxTokens }) ?? '').trim();
 }
 
+/** The player's persona description (who {{user}} is), with the macros filled in. */
+export function personaText() {
+    const c = ctx();
+    const raw = String(c.powerUserSettings?.persona_description || '').trim();
+    if (!raw) return '';
+    return raw.replace(/\{\{user\}\}/gi, c.name1 || 'the player').replace(/\{\{char\}\}/gi, c.name2 || 'the character');
+}
+
 /** Elephant Memory's state card for the current chat, if it keeps one. */
 export function memoryState() {
     return ctx().chatMetadata?.elephant_memory?.state || '';

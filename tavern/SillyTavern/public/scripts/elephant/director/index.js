@@ -11,7 +11,7 @@
  * Swipes and regenerations re-plan from the same starting point (the meta
  * snapshot is stored on the user's message), "continue" reuses the plan.
  */
-import { ctx, callHelper, hasHelper, memoryState, currentCharacter, recentMessages, log, toast } from '../stage/helper.js';
+import { ctx, callHelper, hasHelper, memoryState, currentCharacter, recentMessages, log, toast, personaText } from '../stage/helper.js';
 import {
     MODES, DIRECTOR_SYSTEM, ARSENAL_SYSTEM, parsePlan, parseArsenal, emptyMeta,
     buildDirectorInput, applyPlan, intentBlock,
@@ -111,7 +111,7 @@ async function plan(ui) {
     const input = buildDirectorInput({
         name: ch.name,
         userName: c.name1,
-        card: [ch.description, ch.personality, ch.scenario].filter(Boolean).join('\n\n'),
+        card: [ch.description, ch.personality, ch.scenario, personaText() && `Who ${c.name1} (the player) really is — true even if ${ch.name} doesn't know it yet: ${personaText().slice(0, 900)}`].filter(Boolean).join('\n\n'),
         arsenal: toolbox?.abilities || '',
         agenda: toolbox?.agenda || '',
         memory: memoryState(),

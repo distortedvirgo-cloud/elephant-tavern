@@ -958,6 +958,13 @@ export function resolveCheck(state, check, opts = {}) {
         default:
     }
 
+    // A success that pins, paralyses, charms or poisons the target leaves that condition on them.
+    const inflict = ST.statusId(check.inflict);
+    if (inflict && ['crit', 'success', 'near'].includes(outcome) && check.target) {
+        const victim = findNpcIn(s, check.target);
+        if (victim) { ensureNpc(victim); const e = ST.add(victim, inflict, { by: '{{user}}' }); if (e) { if (outcome === 'crit') e.left += 2; if (outcome === 'near') e.left = Math.max(1, e.left - 1); notes.push({ kind: 'status', name: victim.name, id: e.id, left: e.left }); } }
+    }
+
     // Getting out of a condition: a success breaks the bonds, shakes off the charm, brings the hero round.
     const cond = conditionModifier(state, { ...check, skill });
     if (cond.frees && ['crit', 'success', 'near'].includes(outcome)) {
@@ -1579,6 +1586,11 @@ export function conditionsLine(state, userName = '{{user}}') {
     return parts.length ? `CONDITIONS (binding): ${parts.join('; ')}. Nobody does what their condition forbids until it ends or they are cured or freed.` : '';
 }
 
+/** Who the player is (persona description): every helper model gets it with the game state. */
+let PERSONA = '';
+export function setPersona(text) { PERSONA = String(text || '').trim().slice(0, 1500); }
+export const personaLine = () => (PERSONA ? `{{user}} (the player) — this is who they are, and it is true even when other characters don't know it: ${PERSONA}` : '');
+
 export function stateSummary(state0) {
     const state = ensureState(clone(state0));
     const skills = Object.entries(state.skills).map(([k, v]) => `${k} ${v}`).join(', ');
@@ -1594,7 +1606,7 @@ export function stateSummary(state0) {
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {
     return P.render('referee', {
-        user, char, state: stateSummary(state),
+        user, char, state: [personaLine(), stateSummary(state)].filter(Boolean).join('\n'),
         narration: String(lastNarration || '').slice(-1800), action: String(action || '').slice(0, 1200),
         eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('referee_format', { user }),
     });
@@ -1602,7 +1614,7 @@ export function refereePrompt({ state, lastNarration, action, user, char }) {
 
 export function extractorPrompt({ state, userText, reply, user, char, memoryState = '' }) {
     return P.render('extractor', {
-        user, char, state: stateSummary(state),
+        user, char, state: [personaLine(), stateSummary(state)].filter(Boolean).join('\n'),
         memory: memoryState ? `\nStory state card:\n${memoryState.slice(0, 2000)}\n` : '',
         player: String(userText || '').slice(0, 1200), reply: String(reply || '').slice(0, 3500),
         eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('extractor_format', { user }),

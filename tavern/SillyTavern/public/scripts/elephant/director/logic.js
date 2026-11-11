@@ -102,7 +102,7 @@ export function buildDirectorInput({ name, userName, card, arsenal, agenda, memo
     }).join('\n') || 'unknown';
     return [
         `Character: ${name}. Player: ${userName}.`,
-        `<card>\n${clip(card, 2200)}\n</card>`,
+        `<card>\n${clip(card, 3400)}\n</card>`,
         `<toolbox>\n${arsenal || '(unknown, rely on the card)'}\n</toolbox>`,
         agenda ? `<agenda>\n${agenda}\n</agenda>` : '',
         memory ? `<memory>\n${clip(memory, 1500)}\n</memory>` : '',
