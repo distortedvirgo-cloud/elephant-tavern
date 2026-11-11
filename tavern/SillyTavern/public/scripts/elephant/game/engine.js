@@ -194,6 +194,96 @@ export const INTIMACY = ACTS;
 export const EXPERIENCE = { virgin: 'Девственница', inexperienced: 'Неопытная', experienced: 'Опытная', very: 'Очень опытная' };
 
 /** Fields every character record has (old saves get them on the fly). */
+// ------------------------------------------------------------------ who is who
+
+const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+const NAME_TITLES = new Set(['the', 'a', 'an', 'miss', 'mrs', 'mr', 'ms', 'lady', 'lord', 'sir', 'dr', 'doctor', 'captain', 'master', 'mistress', 'old', 'young', 'gospozha', 'gospodin', 'miss', 'ledi', 'lord', 'ser', 'doktor', 'kapitan', 'staryi', 'staraya', 'molodoi', 'molodaya', 'tetya', 'dyadya']);
+/** "Старый Бруно" → ['bruno'], "Mara Voss" → ['mara', 'voss']: lower case, transliterated, titles dropped. */
+export function nameTokens(name) {
+    const all = String(name || '').toLowerCase().replace(/[а-яё]/g, ch => TRANSLIT[ch] ?? ch).split(/[^a-z0-9]+/).filter(Boolean);
+    const core = all.filter(t => !NAME_TITLES.has(t));
+    return core.length ? core : all;
+}
+/** The same character under another spelling: Мара / Mara, Mara / Mara Voss, Бруно / Старый Бруно. */
+export function sameName(a, b) {
+    const ta = nameTokens(a), tb = nameTokens(b);
+    if (!ta.length || !tb.length) return false;
+    if (ta.join(' ') === tb.join(' ')) return true;
+    const digits = (t) => t.filter(x => /^\d+$/.test(x)).join(',');
+    if (digits(ta) !== digits(tb)) return false; // "Гоблин 1" is not "Гоблин 2", nor plain "Гоблин"
+    const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+    return short.every(t => t.length >= 3 && long.includes(t));
+}
+/** Finds a character by any name the story uses for them; remembers the new spelling. */
+export function resolveNpc(s, name, { learn = false } = {}) {
+    const q = String(name || '').trim();
+    if (!q) return null;
+    const key = q.toLowerCase();
+    const all = Object.values(s.npcs || {});
+    let npc = s.npcs?.[key] ?? all.find(n => n.name.toLowerCase() === key || (n.aliases || []).some(a => a.toLowerCase() === key));
+    if (!npc) npc = all.find(n => sameName(n.name, q) || (n.aliases || []).some(a => sameName(a, q)));
+    if (npc && learn && npc.name.toLowerCase() !== key && !(npc.aliases || []).some(a => a.toLowerCase() === key)) npc.aliases = [...(npc.aliases || []), q.slice(0, 40)].slice(-6);
+    return npc ?? null;
+}
+const keyOf = (s, npc) => Object.keys(s.npcs).find(k => s.npcs[k] === npc);
+
+/** Folds one record of a character into another (the duplicate disappears). */
+export function mergeNpcs(s, keepName, dropName) {
+    const keep = resolveNpc(s, keepName), drop = resolveNpc(s, dropName);
+    if (!keep || !drop || keep === drop) return false;
+    ensureNpc(keep); ensureNpc(drop);
+    const kKey = keyOf(s, keep), dKey = keyOf(s, drop);
+    const uniq = (a, b, max) => [...new Set([...(a || []), ...(b || [])])].slice(-max);
+    for (const f of ['trust', 'affection', 'attraction', 'openness', 'lust', 'stage', 'sceneStage', 'bestStars']) keep[f] = Math.max(keep[f] || 0, drop[f] || 0) || keep[f];
+    for (const f of ['orgasms', 'userOrgasms', 'protected', 'unprotected', 'scenes', 'times']) keep[f] = (keep[f] || 0) + (drop[f] || 0);
+    for (const [a, c] of Object.entries(drop.counts)) keep.counts[a] = (keep.counts[a] || 0) + c;
+    for (const [a, f] of Object.entries(drop.firsts)) if (!keep.firsts[a] || String(f.time) < String(keep.firsts[a].time)) keep.firsts[a] = f;
+    for (const [a, c] of Object.entries(drop.other.counts)) keep.other.counts[a] = (keep.other.counts[a] || 0) + c;
+    keep.other.partners = uniq(keep.other.partners, drop.other.partners, 20);
+    keep.other.orgasms += drop.other.orgasms;
+    if (keep.other.past == null) keep.other.past = drop.other.past;
+    keep.positions = uniq(keep.positions, drop.positions, 12); keep.places = uniq(keep.places, drop.places, 10);
+    keep.likes = uniq(keep.likes, drop.likes, 10); keep.spots = uniq(keep.spots, drop.spots, 6);
+    keep.limits = uniq(keep.limits, drop.limits, 6); keep.dislikes = uniq(keep.dislikes, drop.dislikes, 6);
+    keep.diary = [...keep.diary, ...drop.diary].sort((x, y) => String(x.time).localeCompare(String(y.time))).slice(-40);
+    keep.knows = { ...drop.knows, ...keep.knows };
+    keep.aliases = uniq(keep.aliases, [drop.name, ...(drop.aliases || [])], 6).filter(a => a.toLowerCase() !== keep.name.toLowerCase());
+    keep.schedule ??= drop.schedule; keep.experience ||= drop.experience;
+    if (!keep.last || (drop.last && String(drop.last.time) > String(keep.last.time))) keep.last = drop.last;
+    keep.present = keep.present || drop.present; keep.seen = Math.max(keep.seen || 0, drop.seen || 0); keep.met = Math.min(keep.met ?? 1e9, drop.met ?? 1e9);
+    delete s.npcs[dKey];
+    for (const other of Object.values(s.npcs)) {
+        if (other.knows && dKey in other.knows) { if (other !== keep) other.knows[kKey] = Math.max(other.knows[kKey] || 0, other.knows[dKey]); delete other.knows[dKey]; }
+    }
+    delete keep.knows[kKey]; delete keep.knows[dKey];
+    return true;
+}
+/** Merges records that are plainly one character (old saves made them when a name was respelled). */
+export function dedupeNpcs(s) {
+    let merged = 0;
+    for (let guard = 0; guard < 20; guard++) {
+        const list = Object.values(s.npcs || {});
+        let pair = null;
+        for (let i = 0; i < list.length && !pair; i++) for (let j = i + 1; j < list.length; j++) if (sameName(list[i].name, list[j].name)) { pair = [list[i], list[j]]; break; }
+        if (!pair) break;
+        const weight = (n) => (n.stage || 0) * 100 + (n.diary?.length || 0) * 5 + Math.abs(n.trust || 0) + (n.affection || 0) + (n.attraction || 0) - (n.met || 0) / 1000;
+        const [keep, drop] = weight(pair[0]) >= weight(pair[1]) ? pair : [pair[1], pair[0]];
+        if (!mergeNpcs(s, keep.name, drop.name)) break;
+        merged++;
+    }
+    return merged;
+}
+
+/** With the player / with others / both: counts per act, for the card. */
+export function intimacyTotals(n) {
+    const you = n.counts || {}, oth = n.other?.counts || {};
+    const all = {};
+    for (const a of ACT_IDS) all[a] = (you[a] || 0) + (oth[a] || 0);
+    const past = Math.max(0, Number(n.other?.past) || 0);
+    const partners = past + (n.other?.partners?.length || 0) + ((you.sex || you.anal || you.oral_her || you.oral_you) ? 1 : 0);
+    return { you, others: oth, all, partners, pastKnown: n.other?.past != null && n.other.past >= 0 };
+}
+
 export function ensureNpc(n) {
     n.trust ??= 0;
     n.attraction ??= 0;
@@ -227,6 +317,12 @@ export function ensureNpc(n) {
     n.knows ??= {};
     n.schedule ??= null;
     n.dislikes ??= [];
+    n.aliases ??= [];
+    n.other ??= {};
+    n.other.counts ??= {}; n.other.partners ??= []; n.other.orgasms ??= 0; n.other.past ??= null; n.other.sess ??= null; n.other.last ??= null;
+    n.sess ??= null;
+    // "times together": old saves only have the sex scenes the mini-game finished
+    n.times ??= Math.max(n.scenes || 0, (n.counts?.sex || n.counts?.oral_her || n.counts?.oral_you || n.counts?.hands) ? 1 : 0);
     return n;
 }
 
@@ -402,6 +498,7 @@ export function ensureState(s) {
     s.enc ??= null;
     // eroge is the default way to play: saves from before v3 are switched on once
     if ((s.v || 2) < 3) { s.eroge = true; s.v = 3; }
+    if (s.v < 4) { for (const n of Object.values(s.npcs || {})) ensureNpc(n); dedupeNpcs(s); s.v = 4; }
     s.eroge ??= true;
     s.econ ??= null;
     s.ledger ??= [];
@@ -533,7 +630,7 @@ export function newState(setup = {}) {
     const skills = {};
     for (const k of Object.keys(SKILLS)) skills[k] = clamp(Number(setup.skills?.[k] ?? 1), 0, START_MAX);
     return {
-        v: 3,
+        v: 4,
         pace: PACES[setup.pace] ? setup.pace : 'medium',
         eroge: setup.eroge === undefined ? true : Boolean(setup.eroge),
         econ: null,
@@ -969,7 +1066,7 @@ export function parseTrackerLine(text) {
  * Applies the extractor's report of what happened in the narrator's reply.
  * Everything is clamped: the model reports, the engine decides how much it counts.
  */
-export function applyReport(state, report, { trackerLine = null, colors = null } = {}) {
+export function applyReport(state, report, { trackerLine = null, colors = null, userName = '' } = {}) {
     const s = ensureState(clone(state));
     const notes = [];
     const events = [];
@@ -1001,8 +1098,8 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
     for (const n of Array.isArray(report.npcs) ? report.npcs.slice(0, 6) : []) {
         const name = String(n?.name || '').trim();
         if (!name || name.length > 40) continue;
-        const key = name.toLowerCase();
-        let npc = s.npcs[key];
+        let npc = resolveNpc(s, name, { learn: true });
+        const key = npc ? keyOf(s, npc) : name.toLowerCase();
         if (!npc) {
             const used = new Set(Object.values(s.npcs).map(x => x.color));
             npc = s.npcs[key] = {
@@ -1048,13 +1145,24 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
             if (EXPERIENCE[n.start_experience]) npc.experience = n.start_experience;
             const st = clamp(Math.round(Number(n.start_stage) || 0), 0, STAGES.length - 1);
             if (st) { npc.stage = st; npc.sceneStage = st; }
+            const past = Math.round(Number(n.start_partners));
+            if (Number.isFinite(past) && past >= 0) npc.other.past = Math.min(past, 999);
+            else if (npc.experience === 'virgin') npc.other.past = 0;
         }
         // intimacy that happened in THIS exchange
         const acts = [...new Set((Array.isArray(n.intimacy) ? n.intimacy : [n.intimacy]).map(normAct).filter(Boolean))];
         const where = String(n.place_ru || s.location || '').trim().slice(0, 40);
+        // One session = one continuous time together: an act counts once per session, however many
+        // replies the scene takes. A new session starts after a pause or in a new scene.
+        if (acts.length) {
+            const se = npc.sess;
+            if (!se || s.turn - se.turn > 6 || (se.scene !== s.scene && s.turn - se.turn > 1)) npc.sess = { scene: s.scene, turn: s.turn, start: s.time, acts: [], deep: false, prot: false };
+            npc.sess.turn = s.turn;
+            if (!npc.sess.deep && acts.some(a => ACTS.find(x => x.id === a).stage >= 5)) { npc.sess.deep = true; npc.times += 1; }
+        }
         for (const act of acts) {
             const def = ACTS.find(x => x.id === act);
-            npc.counts[act] = (npc.counts[act] || 0) + 1;
+            if (!npc.sess.acts.includes(act)) { npc.sess.acts.push(act); npc.counts[act] = (npc.counts[act] || 0) + 1; }
             npc.last = { act, time: s.time };
             if (!npc.firsts[act]) {
                 npc.firsts[act] = { time: s.time, place: where };
@@ -1068,7 +1176,8 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
                 notes.push({ kind: 'stage', name: npc.name, stage: def.stage });
             }
         }
-        if ((acts.includes('sex') || acts.includes('anal')) && n.protection) {
+        if ((acts.includes('sex') || acts.includes('anal')) && n.protection && !npc.sess.prot) {
+            npc.sess.prot = true;
             if (n.protection === 'none') npc.unprotected += 1; else npc.protected += 1;
             if (n.protection === 'condom' && !(report.items_used || []).some(x => CONDOM.test(typeof x === 'string' ? x : x?.name_ru || ''))) {
                 const k = Object.keys(s.gear).find(x => CONDOM.test(x) && s.gear[x].qty > 0);
@@ -1079,19 +1188,20 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         if (acts.length) {
             const st = Math.max(...acts.map(a => ACTS.find(x => x.id === a).stage));
             for (const other of report.npcs || []) {
-                const ok = String(other?.name || '').trim().toLowerCase();
+                const on = resolveNpc(s, other?.name);
+                const ok = on ? keyOf(s, on) : '';
                 if (!ok || ok === key || other.present === false || !s.npcs[ok]) continue;
                 ensureNpc(s.npcs[ok]);
                 if ((s.npcs[ok].knows[key] || 0) < st) { s.npcs[ok].knows[key] = st; notes.push({ kind: 'knows', name: s.npcs[ok].name, about: npc.name }); }
             }
         }
         for (const about of (Array.isArray(n.learned_about) ? n.learned_about : []).slice(0, 3)) {
-            const ak = String(about || '').trim().toLowerCase();
-            const target = s.npcs[ak] ?? Object.values(s.npcs).find(x => x.name.toLowerCase() === ak);
+            const target = resolveNpc(s, about);
             if (!target || target === npc) continue;
             ensureNpc(target);
             const st = Math.max(1, target.stage || 1);
-            if ((npc.knows[target.name.toLowerCase()] || 0) < st) { npc.knows[target.name.toLowerCase()] = st; notes.push({ kind: 'knows', name: npc.name, about: target.name }); }
+            const tk = keyOf(s, target);
+            if ((npc.knows[tk] || 0) < st) { npc.knows[tk] = st; notes.push({ kind: 'knows', name: npc.name, about: target.name }); }
         }
         const moment = String(n.moment_ru || '').trim();
         if (moment) {
@@ -1119,6 +1229,21 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
             dop += hasPerk(s, 'tireless') ? 2 : 1;
             if (hasPerk(s, 'tireless')) npc.affection = clamp(npc.affection + 1, 0, 100);
             notes.push({ kind: 'orgasm', name: npc.name, n: orgasms });
+        }
+        // what this character does with someone other than the player (their own life, enemies, rivals)
+        for (const w of (Array.isArray(n.with_others) ? n.with_others : []).slice(0, 3)) {
+            const who = String(w?.partner || '').trim().slice(0, 40);
+            const oacts = [...new Set((Array.isArray(w?.acts) ? w.acts : [w?.acts]).map(normAct).filter(Boolean))];
+            if (!who || !oacts.length || sameName(who, userName || '')) continue;
+            const o = npc.other;
+            if (!o.sess || s.turn - o.sess.turn > 6 || (o.sess.scene !== s.scene && s.turn - o.sess.turn > 1)) o.sess = { scene: s.scene, turn: s.turn, by: {} };
+            o.sess.turn = s.turn;
+            const pk = nameTokens(who).join(' ') || who.toLowerCase();
+            const done = o.sess.by[pk] ??= [];
+            for (const act of oacts) if (!done.includes(act)) { done.push(act); o.counts[act] = (o.counts[act] || 0) + 1; }
+            if (!o.partners.some(x => sameName(x, who))) { o.partners.push(who); if (o.partners.length > 20) o.partners.shift(); }
+            o.last = { act: oacts.at(-1), time: s.time, who };
+            notes.push({ kind: 'other', name: npc.name, who });
         }
         const mine = clamp(Math.round(Number(n.user_orgasm) || 0), 0, 3);
         if (mine) npc.userOrgasms += mine;

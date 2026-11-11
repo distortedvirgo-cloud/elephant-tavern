@@ -300,7 +300,7 @@ async function onReply(mesId) {
     const voices = globalThis.ElephantCore?.voices;
     if (report && base.enc?.kind === 'combat') report.harm = 0; // the round already dealt it
     if (report && base.enc) report.encounter = null;
-    let { state, notes, events } = E.applyReport(base, report, { trackerLine: tracker, colors: voices ? (name) => voices.colorFor(name, { assign: false }) : null });
+    let { state, notes, events } = E.applyReport(base, report, { trackerLine: tracker, colors: voices ? (name) => voices.colorFor(name, { assign: false }) : null, userName: c.name1 });
     if (voices) for (const n of Object.values(state.npcs)) voices.adopt(n.name, n.color);
     // an encounter that ended in this reply is archived; an active one waits for its next cards
     let finished = null;
@@ -696,7 +696,7 @@ async function maybeSchedule(mesId) {
         const j = E.parseJsonLine(out);
         const last = (ctx().chat?.length ?? 1) - 1;
         const now = stateAt(last);
-        const target = now.npcs[npc.name.toLowerCase()];
+        const target = E.resolveNpc(now, npc.name);
         if (!target) return;
         target.schedTried = true;
         const sched = E.cleanSchedule(j?.schedule);
@@ -1029,6 +1029,7 @@ function noteLines(notes = [], state = null) {
             case 'harm': out.push({ text: n.to > n.from ? `Рана: ${E.HARM[n.to].ru}` : `Легче: ${E.HARM[n.to].ru}`, tone: n.to > n.from ? 'bad' : 'good' }); break;
             case 'xp': out.push({ text: `+${n.delta} опыта${n.why ? ` · ${n.why}` : ''}`, tone: 'info' }); break;
             case 'money': { const k = E.MONEY_KINDS[n.op]; out.push({ text: `${k ? k.icon + ' ' : ''}${n.delta > 0 ? '+' : '−'}${Math.abs(n.delta)} ${cur}${k ? ` · ${k.ru}` : ''}`, sub: [n.why, n.who].filter(Boolean).join(' · '), tone: n.delta > 0 ? 'good' : 'bad' }); break; }
+            case 'other': out.push({ text: `👀 ${n.name}: близость с другим`, sub: n.who, tone: 'warn' }); break;
             case 'gift': out.push({ text: `🎁 ${n.name}: подарок принят`, sub: `${n.item} · +${n.affection} 💞`, tone: 'good' }); break;
             case 'item': out.push({ text: `🎒 ${n.delta > 0 ? 'Получено' : 'Ушло'}: ${n.name}${Math.abs(n.delta) > 1 ? ` ×${Math.abs(n.delta)}` : ''}`, tone: n.delta > 0 ? 'good' : 'warn' }); break;
             case 'goal_new': out.push({ text: `${n.quest ? '📜 Задание взято' : 'Новая цель'}: ${n.title}`, tone: n.quest ? 'gold' : 'info' }); break;
@@ -1146,11 +1147,7 @@ function openStateSheet(tab = 'hero') {
 // ------------------------------------------------------------------ UI: character card (eroge-style)
 
 function findNpc(state, name) {
-    const q = String(name || '').trim().toLowerCase();
-    if (!q) return null;
-    const all = Object.values(state.npcs || {});
-    return state.npcs?.[q] ?? all.find(n => n.name.toLowerCase() === q)
-        ?? all.find(n => q.includes(n.name.toLowerCase()) || n.name.toLowerCase().includes(q.split(/\s+/)[0]));
+    return E.resolveNpc(state, name);
 }
 
 function bar(label, icon, value, { min = 0, max = 100, cls = '' } = {}) {
@@ -1186,84 +1183,120 @@ function ladderHtml(n, state) {
     return `<div class="eg-ladder">${steps}</div><p class="eg-ladder-hint">${hint} ${pace}</p>`;
 }
 
+let cardScope = 'you'; // you | all | others
+
 function cardHtml(state, name) {
     const raw = findNpc(state, name);
     const ch = currentCharacter();
-    const isMain = ch && !ch.group && (!raw || raw.name.toLowerCase().includes(String(ch.name).toLowerCase().split(/\s+/)[0]) || String(ch.name).toLowerCase().includes((raw?.name || '').toLowerCase()));
+    const isMain = ch && !ch.group && (!raw || E.sameName(raw.name, ch.name) || raw.name.toLowerCase().includes(String(ch.name).toLowerCase().split(/\s+/)[0]));
     const n = raw ? E.ensureNpc(E.clone(raw)) : E.ensureNpc({ name: name || ch?.name || '?', color: 'c3a6ff' });
     const avatar = isMain && ch?.avatarUrl ? `<img class="eg-card-ava" src="${ch.avatarUrl}" alt="">` : `<div class="eg-card-ava eg-card-ini" style="--c:#${n.color}">${escapeHtml(n.name.slice(0, 1).toUpperCase())}</div>`;
     const tier = E.tierOf(n.trust);
     const fmt = (iso) => { try { return E.timeRu(iso).split(',').slice(1, 2).join('').split('·')[0].trim(); } catch { return ''; } };
-    const chips = (list, cls, empty) => list.length ? list.map(t => `<span class="eg-chip ${cls}">${escapeHtml(t)}</span>`).join('') : `<span class="eg-muted">${empty}</span>`;
+    const chips = (list, cls) => list.map(t => `<span class="eg-chip ${cls}">${escapeHtml(t)}</span>`).join('');
+    const T = E.intimacyTotals(n);
+    const scope = cardScope;
+    const counts = scope === 'you' ? T.you : scope === 'others' ? T.others : T.all;
     const tiles = E.ACTS.map(a => {
-        const c = n.counts[a.id] || 0;
-        const f = n.firsts[a.id];
-        return `<div class="eg-act ${c ? 'eg-got' : ''}"><span>${c ? a.icon : '🔒'}</span><b>${c ? `×${c}` : '—'}</b><em>${a.ru}</em><small>${f ? `с ${fmt(f.time)}` : 'ещё не было'}</small></div>`;
+        const c = counts[a.id] || 0;
+        const f = scope === 'you' ? n.firsts[a.id] : null;
+        return `<div class="eg-act ${c ? 'eg-got' : ''}"><span>${c ? a.icon : '·'}</span><b>${c ? `×${c}` : '—'}</b><em>${a.ru}</em>${scope === 'you' ? `<small>${f ? `с ${fmt(f.time)}` : 'ещё не было'}</small>` : ''}</div>`;
     }).join('');
     const firsts = Object.entries(n.firsts).filter(([id]) => E.ACTS.some(a => a.id === id))
         .sort((x, y) => String(x[1].time).localeCompare(String(y[1].time)))
         .map(([id, f]) => { const a = E.ACTS.find(x => x.id === id); return `<div class="eg-tl-row"><span>${a.icon}</span><div><b>${a.ru}</b><small>${fmt(f.time)}${f.place ? ` · ${escapeHtml(f.place)}` : ''}</small></div></div>`; }).join('');
-    const total = Object.values(n.counts).reduce((x, y) => x + y, 0);
     const lastAct = n.last ? E.ACTS.find(a => a.id === n.last.act) : null;
+    const lastOther = n.other.last ? E.ACTS.find(a => a.id === n.other.last.act) : null;
+    const big = (v, label) => `<div><b>${v}</b><small>${label}</small></div>`;
+    const stats = scope === 'you'
+        ? big(n.times, 'раз вместе') + big(n.orgasms, '💦 её оргазмов') + big(n.userOrgasms, 'твоих') + big(`${n.protected}<i>/</i>${n.unprotected}`, '🛡 с защитой / без')
+        : scope === 'others'
+            ? big(n.other.partners.length + Math.max(0, n.other.past || 0), 'партнёров') + big(T.pastKnown ? n.other.past : '?', 'до истории') + big(n.other.partners.length, 'в истории') + big(Object.values(T.others).reduce((a, b) => a + b, 0), 'актов в истории')
+            : big(T.partners, 'партнёров всего') + big(Object.values(T.all).reduce((a, b) => a + b, 0), 'актов всего') + big(n.orgasms + n.other.orgasms, '💦 оргазмов') + big(n.times, 'раз с тобой');
+    const scopeNote = { you: 'Только то, что было между вами. Один раз — это одна встреча, сколько бы ответов она ни длилась.', others: 'Её жизнь без тебя: прошлое по карточке и то, что произошло в истории с другими.', all: 'Всё вместе: с тобой и с другими.' }[scope];
+    const act = E.activityAt(n, state.time);
+    const knows = Object.entries(n.knows || {}).filter(([key, st]) => st >= 2 && state.npcs?.[key]);
+    const tastes = [
+        n.likes.length ? `<div class="eg3-row"><small>💗 Нравится</small><div class="eg-chips">${chips(n.likes, 'eg-chip-like')}</div></div>` : '',
+        n.spots.length ? `<div class="eg3-row"><small>✨ Чувствительные места</small><div class="eg-chips">${chips(n.spots, 'eg-chip-spot')}</div></div>` : '',
+        n.dislikes.length ? `<div class="eg3-row"><small>👎 Не любит</small><div class="eg-chips">${chips(n.dislikes, 'eg-chip-limit')}</div></div>` : '',
+        n.limits.length ? `<div class="eg3-row"><small>🚫 Границы</small><div class="eg-chips">${chips(n.limits, 'eg-chip-limit')}</div></div>` : '',
+        n.positions.length ? `<div class="eg3-row"><small>🌀 Позы</small><div class="eg-chips">${chips(n.positions, '')}</div></div>` : '',
+        n.places.length ? `<div class="eg3-row"><small>📍 Места</small><div class="eg-chips">${chips(n.places, '')}</div></div>` : '',
+    ].join('');
+    const others = Object.values(state.npcs || {}).filter(x => x.name !== n.name);
     return `
-        <div class="eg-card-hero" style="--c:#${n.color}">
+        <div class="eg-card-hero eg3-top" style="--c:#${n.color}">
             ${avatar}
             <div class="eg-card-who">
                 <h3>${escapeHtml(n.name)}</h3>
-                <div class="eg-card-tags"><span class="eg-status eg-status-big">${escapeHtml(raw ? E.loveStatus(n) : 'Ещё не знакомы')}</span><span class="eg-tier eg-tier-${tier.id}">${tier.ru}</span>${n.experience ? `<span class="eg-tier">${E.EXPERIENCE[n.experience]}</span>` : ''}${n.present ? '<span class="eg-here">рядом</span>' : ''}</div>
+                <div class="eg-card-tags"><span class="eg-status eg-status-big">${escapeHtml(raw ? E.loveStatus(n) : 'Ещё не знакомы')}</span><span class="eg-tier eg-tier-${tier.id}">${tier.ru}</span>${n.present ? '<span class="eg-here">рядом</span>' : ''}</div>
+                <div class="eg3-sub">${[n.experience ? E.EXPERIENCE[n.experience] : '', n.pace === 'fast' ? '⚡ быстрая' : n.pace === 'slow' ? '🐢 не торопится' : '', n.aliases.length ? `она же: ${n.aliases.map(escapeHtml).join(', ')}` : ''].filter(Boolean).join(' · ')}</div>
             </div>
         </div>
+        ${act ? `<div class="eg-now">🕐 Сейчас по распорядку: <b>${escapeHtml(act.doing_ru || act.doing_en)}</b>${act.where_ru ? ` · ${escapeHtml(act.where_ru)}` : ''} <small>до ${act.to}</small></div>` : ''}
+        ${knows.length ? `<div class="eg-knows">💔 Знает про тебя и: ${knows.map(([key, st]) => `<b>${escapeHtml(state.npcs[key].name)}</b> (${E.STAGES[st].ru.toLowerCase()})`).join(', ')}</div>` : ''}
         <h4 class="eg-h eg-h-love">💗 Отношения</h4>
-        ${bar('Доверие', '🛡', n.trust, { min: -100, cls: 'eg-c-trust' })}
-        ${bar('Привязанность', '💞', n.affection, { cls: 'eg-c-aff' })}
-        ${bar('Влечение', '💘', n.attraction, { cls: 'eg-c-attr' })}
-        ${(() => { const a = E.activityAt(n, state.time); return a ? `<div class="eg-now">🕐 Сейчас по распорядку: <b>${escapeHtml(a.doing_ru || a.doing_en)}</b>${a.where_ru ? ` · ${escapeHtml(a.where_ru)}` : ''} <small>до ${a.to}</small></div>` : ''; })()}
-        ${(() => { const k = Object.entries(n.knows || {}).filter(([key, st]) => st >= 2 && state.npcs?.[key]); return k.length ? `<div class="eg-knows">💔 Знает про тебя и: ${k.map(([key, st]) => `<b>${escapeHtml(state.npcs[key].name)}</b> (${E.STAGES[st].ru.toLowerCase()})`).join(', ')}</div>` : ''; })()}
-        <h4 class="eg-h eg-h-love">🪜 Ступени близости</h4>
-        ${ladderHtml(n, state)}
-        <h4 class="eg-h eg-h-nsfw">🔞 Тело и желание</h4>
-        ${bar('Возбуждение', '🔥', n.lust, { cls: `eg-c-lust ${n.lust >= 70 ? 'eg-hot' : ''}` })}
-        ${bar('Раскрепощённость', '🔓', n.openness, { cls: 'eg-c-open' })}
-        <div class="eg-bigstats">
-            <div><b>${n.orgasms}</b><small>💦 её оргазмов</small></div>
-            <div><b>${n.userOrgasms}</b><small>твоих</small></div>
-            <div><b>${total}</b><small>всего раз</small></div>
-            <div><b>${n.protected}<i>/</i>${n.unprotected}</b><small>🛡 с защитой / без</small></div>
+        <div class="eg2-sec eg3-pad">
+            ${bar('Доверие', '🛡', n.trust, { min: -100, cls: 'eg-c-trust' })}
+            ${bar('Привязанность', '💞', n.affection, { cls: 'eg-c-aff' })}
+            ${bar('Влечение', '💘', n.attraction, { cls: 'eg-c-attr' })}
         </div>
-        ${lastAct ? `<div class="eg-last">⏱ Последний раз: <b>${lastAct.ru.toLowerCase()}</b>, ${agoRu(n.last.time, state.time)}</div>` : ''}
-        <h4 class="eg-h eg-h-nsfw">📊 Сколько раз</h4>
+        <h4 class="eg-h eg-h-love">🪜 Ступени близости</h4>
+        <div class="eg2-sec eg3-pad">${ladderHtml(n, state)}</div>
+        <h4 class="eg-h eg-h-nsfw">🔞 Близость</h4>
+        <div class="eg2-sec eg3-pad">
+            ${bar('Возбуждение сейчас', '🔥', n.lust, { cls: `eg-c-lust ${n.lust >= 70 ? 'eg-hot' : ''}` })}
+            ${bar('Раскрепощённость', '🔓', n.openness, { cls: 'eg-c-open' })}
+        </div>
+        <div class="eg-seg eg3-scope">${[['you', 'С тобой'], ['all', 'Всего'], ['others', 'С другими']].map(([k, ru]) => `<button class="eg-seg-btn ${scope === k ? 'eg-on' : ''}" data-scope="${k}">${ru}</button>`).join('')}</div>
+        <div class="eg-bigstats">${stats}</div>
+        <p class="eg-muted eg-small eg3-note">${scopeNote}</p>
         <div class="eg-acts">${tiles}</div>
-        ${firsts ? `<h4 class="eg-h">📖 Первые разы</h4><div class="eg-tl">${firsts}</div>` : ''}
-        ${n.positions.length ? `<h4 class="eg-h">🌀 Позы</h4><div class="eg-chips">${chips(n.positions, 'eg-chip-like', '')}</div>` : ''}
-        ${n.places.length ? `<h4 class="eg-h">📍 Места</h4><div class="eg-chips">${chips(n.places, '', '')}</div>` : ''}
-        <h4 class="eg-h">💗 Нравится</h4><div class="eg-chips">${chips(n.likes, 'eg-chip-like', 'узнаешь по ходу истории')}</div>
-        <h4 class="eg-h">✨ Чувствительные места</h4><div class="eg-chips">${chips(n.spots, 'eg-chip-spot', 'ещё не найдены')}</div>
-        ${n.dislikes?.length ? `<h4 class="eg-h">👎 Не любит</h4><div class="eg-chips">${chips(n.dislikes, 'eg-chip-limit', '')}</div>` : ''}
-        <h4 class="eg-h">🚫 Границы</h4><div class="eg-chips">${chips(n.limits, 'eg-chip-limit', 'пока не обозначены')}</div>
-        ${n.scenes ? `<p class="eg-muted">Сцен близости: ${n.scenes} · лучшая оценка: ${'★'.repeat(n.bestStars || 0)}${'☆'.repeat(3 - (n.bestStars || 0))}</p>` : ''}
-        ${n.diary?.length ? `<h4 class="eg-h">📔 Дневник отношений</h4><div class="eg-tl">${n.diary.slice().reverse().map(d => `<div class="eg-tl-row"><span>•</span><div><b>${escapeHtml(d.ru)}</b><small>${fmt(d.time)}</small></div></div>`).join('')}</div>` : ''}
-        ${Array.isArray(n.schedule) && n.schedule.length ? `<h4 class="eg-h">🗓 Распорядок</h4><div class="eg-sched">${n.schedule.map(e => `<div><span>${e.from}–${e.to}</span><b>${escapeHtml(e.doing_ru || e.doing_en)}</b><small>${escapeHtml(e.where_ru)}${e.days !== 'all' ? ` · ${e.days === 'weekdays' ? 'будни' : 'выходные'}` : ''}</small></div>`).join('')}</div>` : ''}
-        <p class="eg-muted eg-card-note">Близость открывается по ступеням: чувства растут от сцен, каждая новая ступень требует предыдущей, а за один вечер можно подняться только на пару шагов. Попробовать быстрее можно — бросок Страсти или Обаяния.</p>
+        ${scope !== 'others' && lastAct ? `<div class="eg-last">⏱ Последний раз с тобой: <b>${lastAct.ru.toLowerCase()}</b>, ${agoRu(n.last.time, state.time)}</div>` : ''}
+        ${scope !== 'you' && lastOther ? `<div class="eg-last">⏱ Последний раз с другими: <b>${lastOther.ru.toLowerCase()}</b> — ${escapeHtml(n.other.last.who)}, ${agoRu(n.other.last.time, state.time)}</div>` : ''}
+        ${scope !== 'you' && n.other.partners.length ? `<div class="eg3-row"><small>Кто в истории</small><div class="eg-chips">${chips(n.other.partners, '')}</div></div>` : ''}
+        ${scope === 'you' && firsts ? `<h4 class="eg-h">📖 Первые разы</h4><div class="eg2-sec eg3-pad"><div class="eg-tl">${firsts}</div></div>` : ''}
+        ${scope === 'you' && n.scenes ? `<p class="eg-muted eg-small">Сцен-мини-игр: ${n.scenes} · лучшая оценка: ${'★'.repeat(n.bestStars || 0)}${'☆'.repeat(3 - (n.bestStars || 0))}</p>` : ''}
+        <h4 class="eg-h">💡 Что ты о ней знаешь</h4>
+        ${tastes ? `<div class="eg2-sec eg2-sec-list eg3-pad">${tastes}</div>` : '<p class="eg-muted eg-small">Пока ничего: вкусы, чувствительные места и границы открываются по ходу истории.</p>'}
+        ${n.diary?.length ? `<h4 class="eg-h">📔 Дневник отношений</h4><div class="eg2-sec eg3-pad"><div class="eg-tl">${n.diary.slice().reverse().map(d => `<div class="eg-tl-row"><span>•</span><div><b>${escapeHtml(d.ru)}</b><small>${fmt(d.time)}</small></div></div>`).join('')}</div></div>` : ''}
+        ${Array.isArray(n.schedule) && n.schedule.length ? `<h4 class="eg-h">🗓 Распорядок</h4><div class="eg2-sec eg3-pad"><div class="eg-sched">${n.schedule.map(e => `<div><span>${e.from}–${e.to}</span><b>${escapeHtml(e.doing_ru || e.doing_en)}</b><small>${escapeHtml(e.where_ru)}${e.days !== 'all' ? ` · ${e.days === 'weekdays' ? 'будни' : 'выходные'}` : ''}</small></div>`).join('')}</div></div>` : ''}
+        ${raw && others.length ? `<details class="eg2-fmt eg3-merge"><summary>Это дубль другого персонажа?</summary><div class="eg3-merge-body"><small class="eg-muted">Выбери, с кем объединить запись: отношения, счётчики и дневник сложатся в одну карточку.</small><div class="eg-chips">${others.map(o => `<button class="eg-chip" data-merge="${escapeHtml(o.name)}">${escapeHtml(o.name)}</button>`).join('')}</div></div></details>` : ''}
         ${isMain ? '<button class="menu_button eg-card-edit" data-card-edit="1"><i class="fa-solid fa-pen"></i> Карточка персонажа</button>' : ''}`;
 }
 
 export function openCard(name) {
     ensureSheets();
     const c = ctx();
-    const state = currentState();
     const who = name || c.name2;
-    const $b = $('#eg-card .eg-sheet-body').html(cardHtml(state, who));
-    $b.find('h4.eg-h-love').eq(1).nextAll().addBack().wrapAll('<div class="eg-card-more"></div>');
-    const folded = () => localStorage.getItem('eg_card_fold') === '1';
-    const $fold = $('<button class="eg-card-fold"></button>').appendTo($b.find('.eg-card-hero'));
-    const paint = () => { $b.toggleClass('eg-folded', folded()); $fold.text(folded() ? '▸' : '▾').attr('aria-label', folded() ? 'Развернуть' : 'Свернуть'); };
-    $fold.on('click', () => { localStorage.setItem('eg_card_fold', folded() ? '0' : '1'); paint(); haptic('tick'); });
-    paint();
-    $b.find('[data-card-edit]').on('click', () => {
-        closeEgSheets();
-        $('#rightNavHolder .drawer-content').hasClass('openDrawer') || $('#rightNavHolder .drawer-toggle').first().trigger('click');
-        setTimeout(() => $('#rm_button_selected_ch').trigger('click'), 60);
-    });
+    const $b = $('#eg-card .eg-sheet-body');
+    const paintCard = (keepScroll = false) => {
+        const top = $b.scrollTop();
+        $b.html(`<div class="eg2-head eg3-head"><button class="eg2-x" data-card-back aria-label="Назад"><i class="fa-solid fa-arrow-left"></i></button><span class="eg-muted">Карточка персонажа</span></div>` + cardHtml(currentState(), who));
+        $b.scrollTop(keepScroll ? top : 0);
+    };
+    paintCard();
+    $b.off('click').on('click', '[data-scope]', function () { cardScope = this.dataset.scope; paintCard(true); haptic('tick'); })
+        .on('click', '[data-card-back]', () => (isActive() ? openStateSheet('people') : closeEgSheets()))
+        .on('click', '[data-merge]', async function () {
+            const other = this.dataset.merge;
+            const cur = findNpc(currentState(), who);
+            if (!cur) return;
+            const ok = await c.Popup.show.confirm('Объединить персонажей?', `«${escapeHtml(other)}» и «${escapeHtml(cur.name)}» станут одной записью с именем «${escapeHtml(cur.name)}». Отменить нельзя.`, { okButton: 'Объединить', cancelButton: 'Назад' });
+            if (!ok) return;
+            const st = currentState();
+            if (!E.mergeNpcs(st, cur.name, other)) { toastEnc('Не получилось объединить', 'bad'); return; }
+            writeSnapshot((ctx().chat?.length ?? 1) - 1, { state: st });
+            await ctx().saveChat();
+            toastEnc('Записи объединены', 'good');
+            paintCard();
+        })
+        .on('click', '[data-card-edit]', () => {
+            closeEgSheets();
+            $('#rightNavHolder .drawer-content').hasClass('openDrawer') || $('#rightNavHolder .drawer-toggle').first().trigger('click');
+            setTimeout(() => $('#rm_button_selected_ch').trigger('click'), 60);
+        });
     openEgSheet('eg-card');
     haptic('tick');
 }

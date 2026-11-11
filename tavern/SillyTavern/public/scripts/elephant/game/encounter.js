@@ -270,11 +270,7 @@ export function cleanOptions(list, kind = 'nsfw') {
 }
 
 export function findNpc(s, name) {
-    const q = String(name || '').trim().toLowerCase();
-    if (!q) return null;
-    const all = Object.values(s.npcs || {});
-    return s.npcs?.[q] ?? all.find(n => n.name.toLowerCase() === q)
-        ?? all.find(n => q.includes(n.name.toLowerCase()) || n.name.toLowerCase().includes(q.split(/\s+/)[0])) ?? null;
+    return E.resolveNpc(s, name);
 }
 
 // ------------------------------------------------------------------ odds for a card
