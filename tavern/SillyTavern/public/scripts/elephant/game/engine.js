@@ -8,6 +8,8 @@
  */
 import { MOOD_IDS } from '../stage/scene.js';
 
+import * as P from './prompts.js';
+
 export const SKILLS = {
     might:   { ru: 'Сила',     icon: '💪', en: 'Might' },
     finesse: { ru: 'Ловкость', icon: '🗝️', en: 'Finesse' },
@@ -261,9 +263,7 @@ export function cleanSchedule(list) {
 }
 
 export function schedulePrompt({ npc, card, era, setting }) {
-    return `Write a believable daily routine for ${npc.name}${card ? ` (card: ${String(card).slice(0, 1200)})` : ''}. Setting: ${setting || 'unknown'}${era ? ` (${era})` : ''}.
-Cover the whole day (sleep included) for weekdays and weekend if they differ, 4-8 blocks. busy = true when they are working or tied up and can't just drop it.
-Reply with ONE line of JSON: {"schedule":[{"days":"all|weekdays|weekend","from":"HH:MM","to":"HH:MM","where_ru":"где, 1-3 слова","doing_ru":"что делает, 2-5 слов","doing_en":"what they do, short","busy":bool}]}`;
+    return P.render('schedule', { name: npc.name, card: card ? ` (card: ${String(card).slice(0, 1200)})` : '', setting: setting || 'unknown', era: era ? ` (${era})` : '', format: P.render('schedule_format') });
 }
 
 // ------------------------------------------------------------------ side quests
@@ -271,14 +271,12 @@ Reply with ONE line of JSON: {"schedule":[{"days":"all|weekdays|weekend","from":
 export function questPrompt({ state, setting, user }) {
     const npcs = Object.values(state.npcs || {}).slice(-6).map(n => n.name).join(', ') || 'none yet';
     const goals = (state.goals || []).filter(g => g.status === 'active').map(g => g.title).join('; ') || 'none';
-    return `Invent ONE side quest the world offers ${user} in an interactive story, small and concrete (an errand, a favour, a mystery, a job, a rescue, a delivery, a rumour to chase), fitting the setting and the current situation, solvable in a few scenes.
-Setting: ${setting || 'unknown'}. Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Known characters: ${npcs}. ${user}'s current goals: ${goals}. Level ${state.level}. Money: ${state.money} ${state.currency}.
-Reply with ONE line of JSON: {"title_ru":"короткое название задания","giver":"who offers it (a known character or a new minor one)","hook_en":"how it shows up in the story: 1-2 sentences for the narrator","reward_money":int,"reward_xp":3-8,"reward_ru":"награда словами, коротко"}`;
+    return P.render('quest', { user, setting: setting || 'unknown', time: `${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}`, location: state.location || '?', npcs, goals, level: state.level, money: state.money, currency: state.currency, scale: scaleLine(state), format: P.render('quest_format', { user }) });
 }
 
 export function addOffer(s, q) {
     if (!q?.title_ru) return null;
-    const offer = { id: uid(), title: String(q.title_ru).slice(0, 70), giver: String(q.giver || '').slice(0, 40), hook_en: String(q.hook_en || '').slice(0, 300), reward_money: Math.max(0, Math.round(Number(q.reward_money) || 0)), reward_xp: clamp(Math.round(Number(q.reward_xp) || 4), 2, 10), reward_ru: String(q.reward_ru || '').slice(0, 60), turn: s.turn, status: 'offered', hooks: 0 };
+    const offer = { id: uid(), title: String(q.title_ru).slice(0, 70), giver: String(q.giver || '').slice(0, 40), hook_en: String(q.hook_en || '').slice(0, 300), reward_money: clamp(Math.round(Number(q.reward_money) || 0), 0, incomeCap(s)), reward_xp: clamp(Math.round(Number(q.reward_xp) || 4), 2, 10), reward_ru: String(q.reward_ru || '').slice(0, 60), turn: s.turn, status: 'offered', hooks: 0 };
     s.offers = [...(s.offers || []).filter(o => o.status === 'offered' || o.status === 'taken').slice(-4), offer];
     s.lastOfferTurn = s.turn;
     return offer;
@@ -402,11 +400,126 @@ export function ensureState(s) {
     s.offers ??= [];
     s.pending ??= [];
     s.enc ??= null;
-    s.eroge ??= false;
+    // eroge is the default way to play: saves from before v3 are switched on once
+    if ((s.v || 2) < 3) { s.eroge = true; s.v = 3; }
+    s.eroge ??= true;
+    s.econ ??= null;
+    s.ledger ??= [];
+    s.journal ??= [];
     s.level ??= 1; s.xp ??= 0; s.unspent ??= 0;
     for (const n of Object.values(s.npcs || {})) ensureNpc(n);
     return s;
 }
+// ------------------------------------------------------------------ economy
+
+/** "a simple meal costs about 8, a day of ordinary work pays about 40" — for helper prompts. */
+export function scaleLine(state) {
+    const e = state?.econ;
+    return e ? `a simple meal costs about ${e.meal} ${state.currency}, a day of ordinary work pays about ${e.day} ${state.currency}` : 'unknown; keep amounts modest';
+}
+export function setEcon(s, meal, day) {
+    const m = Math.round(Number(meal) || 0), d = Math.round(Number(day) || 0);
+    if (m > 0 && d > 0) s.econ = { meal: m, day: Math.max(d, m) };
+    return s.econ || null;
+}
+/** The most a single windfall can bring: a month of wages, or a guess when the scale is unknown. */
+export const incomeCap = (s) => (s.econ ? s.econ.day * 30 : Math.max(500, (s.money || 0) * 3));
+
+export const MONEY_KINDS = {
+    payment: { ru: 'Оплата', sign: 1, icon: '🤝' }, reward: { ru: 'Награда', sign: 1, icon: '🏅' }, found: { ru: 'Находка', sign: 1, icon: '🔎' },
+    loot: { ru: 'Добыча', sign: 1, icon: '🗡' }, wage: { ru: 'Заработок', sign: 1, icon: '⚒' }, sale: { ru: 'Продажа', sign: 1, icon: '⚖' },
+    gift: { ru: 'Подарок', sign: 0, icon: '🎁' }, purchase: { ru: 'Покупка', sign: -1, icon: '🛒' }, fee: { ru: 'Плата', sign: -1, icon: '🧾' },
+    loss: { ru: 'Потеря', sign: -1, icon: '💸' }, theft: { ru: 'Кража', sign: -1, icon: '🕳' },
+};
+
+/**
+ * One money movement with a reason. Returns the applied delta (0 if rejected).
+ * The engine, not the model, has the last word: a known kind, a stated reason, a sane size.
+ */
+export function moneyOp(s, op, notes = []) {
+    const kind = MONEY_KINDS[op?.kind] ? op.kind : null;
+    const why = String(op?.why_ru || op?.why || '').trim().slice(0, 60);
+    let amount = Math.round(Number(op?.amount) || 0);
+    if (!kind || !why || !amount) return 0;
+    const sign = MONEY_KINDS[kind].sign || Math.sign(amount);
+    amount = Math.abs(amount) * sign;
+    if (amount > 0) amount = Math.min(amount, incomeCap(s));
+    else amount = -Math.min(-amount, s.money);
+    if (!amount) return 0;
+    s.money += amount;
+    const who = String(op?.who || '').trim().slice(0, 40);
+    s.ledger = [...(s.ledger || []), { turn: s.turn, time: s.time, amount, kind, who, why }].slice(-40);
+    notes.push({ kind: 'money', delta: amount, why, who, op: kind });
+    return amount;
+}
+
+/** What a consumable does when used from the bag. */
+export const ITEM_EFFECTS = { heal: { ru: 'лечит раны', icon: '🩹' }, calm: { ru: 'снимает стресс', icon: '🍵' } };
+
+/** Uses a consumable with an effect. Returns notes, or null when it can't be used now. */
+export function consumeItem(s, name, userName = 'The player') {
+    const g = s.gear?.[name];
+    if (!g || !ITEM_EFFECTS[g.effect]) return null;
+    const notes = [];
+    if (g.effect === 'heal') { if (!(s.harm > 0)) return null; notes.push({ kind: 'harm', from: s.harm, to: s.harm - 1 }); s.harm -= 1; }
+    if (g.effect === 'calm') { if (!(s.stress > 0)) return null; const d = Math.min(3, s.stress); s.stress -= d; notes.push({ kind: 'stress', delta: -d, why: name }); }
+    useItem(s, name, 1, notes);
+    s.pending = [...(s.pending || []), `${userName} used ${name} (${g.effect === 'heal' ? 'wounds treated' : 'nerves settled'}; already counted)`];
+    return notes;
+}
+
+/** Gives an item to a character who is present: a small, real warming of the relationship. */
+export function giftItem(s, name, npcName, userName = 'The player') {
+    const g = s.gear?.[name];
+    const npc = Object.values(s.npcs || {}).find(n => n.name === npcName);
+    if (!s.items.includes(name) || !npc) return null;
+    ensureNpc(npc);
+    const notes = [];
+    const worth = Number(g?.value) || 0;
+    const big = s.econ ? worth >= s.econ.day : worth > 0 && (g?.bonus || 0) >= 1;
+    const aff = big ? 5 : 3;
+    npc.affection = clamp(npc.affection + aff, 0, 100);
+    npc.trust = clamp(npc.trust + 1, -100, 100);
+    notes.push({ kind: 'gift', name: npc.name, item: name, affection: aff });
+    npc.diary = [...(npc.diary || []), { time: s.time, ru: `Подарок: ${name}`, en: `${userName} gave ${npc.name} a gift: ${name}` }].slice(-12);
+    useItem(s, name, 1, []);
+    s.pending = [...(s.pending || []), `${userName} gives ${npc.name} a gift: ${name} (the item has already left ${userName}'s bag; show ${npc.name}'s reaction in character)`];
+    return notes;
+}
+
+/** What a trader pays for an item: half its worth. */
+export function sellPrice(s, name) {
+    const g = s.gear?.[name];
+    const v = Math.round((Number(g?.value) || 0) / 2);
+    return v > 0 ? v : 0;
+}
+export function sellItem(s, name, place = '', userName = 'The player') {
+    const price = sellPrice(s, name);
+    if (!price || !s.items.includes(name)) return null;
+    const notes = [];
+    useItem(s, name, 1, []);
+    notes.push({ kind: 'item', name, delta: -1 });
+    moneyOp(s, { amount: price, kind: 'sale', who: place, why_ru: name }, notes);
+    s.pending = [...(s.pending || []), `${userName} sold ${name} for ${price} ${s.currency} (already counted)`];
+    return notes;
+}
+
+/** The player takes an offered side quest from the menu. */
+export function acceptOffer(s, id, userName = 'The player') {
+    const offer = (s.offers || []).find(o => o.id === id && o.status === 'offered');
+    if (!offer || s.goals.filter(g => g.status === 'active').length >= MAX_GOALS) return null;
+    offer.status = 'taken';
+    s.goals.push({ id: uid(), title: offer.title, status: 'active', since: s.turn, offer: offer.id });
+    s.pending = [...(s.pending || []), `${userName} has decided to take up the task "${offer.title}"${offer.giver ? ` from ${offer.giver}` : ''}: ${offer.hook_en}`];
+    return [{ kind: 'goal_new', title: offer.title, quest: true }];
+}
+export function declineOffer(s, id) {
+    const offer = (s.offers || []).find(o => o.id === id && o.status === 'offered');
+    if (!offer) return false;
+    offer.status = 'declined';
+    return true;
+}
+
 export const MAX_GOALS = 6;
 export const MAX_CLOCKS = 6;
 
@@ -420,9 +533,12 @@ export function newState(setup = {}) {
     const skills = {};
     for (const k of Object.keys(SKILLS)) skills[k] = clamp(Number(setup.skills?.[k] ?? 1), 0, START_MAX);
     return {
-        v: 2,
+        v: 3,
         pace: PACES[setup.pace] ? setup.pace : 'medium',
-        eroge: Boolean(setup.eroge),
+        eroge: setup.eroge === undefined ? true : Boolean(setup.eroge),
+        econ: null,
+        ledger: [],
+        journal: [],
         perks: [],
         perkUsed: {},
         scene: 0,
@@ -483,11 +599,14 @@ export function addItem(s, raw, notes = []) {
     if (!name) return;
     const qty = clamp(Math.round(Number(it.qty) || 1), 1, 99);
     const key = Object.keys(s.gear).find(k => k.toLowerCase() === name.toLowerCase()) || name;
-    const g = s.gear[key] ?? { skill: '', bonus: 0, consumable: false, qty: 0, desc: '' };
+    const g = s.gear[key] ?? { skill: '', bonus: 0, consumable: false, qty: 0, desc: '', effect: '', value: 0 };
     if (SKILLS[it.skill]) g.skill = it.skill;
     if (Number(it.bonus) > 0) g.bonus = clamp(Math.round(Number(it.bonus)), 0, 2);
     g.consumable = Boolean(it.consumable ?? g.consumable) || CONDOM.test(name);
     if (it.desc_ru) g.desc = String(it.desc_ru).slice(0, 80);
+    if (ITEM_EFFECTS[it.effect]) { g.effect = it.effect; g.consumable = true; }
+    const worth = Math.round(Number(it.value ?? it.price) || 0);
+    if (worth > 0) g.value = Math.max(1, Math.round(Math.min(worth, incomeCap(s)) / (it.price != null ? qty : 1))); // a shop price is for the whole pack
     g.qty = (g.qty || 0) + qty;
     s.gear[key] = g;
     if (!s.items.some(x => x.toLowerCase() === key.toLowerCase())) s.items.push(key);
@@ -1034,13 +1153,21 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
     if (ds) { s.stress = clamp(s.stress + ds, 0, STRESS_MAX); notes.push({ kind: 'stress', delta: ds }); }
 
     // money & items
-    const dm = clamp(Math.round(Number(report.money) || 0), -100000, 100000);
-    if (dm) { s.money = Math.max(0, s.money + dm); notes.push({ kind: 'money', delta: dm }); }
+    // every movement needs a kind and a reason; purchases the shop already charged are skipped
+    const countedPrices = (state.pending || []).map(x => /(?:bought|sold) .* for (\d+) /.exec(x)?.[1]).filter(Boolean).map(Number);
+    const moneyOps = (Array.isArray(report.money_ops) ? report.money_ops : []).slice(0, 3);
+    for (const op of moneyOps) {
+        const i = countedPrices.indexOf(Math.abs(Math.round(Number(op?.amount) || 0)));
+        if (i >= 0 && ['purchase', 'sale'].includes(op?.kind)) { countedPrices.splice(i, 1); continue; }
+        if (op?.kind === 'reward') continue; // settled below, once we know whether a quest paid out
+        moneyOp(s, op, notes);
+    }
     for (const it of (report.items_gained || []).slice(0, 4)) addItem(s, it, notes);
     for (const it of (report.items_lost || []).slice(0, 4)) useItem(s, typeof it === 'string' ? it : it?.name_ru || it?.name || '', 99, notes);
     for (const it of (report.items_used || []).slice(0, 4)) useItem(s, typeof it === 'string' ? it : it?.name_ru || it?.name || '', Math.max(1, Math.round(Number(it?.qty) || 1)), notes);
 
     // goals
+    let questPaid = false;
     for (const g of (report.goals || []).slice(0, 4)) {
         const title = String(g?.title_ru || '').trim().slice(0, 70);
         if (!title) continue;
@@ -1060,7 +1187,7 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
                 const offer = goal.offer && (s.offers || []).find(o => o.id === goal.offer);
                 if (offer) {
                     offer.status = 'done';
-                    if (offer.reward_money) { s.money += offer.reward_money; notes.push({ kind: 'money', delta: offer.reward_money }); }
+                    if (offer.reward_money) { moneyOp(s, { amount: offer.reward_money, kind: 'reward', who: offer.giver, why_ru: offer.title }, notes); questPaid = true; }
                     xp(offer.reward_xp + learner, 'задание');
                 } else xp(4 + learner);
             }
@@ -1068,6 +1195,8 @@ export function applyReport(state, report, { trackerLine = null, colors = null }
         }
     }
     s.goals = [...s.goals.filter(g => g.status === 'active'), ...s.goals.filter(g => g.status !== 'active').slice(-8)];
+    // a reward the story hands out counts, unless a quest of the game has just paid its own
+    if (!questPaid) for (const op of moneyOps) if (op?.kind === 'reward') moneyOp(s, op, notes);
 
     // progress clocks moved by the story
     for (const c of (report.clocks || []).slice(0, 3)) {
@@ -1152,13 +1281,14 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
 }
 
 export function erogeDirection(u = '{{user}}') {
-    return `ERO-GE DIRECTION: the story deliberately builds intimate, lewd and suggestive circumstances like a classic eroge — accidental touches and falls into compromising positions, clothes torn or slipping in action, walking in on someone, one bed, wet clothes, bets with a lewd forfeit, magic/potions/traps with embarrassing effects, a defeat that leaves someone in a revealing, helpless or humiliating (but not sexually violated) predicament that ${u} can see, exploit for teasing, or rescue them from. Read ${u}'s hints toward lewd outcomes and play them up instead of ignoring them. Enemies (goblins, bandits, monsters, tentacle things) may on their own initiative go for more than killing — grabbing, pinning, tearing clothes, lewd taunts (a brief or fading threat, resolved by escape or defeat, never a sex scene) — at the hero and especially at companions who are losing, restrained or low on HP, and may use combat effects like paralysis, daze, webs, sleep or a curse; these are only combat debuffs, never lead into any sexual outcome.`;
+    return P.render('eroge_direction', { user: u });
 }
-export const EROGE_HELPER_NOTE = 'EROGE MODE is on: enemies may molest/tease captured or losing characters (grabbing, pinning, lewd taunts; brief, never a sex scene) and use paralysis/daze/binding/sleep/weakening effects as combat debuffs (non-sexual or fading threat, victim can always refuse or be freed, a refusal ends the beat; an advance by an enemy is the enemy own doing, never not player consent); prefer outcomes, options and complications with a lewd/suggestive twist (e.g. combat cards like "Сорвать плащ", failures where clothes tear or slip), within the consent limit: sex only with partners who genuinely want it (by their own nature or choice, shown in the story); magic and defeat may create lewd predicaments and arousal but never replace consent; no rape by anyone.';
+/** The note every helper prompt gets when eroge mode is on. */
+export const erogeHelperNote = () => P.render('eroge_helper');
 
 export function narratorBlock(state0, { record = null, events = [], userName = '{{user}}' } = {}) {
     const state = ensureState(clone(state0));
-    const lines = ['[GAME ENGINE — ground truth for this reply. Never mention dice, numbers, clocks, stats or any mechanics in prose; show them only through the fiction.]'];
+    const lines = [P.render('narrator_head', { user: userName })];
     const threats = state.clocks.filter(c => c.kind === 'threat' && c.filled < c.size).map(c => `${c.name} ${c.filled}/${c.size}`);
     const progress = state.clocks.filter(c => c.kind === 'progress' && c.filled < c.size).map(c => `${c.name} ${c.filled}/${c.size}`);
     const goals = state.goals.filter(g => g.status === 'active').map(g => g.title).slice(0, 3);
@@ -1172,6 +1302,8 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
     if (goals.length) lines.push(`${userName}'s goals: ${goals.join('; ')}`);
     const inv = itemsLine(state);
     lines.push(`${userName} carries: ${inv || 'nothing of note'}${hasCondoms(state) ? '' : ' (no condoms)'}`);
+    const moneyRule = P.render('narrator_money', { user: userName, money: state.money, currency: state.currency, scale: state.econ ? ` (a simple meal costs about ${state.econ.meal}, a day of ordinary work pays about ${state.econ.day})` : '' }).trim();
+    if (moneyRule) lines.push(moneyRule);
     if (state.pending?.length) lines.push(`Since the last reply: ${state.pending.join('; ')}.`);
     const hook = (state.offers || []).find(o => o.status === 'offered' && o.hooks <= 3);
     if (hook) lines.push(`SIDE QUEST HOOK (weave it in naturally within the next reply or two, through ${hook.giver || 'someone or something in the scene'}; ${userName} decides whether to take it): ${hook.hook_en}`);
@@ -1204,6 +1336,8 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
         if (ev.kind === 'clock_full' && ev.clock.kind === 'progress') lines.push(`MILESTONE REACHED: "${ev.clock.name}" is achieved — let it land.`);
         if (ev.kind === 'breakdown') lines.push(`${userName}'s nerves snap — show a brief loss of composure (do not dictate their words).`);
     }
+    const extra = P.render('narrator_extra', { user: userName }).trim();
+    if (extra) lines.push(extra);
     return lines.join('\n');
 }
 
@@ -1219,60 +1353,26 @@ export function stateSummary(state0) {
         const r = readiness(n, ro);
         return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}, intimacy reached: ${STAGE_IDS[r.reached]}, willing now up to: ${STAGE_IDS[r.ready]}${n.experience ? `, ${n.experience}` : ''})`;
     }).join('; ') || 'none';
-    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills (0-6): ${skills}. Money: ${state.money}. Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
+    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, stress ${state.stress}/9. Skills (0-6): ${skills}. Money: ${state.money} ${state.currency} (price scale: ${scaleLine(state)}). Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
 }
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {
-    return `You are the referee of a narrative RPG between ${user} (the player) and the world run by ${char}'s narrator. Decide whether ${user}'s latest action needs a skill check.
-
-Skills: might (force, brawling, endurance, intimidation by force), finesse (stealth, agility, lockpicking, sleight of hand, shooting), insight (noticing, reading people, sensing lies, intuition), charm (persuasion, deception, talking someone into something, haggling, performance), resolve (willpower, resisting fear/pain/temptation/magic), lore (knowledge, medicine, magic, tech, investigation), passion (seduction by touch and body, being good in bed, reading a partner's body, lasting, pushing intimacy further).
-
-A check is needed ONLY when the outcome is genuinely uncertain AND both success and failure would be interesting: attacks, sneaking, lying, persuading someone unwilling, dangerous climbing, picking locks; also the social and intimate contests that drive this kind of story: seducing or charming someone reluctant, guarded or hostile (charm); resisting seduction used as a weapon, fear, pain, a supernatural pull, feeding or mind-affecting magic (resolve); seeing through a lie, an act or a disguise when ${user} looks for it or something is at stake (insight); recognizing a creature, spell or weakness (lore); keeping up, holding out or overpowering in a physical contest (might/finesse). NO check for: ordinary talk, questions, looking around, walking, routine tasks, emotional moments, willing intimacy within what the character is "willing now up to", anything trivial or impossible.
-INTIMACY PUSH: if ${user} tries to take intimacy with a character beyond their "willing now up to" stage (e.g. undressing someone only ready for kissing), that IS a check: skill passion (or charm if ${user} is talking them into it), target = that character, intimacy_push true, position risky, dc 8 one stage beyond, 10 two stages, 12 more; success = they give in a step, failure = they stop ${user} and cool off; leave threat empty for these.
-
-Game state:
-${stateSummary(state)}
-
-Last narration:
-<narration>
-${String(lastNarration || '').slice(-1800)}
-</narration>
-
-${user}'s action:
-<action>
-${String(action || '').slice(0, 1200)}
-</action>
-
-${state.eroge ? EROGE_HELPER_NOTE + '\n' : ''}Reply with ONE line of minified JSON and nothing else.
-If no check: {"check":false}
-If a check: {"check":true,"skill":"might|finesse|insight|charm|resolve|lore|passion","action_en":"verb phrase, e.g. pick the lock","label_ru":"короткое название по-русски","position":"controlled|risky|desperate","effect":"limited|standard|great","dc":6-12,"success_en":"what success gives","cost_en":"what a near miss costs","fail_en":"what failure brings","threat":"name of the danger clock this feeds, e.g. Guards alerted (or empty)","target":"name of the character the action is aimed at or contested with, or empty","intimacy_push":bool,"threat_size":4|6|8}
-dc: 6 easy, 8 standard, 10 hard, 12 very hard, 14 heroic, 16 legendary. Set dc from the fiction, not from ${user}'s skills; as ${user} levels up, the world puts harder obstacles and stronger opponents in front of them (a level 15 hero fights things a level 1 one would flee). Position: controlled = safe retry possible, risky = default, desperate = serious danger. Reuse existing clock names when they fit.`;
+    return P.render('referee', {
+        user, char, state: stateSummary(state),
+        narration: String(lastNarration || '').slice(-1800), action: String(action || '').slice(0, 1200),
+        eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('referee_format', { user }),
+    });
 }
 
 export function extractorPrompt({ state, userText, reply, user, char, memoryState = '' }) {
-    return `You track the game state of a narrative RPG. Read the latest exchange and report ONLY what actually happened in it.
-
-Current game state:
-${stateSummary(state)}
-${memoryState ? `\nStory state card:\n${memoryState.slice(0, 2000)}\n` : ''}
-${user}:
-<player>
-${String(userText || '').slice(0, 1200)}
-</player>
-
-Narrator (${char}):
-<reply>
-${String(reply || '').slice(0, 3500)}
-</reply>
-
-${state.eroge ? EROGE_HELPER_NOTE + '\n' : ''}Reply with ONE line of minified JSON, nothing else:
-{"minutes":int (in-story time this exchange took: talk 5-15, local travel 10-45, long tasks hours),"location_ru":"place in 2-4 Russian words","weather":"clear|rain|storm|snow|fog|ash","time_of_day":"day|night|dusk|dawn","indoor":bool,"mood":"${MOOD_IDS.join('|')}","intensity":0-1,"events":["hit"|"blood"|"explosion"|"lightning"|"kiss"|"magic"|"heartbeat"],"scene_changed":bool,
-"npcs":[{"name":"","present":bool,"start_trust":-40..40,"start_affection":0..70,"start_attraction":0..70,"start_openness":0..70,"trust":-6..6,"affection":-5..5,"attraction":-5..5,"lust":-40..40,"openness":0..3,"start_stage":0..8,"start_experience":"virgin|inexperienced|experienced|very|","start_pace":"fast|normal|slow","intimacy":["kiss"|"makeout"|"grope"|"hands"|"oral_her"|"oral_you"|"sex"|"anal"|"kink"],"protection":"condom|pill|other|none|","positions_ru":[],"place_ru":"","her_orgasm":0..3,"user_orgasm":0..3,"learned_about":[],"moment_ru":"","moment_en":"","likes_ru":[],"weak_spots_ru":[],"limits_ru":[],"why_ru":"коротко"}],
-"harm":-1|0|1,"stress":-3..2,"money":int,"items_gained":[{"name_ru":"","skill":"might|finesse|insight|charm|resolve|lore|passion|","bonus":0|1|2,"consumable":bool,"qty":int}],"items_lost":[],"items_used":[{"name_ru":"","qty":int}],"encounter":{"kind":"nsfw|combat|","partner":"","by":"user|char","forced":bool},
-"goals":[{"title_ru":"","status":"new|done|failed"}],
-"clocks":[{"name":"","kind":"progress|threat","tick":1|2,"size":4|6|8}]}
-
-Rules: start_* only for a character who is NOT in the game state yet: where their feelings toward ${user} stand already, from the card and the story so far (a stranger ~0, an old friend trust 30+, a character who secretly wants ${user} attraction 40+; openness 20 for an average person, lower for shy or innocent, higher for bold or experienced ones; start_stage = how far they have ALREADY gone with ${user} before the game: 0 none, 1 flirting, 2 kissed, 3 made out, 4 petting, 5 naked touching, 6 oral, 7 sex, 8 anything (a wife or long-time lover is 7-8); start_experience from the card (virgin, inexperienced, experienced, very) or empty if unknown; start_pace fast for characters made for quick sex (succubus, nymphomaniac, sex worker on the job, desperate heat), slow for very shy, chaste or guarded ones, else normal). trust/affection/attraction deltas are SMALL (most turns 0, ±1-2 for a nice or rude moment, ±4-6 only for big betrayals or sacrifices) and only for named NPCs in the scene. trust = how safe the character feels with ${user}; affection = emotional attachment, love; attraction = physical desire for ${user}. lust = the character's arousal change in this exchange (flirting +5..10, making out +15..25, sex +25..40, cold shower or interruption −20..−40). openness: +1..3 only when the character willingly tried something new or bolder with ${user}. intimacy: acts that physically happened between ${user} and that character in THIS exchange (kiss = kissing; makeout = deep, heated making out; grope = touching through or under clothes; hands = naked touching, fingering, handjob; oral_her = ${user} pleasures them orally; oral_you = they pleasure ${user} orally; sex = penetrative sex; anal; kink = toys, bondage, other kinks). protection: for sex/anal only — what was used, none if nothing, empty otherwise. positions_ru: sex positions used, 1-3 Russian words each. place_ru: where it happened, 2-4 Russian words. her_orgasm: how many times that character climaxed in this exchange; user_orgasm: how many times ${user} did. likes_ru / weak_spots_ru / limits_ru: ONLY newly revealed things in Russian, 1-4 words (a turn-on they showed or said; a body spot that made them react strongly; something they refused or set as a boundary). learned_about: names of OTHER known characters this character just found out ${user} is romantic or intimate with (they saw, heard or were told). moment_ru / moment_en: only when something significant happened between ${user} and this character (first meeting, a confession, a fight, a gift, a promise, a betrayal, a first time, a secret shared): one short line in Russian and in English; otherwise empty. items_gained: what ${user} got; skill+bonus only for gear that really helps a skill (a knife +1 might, lockpicks +1 finesse, fine clothes +1 charm, a holy charm +1 resolve, a medkit +1 lore, condoms are consumable with qty); items_used: consumables ${user} used up. encounter: ONLY if this reply ends right as sex is starting or is being proposed (nsfw), or a fight / chase / tense standoff is breaking out (combat), and it is not already under way; else empty kind. by: who started it — char when the character made the first move or proposed it; forced: true only if the character is taking ${user} without waiting for his agreement (pins him, pulls him in, won't take no for an answer). harm only for injuries NOT already resolved by a dice check this turn (or -1 for real rest/treatment). New goals only when ${user} clearly commits to an objective; done/failed only when it clearly resolves. Clocks: tick an existing progress clock when the story clearly advances it; create a threat clock only for a new looming danger. Use empty arrays when nothing applies.`;
+    return P.render('extractor', {
+        user, char, state: stateSummary(state),
+        memory: memoryState ? `\nStory state card:\n${memoryState.slice(0, 2000)}\n` : '',
+        player: String(userText || '').slice(0, 1200), reply: String(reply || '').slice(0, 3500),
+        eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('extractor_format', { user }),
+        currency: state.currency, scale: scaleLine(state),
+        counted: [...(state.pending || []), 'rewards of side quests listed in the game state (the game pays them itself when the goal is done)'].join('; '),
+    });
 }
 
 export function parseJsonLine(text) {

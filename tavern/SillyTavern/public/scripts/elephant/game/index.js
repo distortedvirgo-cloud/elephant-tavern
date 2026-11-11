@@ -14,6 +14,8 @@
 import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter, whenRevealed } from '../stage/helper.js';
 import * as E from './engine.js';
 import * as X from './encounter.js';
+import * as P from './prompts.js';
+import { openPrompts } from './prompts-ui.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 const MODULE = 'elephant_game';
@@ -24,12 +26,15 @@ const DEFAULTS = {
     hideTracker: true,   // hide the preset's "[ 🕐 … ]" line — the HUD shows it
     juice: true,
     encMin: false,       // encounter panel collapsed to one row
+    autoStart: true,     // new chats start in game mode on their own
+    prompts: {},         // the player's edited prompt texts, by id
+    promptsAll: false,   // let the player edit the JSON formats too
 };
 
 function S() {
     const es = ctx().extensionSettings;
     es[MODULE] ??= structuredClone(DEFAULTS);
-    for (const [k, v] of Object.entries(DEFAULTS)) if (es[MODULE][k] === undefined) es[MODULE][k] = v;
+    for (const [k, v] of Object.entries(DEFAULTS)) if (es[MODULE][k] === undefined) es[MODULE][k] = structuredClone(v);
     return es[MODULE];
 }
 const stageSettings = () => ctx().extensionSettings?.elephant_stage ?? {};
@@ -129,6 +134,7 @@ export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
         const text = String(userMsg.mes || '').trim();
         if (before.enc?.status === 'active') {
             const res = await encounterTurn(before, text, lastNarrationBefore(chat, ui));
+            if (res.round) journal(res.state, res.round.notes);
             writeSnapshot(ui, { checked: true, state: res.state, encRound: res.round });
             await c.saveChat();
             setNarratorBlock(fullBlock(res.state));
@@ -164,6 +170,7 @@ export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
         }
         // The dice the card showed are the dice that count.
         const { state, record } = E.resolveCheck(before, verdict, { push: choice.push, dice: choice.dice, rerolled: choice.rerolled });
+        journal(state, record.notes);
         writeSnapshot(ui, { checked: true, state, record });
         await c.saveChat();
         afterCheck(record, state);
@@ -241,6 +248,28 @@ function worthRefereeing(text) {
 
 // ------------------------------------------------------------------ after the reply: extractor
 
+/** Adds what just happened to the journal the player can read (Журнал → События). */
+function journal(state, notes) {
+    const lines = noteLines(notes, state);
+    if (lines.length) state.journal = [...(state.journal || []), ...lines.map(l => ({ turn: state.turn, time: state.time, text: l.text, sub: l.sub || '', tone: l.tone }))].slice(-80);
+    return state;
+}
+
+/** Old saves have no price scale: ask the helper once (twice at most) and keep it. */
+let econBusy = false;
+async function fetchEcon(st) {
+    const m = meta();
+    if (econBusy || !m || (m.econTried || 0) >= 2) return null;
+    econBusy = true;
+    m.econTried = (m.econTried || 0) + 1;
+    try {
+        const out = await callHelper(stageSettings(), 'You set up a story world. Output only JSON.',
+            P.render('econ', { user: ctx().name1, setting: setting(), currency: st.currency, money: st.money, format: P.render('econ_format') }), 80, { json: true });
+        const j = E.parseJsonLine(out);
+        return j && Number(j.meal) > 0 && Number(j.day_wage) > 0 ? { meal: j.meal, day: j.day_wage } : null;
+    } catch (e) { log('econ failed', e); return null; } finally { econBusy = false; }
+}
+
 async function onReply(mesId) {
     if (!isActive()) return;
     const c = ctx();
@@ -254,8 +283,11 @@ async function onReply(mesId) {
     if (hasHelper(ss)) {
         setHudBusy(true);
         try {
+            const econP = base.econ ? null : fetchEcon(base);
             const out = await callHelper(ss, 'You are a meticulous game-state tracker. Output only JSON.',
-                E.extractorPrompt({ state: base, userText: ui >= 0 ? c.chat[ui].mes : '', reply: msg.mes, user: c.name1, char: c.name2, memoryState: memoryState() }), 650, { json: true });
+                E.extractorPrompt({ state: base, userText: ui >= 0 ? c.chat[ui].mes : '', reply: msg.mes, user: c.name1, char: c.name2, memoryState: memoryState() }), 700, { json: true });
+            const econ = econP ? await econP : null;
+            if (econ) E.setEcon(base, econ.meal, econ.day);
             report = E.parseJsonLine(out);
         } catch (e) {
             log('extractor failed', e);
@@ -277,6 +309,7 @@ async function onReply(mesId) {
         state.lastEnc = { variant: finished.variant, partner: finished.partner, status: finished.status, result: finished.result, turn: state.turn };
         state.enc = null;
     }
+    journal(state, notes);
     writeSnapshot(mesId, { state, notes, events });
     await c.saveChat();
     // Toasts, banners and the HUD change land with the (translated) text, not before it.
@@ -680,12 +713,13 @@ async function loadShop(force = false) {
     if (!force && st.shop && st.shop.location === st.location && st.turn - st.shop.turn < 30) return st.shop;
     const ss = stageSettings();
     if (!hasHelper(ss)) return null;
-    const out = await callHelper(ss, 'You stock a shop in a story world. Output only JSON.', `Where can ${ctx().name1} buy things right now? Setting: ${setting()}. Time: ${E.timeEn(st.time)}. Location: ${st.location || '?'}. Currency: ${st.currency}. ${ctx().name1} has ${st.money}.
-If there is no shop, stall or trader nearby, say where the nearest one is. Otherwise list 6-8 items that fit the place and the world, with fair prices in this currency: useful gear that helps a skill (a weapon +1 might, lockpicks +1 finesse, fine clothes +1 charm, a talisman +1 resolve, a book or medkit +1 lore, perfume or a toy +1 passion; rare quality gear +2 and expensive), consumables (condoms, potions, bandages: consumable, qty), and one or two nice gifts for someone.
-Reply with ONE line of JSON: {"available":bool,"place_ru":"название места","note_ru":"если нет — где ближайший","items":[{"name_ru":"","desc_ru":"коротко","price":int,"skill":"might|finesse|insight|charm|resolve|lore|passion|","bonus":0|1|2,"consumable":bool,"qty":int}]}`, 700, { json: true });
+    const out = await callHelper(ss, 'You stock a shop in a story world. Output only JSON.', P.render('shop', {
+        user: ctx().name1, setting: setting(), time: E.timeEn(st.time), location: st.location || '?', currency: st.currency, money: st.money,
+        scale: E.scaleLine(st), format: P.render('shop_format'),
+    }), 800, { json: true });
     const j = E.parseJsonLine(out);
     if (!j) return null;
-    const shop = { location: st.location, turn: st.turn, available: Boolean(j.available), place: String(j.place_ru || '').slice(0, 50), note: String(j.note_ru || '').slice(0, 120), items: (Array.isArray(j.items) ? j.items : []).slice(0, 8).map(x => ({ name_ru: String(x.name_ru || '').slice(0, 40), desc_ru: String(x.desc_ru || '').slice(0, 80), price: Math.max(0, Math.round(Number(x.price) || 0)), skill: E.SKILLS[x.skill] ? x.skill : '', bonus: Math.max(0, Math.min(2, Math.round(Number(x.bonus) || 0))), consumable: Boolean(x.consumable), qty: Math.max(1, Math.round(Number(x.qty) || 1)) })).filter(x => x.name_ru) };
+    const shop = { location: st.location, turn: st.turn, available: Boolean(j.available), place: String(j.place_ru || '').slice(0, 50), note: String(j.note_ru || '').slice(0, 120), items: (Array.isArray(j.items) ? j.items : []).slice(0, 8).map(x => ({ name_ru: String(x.name_ru || '').slice(0, 40), desc_ru: String(x.desc_ru || '').slice(0, 80), price: Math.max(0, Math.round(Number(x.price) || 0)), skill: E.SKILLS[x.skill] ? x.skill : '', bonus: Math.max(0, Math.min(2, Math.round(Number(x.bonus) || 0))), consumable: Boolean(x.consumable), effect: E.ITEM_EFFECTS[x.effect] ? x.effect : '', qty: Math.max(1, Math.round(Number(x.qty) || 1)) })).filter(x => x.name_ru && x.price > 0) };
     const idx = (ctx().chat?.length ?? 1) - 1;
     const now = currentState();
     now.shop = shop;
@@ -699,10 +733,11 @@ async function buy(i) {
     const it = st.shop?.items?.[i];
     if (!it) return;
     if (st.money < it.price) { toastEnc('Не хватает денег', 'bad'); return; }
-    st.money -= it.price;
     const notes = [];
+    E.moneyOp(st, { amount: -it.price, kind: 'purchase', who: st.shop.place, why_ru: it.name_ru }, notes);
     E.addItem(st, it, notes);
-    st.pending = [...(st.pending || []), `${ctx().name1} bought ${it.name_ru}${it.qty > 1 ? ` ×${it.qty}` : ''} for ${it.price} ${st.currency}`];
+    journal(st, notes);
+    st.pending = [...(st.pending || []), `${ctx().name1} bought ${it.name_ru}${it.qty > 1 ? ` ×${it.qty}` : ''} for ${it.price} ${st.currency} (already counted)`];
     const idx = (ctx().chat?.length ?? 1) - 1;
     writeSnapshot(idx, { state: st });
     await ctx().saveChat();
@@ -710,18 +745,6 @@ async function buy(i) {
     toastEnc(`🛒 ${it.name_ru} — ${it.price} ${st.currency}`, 'good');
     haptic('tick');
     openStateSheet('items');
-}
-
-function itemsHtml(s) {
-    const inv = s.items.length ? s.items.map(name => {
-        const g = s.gear?.[name];
-        return `<div class="eg-inv"><b>${escapeHtml(name)}${g?.consumable && g.qty > 1 ? ` ×${g.qty}` : ''}</b>${g?.skill && g.bonus ? `<span class="eg-rank eg-rank-4">${E.SKILLS[g.skill].icon} +${g.bonus} ${E.SKILLS[g.skill].ru}</span>` : ''}${g?.desc ? `<small>${escapeHtml(g.desc)}</small>` : ''}</div>`;
-    }).join('') : '<p class="eg-muted">Пусто. Вещи появляются по ходу истории или в магазине.</p>';
-    const shop = s.shop && s.shop.location === s.location ? s.shop : null;
-    const shopHtml = !shop ? '<button class="eg-btn eg-wide" data-act="shop">🛒 Что можно купить здесь?</button>'
-        : !shop.available ? `<p class="eg-muted">Здесь негде купить. ${escapeHtml(shop.note)}</p><button class="eg-link" data-act="shop-refresh">↻ Проверить снова</button>`
-            : `<h4 class="eg-h">🛒 ${escapeHtml(shop.place || 'Магазин')} <small>${s.currency} ${s.money}</small></h4>${shop.items.map((it, i) => `<div class="eg-shop-row"><div><b>${escapeHtml(it.name_ru)}${it.qty > 1 ? ` ×${it.qty}` : ''}</b>${it.skill && it.bonus ? ` <span class="eg-rank eg-rank-4">${E.SKILLS[it.skill].icon} +${it.bonus}</span>` : ''}<small>${escapeHtml(it.desc_ru)}</small></div><button class="eg-buy" data-buy="${i}" ${s.money < it.price ? 'disabled' : ''}>${it.price} ${escapeHtml(s.currency)}</button></div>`).join('')}<button class="eg-link" data-act="shop-refresh">↻ Обновить ассортимент</button>`;
-    return `<h4 class="eg-h">🎒 Снаряжение <small>лучший предмет даёт бонус к броскам навыка</small></h4>${inv}${shopHtml}`;
 }
 
 // ------------------------------------------------------------------ defeat
@@ -823,9 +846,14 @@ function ensureSheets() {
         <section id="eg-state" class="eg-sheet"><div class="eg-grip"></div><div class="eg-tabs"></div><div class="eg-sheet-body"></div></section>
         <section id="eg-setup" class="eg-sheet"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
         <section id="eg-card" class="eg-sheet"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
+        <section id="eg-prompts" class="eg-sheet eg-sheet-tall"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
         <div id="eg-toasts"></div>
         <div id="eg-banner"></div>`);
     $('#eg-scrim').on('click', () => { if (!$('#eg-check').hasClass('eg-open')) closeEgSheets(); });
+}
+
+function openPromptsSheet() {
+    openPrompts({ S, ctx, callHelper, hasHelper, stageSettings, log, openSheet: openEgSheet, toast: toastEnc, back: () => (isActive() ? openStateSheet('hero') : closeEgSheets()) });
 }
 
 function openEgSheet(id) {
@@ -955,8 +983,9 @@ function afterCheck(record) {
 
 // ------------------------------------------------------------------ UI: toasts & banner
 
-function showNotes(notes = []) {
+function noteLines(notes = [], state = null) {
     const out = [];
+    const cur = (state || currentState()).currency;
     for (const n of notes) {
         switch (n.kind) {
             case 'rel': {
@@ -999,13 +1028,19 @@ function showNotes(notes = []) {
             case 'stress': out.push({ text: `Стресс ${n.delta > 0 ? '+' : ''}${n.delta}`, tone: n.delta > 0 ? 'bad' : 'good' }); break;
             case 'harm': out.push({ text: n.to > n.from ? `Рана: ${E.HARM[n.to].ru}` : `Легче: ${E.HARM[n.to].ru}`, tone: n.to > n.from ? 'bad' : 'good' }); break;
             case 'xp': out.push({ text: `+${n.delta} опыта${n.why ? ` · ${n.why}` : ''}`, tone: 'info' }); break;
-            case 'money': out.push({ text: `${n.delta > 0 ? '+' : ''}${n.delta} ${currentState().currency}`, tone: n.delta > 0 ? 'good' : 'bad' }); break;
-            case 'item': out.push({ text: `${n.delta > 0 ? '+' : '−'} ${n.name}`, tone: n.delta > 0 ? 'good' : 'bad' }); break;
+            case 'money': { const k = E.MONEY_KINDS[n.op]; out.push({ text: `${k ? k.icon + ' ' : ''}${n.delta > 0 ? '+' : '−'}${Math.abs(n.delta)} ${cur}${k ? ` · ${k.ru}` : ''}`, sub: [n.why, n.who].filter(Boolean).join(' · '), tone: n.delta > 0 ? 'good' : 'bad' }); break; }
+            case 'gift': out.push({ text: `🎁 ${n.name}: подарок принят`, sub: `${n.item} · +${n.affection} 💞`, tone: 'good' }); break;
+            case 'item': out.push({ text: `🎒 ${n.delta > 0 ? 'Получено' : 'Ушло'}: ${n.name}${Math.abs(n.delta) > 1 ? ` ×${Math.abs(n.delta)}` : ''}`, tone: n.delta > 0 ? 'good' : 'warn' }); break;
             case 'goal_new': out.push({ text: `${n.quest ? '📜 Задание взято' : 'Новая цель'}: ${n.title}`, tone: n.quest ? 'gold' : 'info' }); break;
             case 'goal_failed': out.push({ text: `Цель провалена: ${n.title}`, tone: 'bad' }); break;
             default:
         }
     }
+    return out;
+}
+
+function showNotes(notes = []) {
+    const out = noteLines(notes);
     ensureSheets();
     out.slice(0, 5).forEach((t, i) => setTimeout(() => {
         const el = $(`<div class="eg-toast" data-tone="${t.tone}"><b>${escapeHtml(t.text)}</b>${t.sub ? `<small>${escapeHtml(t.sub)}</small>` : ''}</div>`);
@@ -1026,20 +1061,45 @@ function banner(text, tone = 'gold') {
 
 // ------------------------------------------------------------------ UI: state sheet
 
-const TABS = [['hero', '🧍 Герой'], ['people', '🫂 Связи'], ['items', '🎒 Вещи'], ['goals', '🎯 Цели'], ['log', '🎲']];
+const TABS = [['hero', '🧍', 'Герой'], ['people', '🫂', 'Связи'], ['items', '🎒', 'Вещи'], ['goals', '🎯', 'Цели'], ['log', '📖', 'Журнал']];
 
 function openStateSheet(tab = 'hero') {
     ensureSheets();
     const s = currentState();
-    $('#eg-state .eg-tabs').html(TABS.map(([id, label]) => `<button class="eg-tab ${id === tab ? 'eg-on' : ''}" data-tab="${id}">${label}</button>`).join(''))
+    const dots = { hero: s.unspent > 0 || E.perkPicks(s) > 0, goals: (s.offers || []).some(o => o.status === 'offered') };
+    $('#eg-state .eg-tabs').html(TABS.map(([id, icon, label]) => `<button class="eg-tab ${id === tab ? 'eg-on' : ''}" data-tab="${id}"><i>${icon}</i><span>${label}</span>${dots[id] ? '<u></u>' : ''}</button>`).join(''))
         .off('click').on('click', '.eg-tab', function () { openStateSheet(this.dataset.tab); });
     const $b = $('#eg-state .eg-sheet-body');
     if (tab === 'hero') $b.html(heroHtml(s));
     if (tab === 'people') $b.html(peopleHtml(s));
     if (tab === 'goals') $b.html(goalsHtml(s));
     if (tab === 'items') $b.html(itemsHtml(s));
-    if (tab === 'log') $b.html(logHtml(s));
+    if (tab === 'log') $b.html(journalHtml(s));
+    $b.scrollTop(0);
+    // one place for every "change the state from a menu" action
+    const act = async (fn, back) => {
+        const st = currentState();
+        const notes = fn(st);
+        if (!notes) { toastEnc('Сейчас не получится', 'warn'); return; }
+        journal(st, notes);
+        writeSnapshot((ctx().chat?.length ?? 1) - 1, { state: st });
+        await ctx().saveChat();
+        renderHud(st);
+        showNotes(notes);
+        haptic('tick');
+        openStateSheet(back);
+    };
+    const me = ctx().name1;
     $b.off('click').on('click', '[data-card]', function () { openCard(this.dataset.card); })
+        .on('click', '[data-hint]', function () { const k = this.dataset.hint; $b.find('.eg2-hint').each(function () { this.hidden = this.dataset.for !== k || !this.hidden; }); $b.find('.eg2-stat').removeClass('eg-on'); if (!$b.find(`.eg2-hint[data-for="${k}"]`).prop('hidden')) $(this).addClass('eg-on'); })
+        .on('click', '[data-jtab]', function () { journalTab = this.dataset.jtab; openStateSheet('log'); })
+        .on('click', '[data-use]', function () { const name = currentState().items[Number(this.dataset.use)]; act(st => E.consumeItem(st, name, me), 'items'); })
+        .on('click', '[data-gift]', function () { const el = $b.find(`[data-gift-for="${this.dataset.gift}"]`)[0]; if (el) el.hidden = !el.hidden; })
+        .on('click', '[data-gift-to]', function () { const name = currentState().items[Number(this.dataset.i)]; const to = this.dataset.giftTo; act(st => E.giftItem(st, name, to, me), 'items'); })
+        .on('click', '[data-sell]', function () { const cur = currentState(); const name = cur.items[Number(this.dataset.sell)]; act(st => E.sellItem(st, name, cur.shop?.place || '', me), 'items'); })
+        .on('click', '[data-offer-yes]', function () { const id = this.dataset.offerYes; act(st => E.acceptOffer(st, id, me), 'goals'); })
+        .on('click', '[data-offer-no]', function () { const id = this.dataset.offerNo; act(st => (E.declineOffer(st, id) ? [] : null), 'goals'); })
+        .on('click', '[data-act="prompts"]', () => openPromptsSheet())
         .on('click', '[data-buy]', function () { buy(Number(this.dataset.buy)); })
         .on('click', '[data-act="shop"], [data-act="shop-refresh"]', async function () {
             const force = this.dataset.act === 'shop-refresh';
@@ -1081,63 +1141,6 @@ function openStateSheet(tab = 'hero') {
             globalThis.ElephantStage && document.body.classList.remove('eg-active');
         });
     openEgSheet('eg-state');
-}
-
-function heroHtml(s) {
-    const need = E.xpNeed(s.level);
-    const top = s.level >= E.MAX_LEVEL;
-    const skills = Object.entries(E.SKILLS).map(([k, sk]) => {
-        const v = s.skills[k] ?? 1;
-        return `
-        <div class="eg-skill-row">
-            <span>${sk.icon} ${sk.ru} <em class="eg-rank eg-rank-${v}">${E.RANKS[v]}</em>${E.hasAdvantage(s, k) ? ' <em class="eg-rank eg-rank-adv">✨ талант</em>' : ''}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
-            <span class="eg-dots">${pips(v, E.SKILL_MAX, 'eg-dot')}</span>
-            ${s.unspent > 0 && v < E.SKILL_MAX ? `<button class="eg-plus" data-spend="${k}">+</button>` : ''}
-        </div>`;
-    }).join('');
-    const picks = E.perkPicks(s);
-    const owned = (s.perks || []).map(id => E.PERKS[id]).filter(Boolean);
-    const nextPerk = (Math.floor(s.level / E.PERK_EVERY) + 1) * E.PERK_EVERY;
-    const perksHtml = `
-        <h4 class="eg-h">Перки ${picks ? `<small class="eg-gold">можно выбрать: ${picks}</small>` : `<small>следующий на ${Math.min(nextPerk, E.MAX_LEVEL)} уровне</small>`}</h4>
-        ${owned.length ? `<div class="eg-perks">${owned.map(p => `<div class="eg-perk eg-perk-own"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></div>`).join('')}</div>` : (picks ? '' : '<p class="eg-muted">Перк даётся каждые 3 уровня.</p>')}
-        ${picks ? `<div class="eg-perks">${Object.entries(E.PERKS).filter(([id]) => !E.hasPerk(s, id)).map(([id, p]) => `<button class="eg-perk" data-perk="${id}"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></button>`).join('')}</div>` : ''}`;
-    return `
-        <div class="eg-hero-top">
-            <div><b>Уровень ${s.level} · ${E.titleOf(s.level)}</b><small>${top ? 'Максимальный уровень' : `Опыт ${s.xp}/${need}`}${s.unspent ? ` · свободных очков: ${s.unspent}` : ''}</small></div>
-            <div class="eg-xpbar"><i style="width:${top ? 100 : Math.round(s.xp / need * 100)}%"></i></div>
-        </div>
-        <div class="eg-cards">
-            <div class="eg-mini"><small>Здоровье</small><b>${E.HARM[s.harm].ru}</b><span>${pips(3 - s.harm, 3, 'eg-pip eg-pip-hp')}</span></div>
-            <div class="eg-mini"><small>Стресс</small><b>${s.stress}/${E.STRESS_MAX}</b><span>${pips(s.stress, E.STRESS_MAX, 'eg-pip eg-pip-st')}</span></div>
-            <div class="eg-mini"><small>Деньги</small><b>${s.currency} ${s.money}</b></div>
-        </div>
-        <div class="eg-enc-start">${s.enc ? '<span class="eg-muted">Идёт сцена — панель над полем ввода</span>' : '<button class="eg-btn" data-enc="nsfw">💗 Сцена близости</button><button class="eg-btn" data-enc="combat">⚔️ Бой</button>'}</div>
-        <h4 class="eg-h">Навыки <small>0–${E.SKILL_MAX}, очко за уровень</small></h4>${skills}
-        ${perksHtml}
-        <h4 class="eg-h">Вещи</h4>
-        <div class="eg-items">${s.items.length ? s.items.map(i => { const g = s.gear?.[i]; return `<span class="eg-item">${escapeHtml(i)}${g?.consumable && g.qty > 1 ? ` ×${g.qty}` : ''}${g?.skill && g.bonus ? ` ${E.SKILLS[g.skill].icon}+${g.bonus}` : ''}</span>`; }).join('') : '<span class="eg-muted">Пусто</span>'}</div>
-        ${s.scars?.length ? `<h4 class="eg-h">Шрамы</h4><div class="eg-items">${s.scars.map(i => `<span class="eg-item eg-scar">${escapeHtml(i)}</span>`).join('')}</div>` : ''}
-        <p class="eg-muted eg-small">Опыт: провалы (учишься на ошибках), рискованные успехи, цели, завершённые часы, новые знакомства и «первые разы».</p>
-        <div class="eg-foot">
-            <span class="eg-muted">Сложность: ${E.DIFFICULTY[s.difficulty].ru} · Темп близости: ${E.PACES[s.pace]?.ru || 'Средне'}</span>
-            <button class="eg-link" data-act="setup">Настройки игры</button>
-            <button class="eg-link eg-danger" data-act="stop">Выключить</button>
-        </div>`;
-}
-
-function peopleHtml(s) {
-    const list = Object.values(s.npcs).map(n => E.ensureNpc(E.clone(n))).sort((a, b) => (b.present - a.present) || (b.seen - a.seen));
-    if (!list.length) return '<p class="eg-muted">Пока никого. Знакомства появятся по ходу истории.</p>';
-    return list.map(n => `
-        <button class="eg-npc eg-npc-btn" style="--c:#${n.color}" data-card="${escapeHtml(n.name)}">
-            <div class="eg-npc-head"><b>${escapeHtml(n.name)}</b>${n.present ? '<span class="eg-here">рядом</span>' : ''}<span class="eg-status">${escapeHtml(E.loveStatus(n))}</span></div>
-            <div class="eg-mini">
-                <span title="Доверие">🛡 ${n.trust}</span><span title="Привязанность">💞 ${n.affection}</span><span title="Влечение">💘 ${n.attraction}</span>
-                ${n.lust >= 20 ? `<span title="Возбуждение">🔥 ${n.lust}</span>` : ''}
-                <span title="Ступень близости">${E.STAGES[n.stage].icon} ${E.STAGES[n.stage].ru}</span>
-            </div>
-        </button>`).join('') + '<p class="eg-muted">Нажми на персонажа, чтобы открыть карточку.</p>';
 }
 
 // ------------------------------------------------------------------ UI: character card (eroge-style)
@@ -1265,30 +1268,163 @@ export function openCard(name) {
     haptic('tick');
 }
 
+// ------------------------------------------------------------------ UI: tabs of the state sheet
+
+function heroHtml(s) {
+    const need = E.xpNeed(s.level);
+    const top = s.level >= E.MAX_LEVEL;
+    const pct = top ? 100 : Math.round(s.xp / need * 100);
+    const skills = Object.entries(E.SKILLS).map(([k, sk]) => {
+        const v = s.skills[k] ?? 1;
+        const gear = E.gearFor(s, k);
+        return `
+        <div class="eg-skill-row">
+            <i class="eg2-ico">${sk.icon}</i>
+            <span>${sk.ru} <em class="eg-rank eg-rank-${v}">${E.RANKS[v]}</em>${E.hasAdvantage(s, k) ? ' <em class="eg-rank eg-rank-adv">✨ талант</em>' : ''}${gear ? ` <em class="eg-rank eg-rank-4" title="${escapeHtml(gear.name)}">+${gear.bonus} вещь</em>` : ''}<small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
+            <span class="eg-dots">${pips(v, E.SKILL_MAX, 'eg-dot')}</span>
+            ${s.unspent > 0 && v < E.SKILL_MAX ? `<button class="eg-plus" data-spend="${k}" aria-label="Повысить">+</button>` : ''}
+        </div>`;
+    }).join('');
+    const picks = E.perkPicks(s);
+    const owned = (s.perks || []).map(id => E.PERKS[id]).filter(Boolean);
+    const nextPerk = (Math.floor(s.level / E.PERK_EVERY) + 1) * E.PERK_EVERY;
+    const perksHtml = `
+        <h4 class="eg-h">Перки ${picks ? `<small class="eg-gold">можно выбрать: ${picks}</small>` : `<small>следующий на ${Math.min(nextPerk, E.MAX_LEVEL)} уровне</small>`}</h4>
+        ${owned.length ? `<div class="eg-perks">${owned.map(p => `<div class="eg-perk eg-perk-own"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></div>`).join('')}</div>` : (picks ? '' : '<p class="eg-muted eg-small">Перк даётся каждые 3 уровня.</p>')}
+        ${picks ? `<div class="eg-perks">${Object.entries(E.PERKS).filter(([id]) => !E.hasPerk(s, id)).map(([id, p]) => `<button class="eg-perk" data-perk="${id}"><b>${p.icon} ${p.ru}</b><small>${p.text}</small></button>`).join('')}</div>` : ''}`;
+    const hints = {
+        hp: 'Раны дают штраф ко всем броскам: чем тяжелее, тем больше. Проходят от отдыха, лечения и вещей с пометкой 🩹. Смертельная рана — поражение.',
+        st: `Растёт от провалов, кнопки «Надавить» и тяжёлых сцен. Падает от сна, отдыха, приятных сцен и вещей с пометкой 🍵. На ${E.STRESS_MAX} — срыв: герой теряет самообладание, стресс падает до 4.`,
+        mn: `Деньги меняются только по событию: тебе заплатили, наградили, ты нашёл, добыл, продал, купил или потерял. Каждое движение с причиной — в Журнале.${s.econ ? ` Цены в этом мире: обед ≈ ${s.econ.meal} ${escapeHtml(s.currency)}, день работы ≈ ${s.econ.day} ${escapeHtml(s.currency)}.` : ''}`,
+    };
+    return `
+        <div class="eg2-hero">
+            <div class="eg2-ring" style="--p:${pct}"><b>${s.level}</b><small>ур.</small></div>
+            <div class="eg2-hero-main">
+                <b>${E.titleOf(s.level)}</b>
+                <small>${top ? 'Максимальный уровень' : `Опыт ${s.xp} из ${need}`}</small>
+                ${s.unspent ? `<span class="eg2-pill eg2-pill-gold">⬆ свободных очков: ${s.unspent}</span>` : ''}
+            </div>
+        </div>
+        <div class="eg2-stats">
+            <button class="eg2-stat" data-hint="hp"><small>Здоровье</small><b>${E.HARM[s.harm].ru}</b><span>${pips(3 - s.harm, 3, 'eg-pip eg-pip-hp')}</span></button>
+            <button class="eg2-stat" data-hint="st"><small>Стресс</small><b>${s.stress} из ${E.STRESS_MAX}</b><span>${pips(s.stress, E.STRESS_MAX, 'eg-pip eg-pip-st')}</span></button>
+            <button class="eg2-stat" data-hint="mn"><small>Деньги</small><b>${escapeHtml(s.currency)} ${s.money}</b><span class="eg-muted">${s.ledger?.length ? `${s.ledger.at(-1).amount > 0 ? '+' : '−'}${Math.abs(s.ledger.at(-1).amount)} недавно` : 'что это?'}</span></button>
+        </div>
+        ${Object.entries(hints).map(([k, t]) => `<p class="eg2-hint" data-for="${k}" hidden>${t}</p>`).join('')}
+        <div class="eg-enc-start">${s.enc ? '<span class="eg-muted">Идёт сцена — панель над полем ввода</span>' : '<button class="eg-btn eg-btn-soft" data-enc="nsfw">💗 Сцена близости</button><button class="eg-btn eg-btn-soft" data-enc="combat">⚔️ Бой</button>'}</div>
+        <h4 class="eg-h">Навыки <small>от 0 до ${E.SKILL_MAX}, очко за уровень</small></h4>
+        <div class="eg2-sec">${skills}</div>
+        ${perksHtml}
+        ${s.scars?.length ? `<h4 class="eg-h">Шрамы</h4><div class="eg-items">${s.scars.map(i => `<span class="eg-item eg-scar">${escapeHtml(i)}</span>`).join('')}</div>` : ''}
+        <p class="eg-muted eg-small">Опыт дают провалы (учишься на ошибках), рискованные успехи, цели, задания, новые знакомства и «первые разы».</p>
+        <div class="eg2-foot">
+            <button class="eg2-fbtn" data-act="setup"><i class="fa-solid fa-sliders"></i><span>Настройки<small>${E.DIFFICULTY[s.difficulty].ru}${s.eroge ? ' · эроге' : ''}</small></span></button>
+            <button class="eg2-fbtn" data-act="prompts"><i class="fa-solid fa-file-pen"></i><span>Промпты<small>${Object.keys(P.PROMPTS).filter(P.isChanged).length ? `изменено: ${Object.keys(P.PROMPTS).filter(P.isChanged).length}` : 'читать и менять'}</small></span></button>
+        </div>
+        <button class="eg-link eg-danger eg2-stop" data-act="stop">Выключить игру в этом чате</button>`;
+}
+
+function peopleHtml(s) {
+    const list = Object.values(s.npcs).map(n => E.ensureNpc(E.clone(n))).sort((a, b) => (b.present - a.present) || (b.seen - a.seen));
+    if (!list.length) return '<div class="eg2-empty"><i>🫂</i><b>Пока никого</b><small>Знакомства появятся по ходу истории: игра сама заведёт карточку на каждого, кого ты встретишь.</small></div>';
+    const mini = (icon, v, min = 0) => `<span class="eg2-mbar"><em>${icon}</em><i><u style="width:${Math.max(0, Math.min(100, Math.round((v - min) / (100 - min) * 100)))}%"></u></i><b>${v}</b></span>`;
+    return list.map(n => {
+        const last = n.diary?.at?.(-1);
+        return `
+        <button class="eg2-npc" style="--c:#${n.color}" data-card="${escapeHtml(n.name)}">
+            <span class="eg2-ava">${escapeHtml(n.name.slice(0, 1).toUpperCase())}</span>
+            <span class="eg2-npc-main">
+                <span class="eg2-npc-head"><b>${escapeHtml(n.name)}</b>${n.present ? '<span class="eg-here">рядом</span>' : ''}</span>
+                <span class="eg2-npc-sub">${E.STAGES[n.stage].icon} ${escapeHtml(E.loveStatus(n))} · ${E.tierOf(n.trust).ru.toLowerCase()}${n.lust >= 40 ? ' · 🔥 возбуждена' : ''}</span>
+                <span class="eg2-mbars">${mini('🛡', n.trust)}${mini('💞', n.affection)}${mini('💘', n.attraction)}</span>
+                ${last ? `<small class="eg2-npc-last">📔 ${escapeHtml(last.ru)}</small>` : ''}
+            </span>
+            <i class="fa-solid fa-chevron-right"></i>
+        </button>`;
+    }).join('') + '<p class="eg-muted eg-small">🛡 доверие · 💞 привязанность · 💘 влечение. Нажми на персонажа, чтобы открыть карточку.</p>';
+}
+
+function itemsHtml(s) {
+    const shop = s.shop && s.shop.location === s.location ? s.shop : null;
+    const present = Object.values(s.npcs).filter(n => n.present);
+    const inv = s.items.length ? s.items.map((name, i) => {
+        const g = s.gear?.[name] || {};
+        const fx = E.ITEM_EFFECTS[g.effect];
+        const usable = fx && (g.effect === 'heal' ? s.harm > 0 : s.stress > 0);
+        const sell = shop?.available ? E.sellPrice(s, name) : 0;
+        return `
+        <div class="eg2-item">
+            <i class="eg2-ico">${fx ? fx.icon : g.skill ? E.SKILLS[g.skill].icon : '📦'}</i>
+            <div class="eg2-item-main">
+                <b>${escapeHtml(name)}${g.consumable && g.qty > 1 ? ` <em>×${g.qty}</em>` : ''}</b>
+                <small>${[g.skill && g.bonus ? `+${g.bonus} ${E.SKILLS[g.skill].ru.toLowerCase()}` : '', fx ? fx.ru : '', g.desc ? escapeHtml(g.desc) : '', g.value ? `стоит ≈ ${g.value} ${escapeHtml(s.currency)}` : ''].filter(Boolean).join(' · ') || 'обычная вещь'}</small>
+                <div class="eg2-item-acts">
+                    ${fx ? `<button class="eg2-act" data-use="${i}" ${usable ? '' : 'disabled'}>${fx.icon} Использовать</button>` : ''}
+                    ${present.length ? `<button class="eg2-act" data-gift="${i}">🎁 Подарить</button>` : ''}
+                    ${sell ? `<button class="eg2-act" data-sell="${i}">⚖ Продать · ${sell} ${escapeHtml(s.currency)}</button>` : ''}
+                </div>
+                ${present.length ? `<div class="eg2-gift-pick" data-gift-for="${i}" hidden><small class="eg-muted">Кому?</small>${present.map(n => `<button class="eg-chip eg-chip-like" data-gift-to="${escapeHtml(n.name)}" data-i="${i}">${escapeHtml(n.name)}</button>`).join('')}</div>` : ''}
+            </div>
+        </div>`;
+    }).join('') : '<div class="eg2-empty"><i>🎒</i><b>Сумка пуста</b><small>Вещи приходят из истории (нашёл, получил, отнял) и из магазина.</small></div>';
+    const shopHtml = !shop ? '<button class="eg-btn eg-btn-soft eg-wide" data-act="shop">🛒 Что можно купить здесь?</button>'
+        : !shop.available ? `<div class="eg2-sec"><p class="eg-muted">Здесь торговли нет. ${escapeHtml(shop.note)}</p><button class="eg-link" data-act="shop-refresh">↻ Проверить снова</button></div>`
+            : `<h4 class="eg-h">🛒 ${escapeHtml(shop.place || 'Магазин')} <small>у тебя ${escapeHtml(s.currency)} ${s.money}</small></h4>
+            <div class="eg2-sec eg2-sec-list">${shop.items.map((it, i) => `
+                <div class="eg-shop-row"><div><b>${escapeHtml(it.name_ru)}${it.qty > 1 ? ` ×${it.qty}` : ''}</b>${it.skill && it.bonus ? ` <span class="eg-rank eg-rank-4">${E.SKILLS[it.skill].icon} +${it.bonus}</span>` : ''}${E.ITEM_EFFECTS[it.effect] ? ` <span class="eg-rank eg-rank-2">${E.ITEM_EFFECTS[it.effect].icon} ${E.ITEM_EFFECTS[it.effect].ru}</span>` : ''}<small>${escapeHtml(it.desc_ru)}</small></div><button class="eg-buy" data-buy="${i}" ${s.money < it.price ? 'disabled' : ''}>${it.price} ${escapeHtml(s.currency)}</button></div>`).join('')}</div>
+            <p class="eg-muted eg-small">Продать свою вещь можно здесь же, за половину цены. <button class="eg-link" data-act="shop-refresh">↻ Обновить товары</button></p>`;
+    return `<h4 class="eg-h">🎒 Сумка <small>лучшая вещь даёт бонус к броскам навыка</small></h4>${inv}${shopHtml}`;
+}
+
 function goalsHtml(s) {
     const active = s.goals.filter(g => g.status === 'active');
     const closed = s.goals.filter(g => g.status !== 'active').slice(-5).reverse();
     const clocks = s.clocks;
     const offers = (s.offers || []).filter(o => o.status === 'offered');
+    const reward = (o) => `${o.reward_money ? `<span class="eg2-pill eg2-pill-gold">${o.reward_money} ${escapeHtml(s.currency)}</span>` : ''}<span class="eg2-pill">+${o.reward_xp} опыта</span>${o.reward_ru ? `<span class="eg2-pill">${escapeHtml(o.reward_ru)}</span>` : ''}`;
     return `
-        ${offers.length ? `<h4 class="eg-h">📜 Мир предлагает</h4>${offers.map(o => `<div class="eg-goal eg-offer">✦ <b>${escapeHtml(o.title)}</b><small>${o.giver ? escapeHtml(o.giver) + ' · ' : ''}награда: ${escapeHtml(o.reward_ru || `${o.reward_money} ${s.currency}`)} · +${o.reward_xp} опыта</small></div>`).join('')}<p class="eg-muted eg-small">Возьмись за задание в истории — оно станет целью, а награда придёт после выполнения.</p>` : ''}
-        <h4 class="eg-h">Цели</h4>
-        ${active.length ? active.map(g => { const o = g.offer && (s.offers || []).find(x => x.id === g.offer); return `<div class="eg-goal">◆ ${escapeHtml(g.title)}${o ? `<small>📜 задание · ${escapeHtml(o.reward_ru || `${o.reward_money} ${s.currency}`)} · +${o.reward_xp} опыта</small>` : ''}</div>`; }).join('') : '<p class="eg-muted">Цели появятся, когда герой за что-то возьмётся.</p>'}
-        <h4 class="eg-h">Часы</h4>
-        ${clocks.length ? clocks.map(c => `<div class="eg-clock-row">${clockSvg(c, 34)}<div><b>${escapeHtml(c.name)}</b><small>${c.kind === 'threat' ? 'угроза' : 'прогресс'} · ${c.filled}/${c.size}</small></div></div>`).join('') : '<p class="eg-muted">Нет тикающих часов.</p>'}
-        ${closed.length ? `<h4 class="eg-h">Завершено</h4>${closed.map(g => `<div class="eg-goal eg-goal-${g.status}">${g.status === 'done' ? '✔' : '✖'} ${escapeHtml(g.title)}</div>`).join('')}` : ''}`;
+        ${offers.length ? `<h4 class="eg-h">📜 Мир предлагает</h4>${offers.map(o => `
+            <div class="eg2-sec eg2-offer">
+                <b>${escapeHtml(o.title)}</b>
+                ${o.giver ? `<small class="eg-muted">от: ${escapeHtml(o.giver)}</small>` : ''}
+                <div class="eg2-pills">${reward(o)}</div>
+                <div class="eg2-actions"><button class="eg-btn" data-offer-yes="${o.id}">Взяться</button><button class="eg-btn eg-btn-ghost" data-offer-no="${o.id}">Не интересно</button></div>
+            </div>`).join('')}<p class="eg-muted eg-small">Рассказчик вплетёт задание в историю. Взяться можно кнопкой или прямо в сцене.</p>` : ''}
+        <h4 class="eg-h">🎯 Цели</h4>
+        ${active.length ? `<div class="eg2-sec eg2-sec-list">${active.map(g => { const o = g.offer && (s.offers || []).find(x => x.id === g.offer); return `<div class="eg2-goal"><i>◆</i><div><b>${escapeHtml(g.title)}</b>${o ? `<div class="eg2-pills">${reward(o)}</div>` : '<small class="eg-muted">своя цель · +4 опыта</small>'}</div></div>`; }).join('')}</div>` : '<div class="eg2-empty"><i>🎯</i><b>Целей пока нет</b><small>Цель появляется, когда ты в истории ясно берёшься за дело: «найду её брата», «выиграю турнир».</small></div>'}
+        <h4 class="eg-h">⏳ Часы <small>что надвигается и что продвигается</small></h4>
+        ${clocks.length ? `<div class="eg2-sec eg2-sec-list">${clocks.map(c => `<div class="eg-clock-row">${clockSvg(c, 38)}<div><b>${escapeHtml(c.name)}</b><small>${c.kind === 'threat' ? 'угроза: когда заполнится — случится' : 'прогресс: когда заполнится — достигнуто'} · ${c.filled} из ${c.size}</small></div></div>`).join('')}</div>` : '<p class="eg-muted eg-small">Сейчас ничего не тикает. Часы появляются от рискованных бросков (угроза растёт при провале) и от долгих дел.</p>'}
+        ${closed.length ? `<h4 class="eg-h">Завершено</h4><div class="eg2-sec eg2-sec-list">${closed.map(g => `<div class="eg2-goal eg-goal-${g.status}"><i>${g.status === 'done' ? '✔' : '✖'}</i><div><b>${escapeHtml(g.title)}</b></div></div>`).join('')}</div>` : ''}`;
 }
 
-function logHtml(s) {
-    if (!s.log.length) return '<p class="eg-muted">Бросков ещё не было.</p>';
-    return s.log.map(r => {
-        const o = E.OUTCOMES[r.outcome];
-        return `<div class="eg-log-row" data-tone="${o.tone}">
-            <span class="eg-log-dice">${r.dice[0]}·${r.dice[1]}</span>
-            <div><b>${escapeHtml(r.label_ru || r.action_en)}</b><small>${E.SKILLS[r.skill].ru} ${r.mod >= 0 ? '+' : ''}${r.mod} · ${r.total}/${r.dc}${r.push ? ' · надавил' : ''}</small></div>
-            <span class="eg-log-out">${o.ru}</span>
-        </div>`;
-    }).join('');
+let journalTab = 'events';
+function journalHtml(s) {
+    const when = (iso) => { try { return E.timeRu(iso); } catch { return ''; } };
+    const seg = `<div class="eg-seg eg2-jseg">${[['events', 'События'], ['money', 'Деньги'], ['rolls', 'Броски']].map(([k, ru]) => `<button class="eg-seg-btn ${journalTab === k ? 'eg-on' : ''}" data-jtab="${k}">${ru}</button>`).join('')}</div>`;
+    let body = '';
+    if (journalTab === 'money') {
+        const L = (s.ledger || []).slice().reverse();
+        const inc = L.filter(x => x.amount > 0).reduce((a, x) => a + x.amount, 0);
+        const out = L.filter(x => x.amount < 0).reduce((a, x) => a - x.amount, 0);
+        body = `<div class="eg2-stats eg2-stats-2"><div class="eg2-stat"><small>Сейчас</small><b>${escapeHtml(s.currency)} ${s.money}</b></div><div class="eg2-stat"><small>Пришло</small><b class="eg2-plus">+${inc}</b></div><div class="eg2-stat"><small>Ушло</small><b class="eg2-minus">−${out}</b></div></div>`
+            + (L.length ? `<div class="eg2-sec eg2-sec-list">${L.map(x => { const k = E.MONEY_KINDS[x.kind]; return `<div class="eg2-led"><i class="eg2-ico">${k?.icon || '💰'}</i><div><b>${escapeHtml(x.why)}</b><small>${k?.ru || ''}${x.who ? ` · ${escapeHtml(x.who)}` : ''} · ${when(x.time)}</small></div><em class="${x.amount > 0 ? 'eg2-plus' : 'eg2-minus'}">${x.amount > 0 ? '+' : '−'}${Math.abs(x.amount)}</em></div>`; }).join('')}</div>`
+                : '<div class="eg2-empty"><i>💰</i><b>Движений пока нет</b><small>Сюда попадает каждая сумма с причиной: кто заплатил, за что, где потратил.</small></div>');
+    } else if (journalTab === 'rolls') {
+        body = s.log.length ? `<div class="eg2-sec eg2-sec-list">${s.log.map(r => {
+            const o = E.OUTCOMES[r.outcome];
+            return `<div class="eg-log-row" data-tone="${o.tone}">
+                <span class="eg-log-dice">${r.dice[0]}·${r.dice[1]}</span>
+                <div><b>${escapeHtml(r.label_ru || r.action_en)}</b><small>${E.SKILLS[r.skill].ru} ${r.mod >= 0 ? '+' : ''}${r.mod} · ${r.total} против ${r.dc}${r.push ? ' · надавил' : ''}</small></div>
+                <span class="eg-log-out">${o.ru}</span>
+            </div>`;
+        }).join('')}</div>` : '<div class="eg2-empty"><i>🎲</i><b>Бросков ещё не было</b><small>Кубики падают, когда исход действия не очевиден: драка, взлом, обман, соблазнение.</small></div>';
+    } else {
+        const J = (s.journal || []).slice().reverse();
+        body = J.length ? `<div class="eg2-sec eg2-sec-list">${J.map(x => `<div class="eg2-jrow" data-tone="${x.tone}"><i></i><div><b>${escapeHtml(x.text)}</b><small>${x.sub ? `${escapeHtml(x.sub)} · ` : ''}${when(x.time)}</small></div></div>`).join('')}</div>`
+            : '<div class="eg2-empty"><i>📖</i><b>Журнал пуст</b><small>Здесь копится всё, что игра посчитала: опыт, отношения, вещи, раны, цели — с причинами.</small></div>';
+    }
+    return seg + body;
 }
 
 // ------------------------------------------------------------------ UI: setup
@@ -1306,24 +1442,18 @@ async function guessStart() {
     const chat = ctx().chat ?? [];
     const opening = chat.filter(x => !x.is_system).slice(0, 3).map(x => `${x.is_user ? 'User' : 'Char'}: ${String(x.mes || '').slice(0, 900)}`).join('\n');
     const today = new Date().toISOString().slice(0, 10);
-    const prompt = `Decide when and where this roleplay starts, from the character card and the opening.
-
-Character: ${ch?.name || ''}
-Description: ${String(ch?.description || '').slice(0, 2500)}
-Scenario: ${String(ch?.scenario || '').slice(0, 1200)}
-Opening:
-${opening.slice(0, 2500)}
-
-Rules: if the story gives a date, year or season, use it. A modern real-world story with no date: today (${today}) or close to it, a time of day that fits the opening. A historical setting: a fitting real year. A fantasy or fictional world: a plausible year in that world's own reckoning, with the era name in "era" (e.g. for Equestria a year counted from Celestia's reign, for Middle-earth "Third Age"); month and day still a normal calendar date. Location: where the opening scene is, 2-4 Russian words. Currency: the world's money as a short symbol or word (₽, $, €, bits, gold, credits). Money: what ${'{{user}}'} plausibly carries.
-Reply with ONE line of JSON: {"date":"YYYY-MM-DD","time":"HH:MM","era":"","location_ru":"","currency":"","money":int,"why_ru":"коротко, почему так"}`;
+    const prompt = P.render('world', {
+        user: ctx().name1, char: ch?.name || '', description: String(ch?.description || '').slice(0, 2500), scenario: String(ch?.scenario || '').slice(0, 1200),
+        opening: opening.slice(0, 2500), today, format: P.render('world_format'),
+    });
     try {
-        const out = await callHelper(ss, 'You set up a story world. Output only JSON.', prompt, 220, { json: true });
+        const out = await callHelper(ss, 'You set up a story world. Output only JSON.', prompt, 260, { json: true });
         const g = E.parseJsonLine(out);
         if (!g || !/^\d{3,4}-\d{2}-\d{2}$/.test(String(g.date || ''))) return null;
         const y = String(g.date).split('-');
         const date = `${y[0].padStart(4, '0')}-${y[1]}-${y[2]}`;
         const time = /^\d{1,2}:\d{2}$/.test(String(g.time || '')) ? String(g.time).padStart(5, '0') : '19:00';
-        const res = { time: `${date}T${time}`, era: String(g.era || '').slice(0, 40), location: String(g.location_ru || '').slice(0, 40), currency: String(g.currency || '').slice(0, 8), money: Math.max(0, Math.round(Number(g.money) || 0)), why: String(g.why_ru || '').slice(0, 140) };
+        const res = { time: `${date}T${time}`, era: String(g.era || '').slice(0, 40), location: String(g.location_ru || '').slice(0, 40), currency: String(g.currency || '').slice(0, 8), money: Math.max(0, Math.round(Number(g.money) || 0)), meal: Math.max(0, Math.round(Number(g.meal) || 0)), day: Math.max(0, Math.round(Number(g.day_wage) || 0)), why: String(g.why_ru || '').slice(0, 140) };
         if (m) { m.elephant_game_guess = res; ctx().saveMetadataDebounced?.(); }
         return res;
     } catch (e) {
@@ -1364,16 +1494,16 @@ function openSetup(editing = false) {
         $('#eg-setup .eg-sheet-body').html(`
             <h3 class="eg-title">🎲 ${editing ? 'Настройки игры' : 'Игровой режим'}</h3>
             ${editing ? '' : '<p class="eg-muted">Твой герой с навыками, ранами и целями; персонажи с отношениями и ступенями близости; угрозы, которые растут. Движок считает, модель рассказывает.</p>'}
-            <h4 class="eg-h">Навыки ${editing ? '' : `<small>осталось очков: ${left}</small>`}</h4>
-            <p class="eg-muted">Навыки — это ты в истории: мир и персонажи замечают их в каждом ответе, а кубики решают спорные моменты. На старте до 3, дальше качаются до 6 — очко за каждый уровень, перк каждые 3 уровня.</p>
-            ${Object.entries(E.SKILLS).map(([k, sk]) => `
+            ${editing ? '' : `<h4 class="eg-h">Навыки <small>осталось очков: ${left}</small></h4>
+            <p class="eg-muted eg-small">Навыки — это ты в истории: мир замечает их в каждом ответе, а кубики решают спорные моменты. На старте до 3, дальше до 6: очко за уровень.</p>
+            <div class="eg2-sec">${Object.entries(E.SKILLS).map(([k, sk]) => `
                 <div class="eg-skill-row">
-                    <span>${sk.icon} ${sk.ru} <em class="eg-rank eg-rank-${draft.skills[k]}">${E.RANKS[draft.skills[k]]}</em><small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
-                    ${editing ? `<span class="eg-dots">${pips(draft.skills[k], E.SKILL_MAX, 'eg-dot')}</span>` : `
+                    <i class="eg2-ico">${sk.icon}</i>
+                    <span>${sk.ru} <em class="eg-rank eg-rank-${draft.skills[k]}">${E.RANKS[draft.skills[k]]}</em><small class="eg-skill-hint">${E.TRAITS[k]?.hint || ''}</small></span>
                     <button class="eg-step" data-k="${k}" data-d="-1" ${draft.skills[k] <= 0 ? 'disabled' : ''}>−</button>
                     <span class="eg-dots">${pips(draft.skills[k], E.START_MAX, 'eg-dot')}</span>
-                    <button class="eg-step" data-k="${k}" data-d="1" ${draft.skills[k] >= E.START_MAX || left <= 0 ? 'disabled' : ''}>+</button>`}
-                </div>`).join('')}
+                    <button class="eg-step" data-k="${k}" data-d="1" ${draft.skills[k] >= E.START_MAX || left <= 0 ? 'disabled' : ''}>+</button>
+                </div>`).join('')}</div>`}
             <h4 class="eg-h">Сложность</h4>
             <div class="eg-seg">${Object.entries(E.DIFFICULTY).map(([k, d]) => `<button class="eg-seg-btn ${draft.difficulty === k ? 'eg-on' : ''}" data-diff="${k}">${d.ru}</button>`).join('')}</div>
             <p class="eg-muted eg-small">${{ story: 'Проверки легче на 2, смерти нет.', standard: 'Честные шансы. Смерть — только после предупреждения.', brutal: 'Проверки тяжелее, мир безжалостнее.' }[draft.difficulty]}</p>
@@ -1394,6 +1524,8 @@ function openSetup(editing = false) {
             </div>`}
             <h4 class="eg-h">Сюжет</h4>
             <label class="eg-check-opt"><input type="checkbox" id="eg_eroge" ${draft.eroge ? 'checked' : ''}><span><b>Эроге-режим</b><br><small>Сюжет сознательно строит пикантные ситуации, как в классической эроге. Персонажи не отдаются сразу — ступени близости работают как прежде</small></span></label>
+            <label class="eg-check-opt"><input type="checkbox" id="eg_auto" ${S().autoStart ? 'checked' : ''}><span><b>Игра сама включается в новых чатах</b><br><small>Дата, место и деньги подбираются по карточке, навыки можно распределить позже.</small></span></label>
+            <button class="eg2-fbtn eg2-fbtn-wide" data-act="prompts"><i class="fa-solid fa-file-pen"></i><span>Промпты игры<small>посмотреть и изменить инструкции для моделей</small></span></button>
             <h4 class="eg-h">Интерфейс</h4>
             <label class="eg-check-opt"><input type="checkbox" id="eg_card" ${S().checkCard ? 'checked' : ''}><span>Карточка проверки с шансами (иначе бросок автоматически)</span></label>
             <label class="eg-check-opt"><input type="checkbox" id="eg_tracker" ${S().hideTracker ? 'checked' : ''}><span>Прятать строку трекера [🕐 | 📍 | 🌤] — её показывает HUD</span></label>
@@ -1412,6 +1544,7 @@ function openSetup(editing = false) {
             if (g.location) draft.location = g.location;
             if (g.currency) draft.currency = g.currency;
             draft.money = g.money;
+            draft.meal = g.meal; draft.day = g.day;
             guessWhy = g.why ? `🤖 ${g.why}` : '';
         }
         if ($('#eg-setup').hasClass('eg-open')) render();
@@ -1434,12 +1567,14 @@ function openSetup(editing = false) {
         draft.pace = this.dataset.pace;
         render();
     }).on('click', '[data-act="reguess"]', () => runGuess(true))
+        .on('click', '[data-act="prompts"]', () => openPromptsSheet())
         .on('click', '#eg_start', async () => {
         draft.eroge = $('#eg_eroge').prop('checked');
         const s = S();
         s.checkCard = $('#eg_card').prop('checked');
         s.hideTracker = $('#eg_tracker').prop('checked');
         s.juice = $('#eg_juice').prop('checked');
+        s.autoStart = $('#eg_auto').prop('checked');
         ctx().saveSettingsDebounced();
         const c = ctx();
         if (editing) {
@@ -1452,6 +1587,7 @@ function openSetup(editing = false) {
         } else {
             readInputs();
             const initial = E.newState(draft);
+            E.setEcon(initial, draft.meal, draft.day);
             initial.location = draft.location || lastTracker?.location || '';
             if (lastTracker?.weather) initial.weather = lastTracker.weather;
             c.chatMetadata[MODULE] = { active: true, initial, started: Date.now() };
@@ -1512,7 +1648,35 @@ function registerCommands() {
     });
 }
 
+/** New chats start in game mode on their own: the world is read from the card, skills wait as free points. */
+let autoBusy = false;
+async function autoStart() {
+    const c = ctx();
+    if (autoBusy || !S().autoStart || !c.chatMetadata || c.chatMetadata[MODULE]) return;
+    if (c.characterId == null && !c.groupId) return;
+    const real = (c.chat ?? []).filter(m => !m.is_system);
+    if (!real.length || real.length > 3) return;
+    autoBusy = true;
+    const chatId = c.getCurrentChatId?.();
+    try {
+        const g = await guessStart();
+        const now = ctx();
+        if (now.getCurrentChatId?.() !== chatId || !now.chatMetadata || now.chatMetadata[MODULE]) return;
+        const initial = E.newState(g ? { time: g.time, era: g.era, location: g.location, currency: g.currency || undefined, money: g.money } : {});
+        if (g) E.setEcon(initial, g.meal, g.day);
+        initial.unspent = 3;
+        now.chatMetadata[MODULE] = { active: true, initial, started: Date.now(), auto: true };
+        if (now.chat.length) writeSnapshot(now.chat.length - 1, { state: initial });
+        await now.saveMetadata();
+        await now.saveChat();
+        renderHud();
+        hideTrackerLines();
+        toastEnc('🎲 Игра началась · нажми на панель сверху, чтобы распределить навыки', 'gold');
+    } catch (e) { log('auto start failed', e); } finally { autoBusy = false; }
+}
+
 function refresh() {
+    autoStart();
     renderHud();
     renderEnc(isActive() ? currentState() : null);
     hideTrackerLines();
@@ -1532,7 +1696,7 @@ function patchBack() {
 }
 
 export async function init() {
-    S();
+    P.setOverrides(S().prompts);
     const c = ctx();
     const ev = c.eventSource;
     const et = c.eventTypes ?? c.event_types;
@@ -1544,7 +1708,7 @@ export async function init() {
     ensureSheets();
     addHubTile();
     setTimeout(() => { addHubTile(); patchBack(); }, 1500);
-    globalThis.ElephantGame = { isActive, ownsScene: isActive, currentState, openSetup, openStateSheet, openCard, startEncounter: startEncounterFlow, engine: E, encounter: X };
+    globalThis.ElephantGame = { isActive, ownsScene: isActive, currentState, openSetup, openStateSheet, openCard, openPrompts: openPromptsSheet, prompts: P, startEncounter: startEncounterFlow, engine: E, encounter: X };
     refresh();
     log('game mode ready');
 }

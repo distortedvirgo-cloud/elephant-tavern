@@ -11,6 +11,7 @@
  * short beat from the result. Pure functions: the UI and the LLM calls live in index.js.
  */
 import * as E from './engine.js';
+import * as P from './prompts.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -714,86 +715,56 @@ function partnerSheet(state, enc) {
     return `${E.npcLine(n, '{{user}}', state)}\nIntimacy ladder (0-8): ${E.STAGES.map((s, i) => `${i}=${s.id}`).join(', ')}. Ready now up to: ${r.ready}.${n.limits.length ? `\nHer limits: ${n.limits.join(', ')}` : ''}`;
 }
 
-const partsSchema = (nsfw) => nsfw ? '{"name":"her name","power":1-3}' : '{"name":"1-3 words","side":"enemy|ally","power":1-3}';
-const partsRule = (nsfw) => nsfw
-    ? 'participants: every partner actually in the scene (usually one; several only if the narration really has several).'
-    : 'participants: EVERY character actually in the fight from the narration, one entry each (3 goblins = 3 entries "Гоблин 1"..., or "Гоблины ×3" if truly indistinguishable); enemies side "enemy"; companions fighting on ${user}\'s side (a sorceress, a guard) side "ally"; power = how dangerous each one is.';
-const erogeNote = (state) => state?.eroge ? '\n' + E.EROGE_HELPER_NOTE + (state.enc?.participants?.some(p => p.status) ? '\nSomeone in the scene is under a status effect: make 1-2 of the four cards a way to free or protect them (kind defend/item/talk aimed at that character: resist, dispel, cure, pull them away, rescue).' : '') : '';
+const erogeNote = (state) => state?.eroge ? '\n' + E.erogeHelperNote() + (state.enc?.participants?.some(p => p.status) ? '\nSomeone in the scene is under a status effect: make 1-2 of the four cards a way to free or protect them (kind defend/item/talk aimed at that character: resist, dispel, cure, pull them away, rescue).' : '') : '';
+
+/** The card rules for this kind of scene + the shared label rules + what not to repeat. */
+function cardsRules(nsfw, user, recent = []) {
+    const avoid = recent.length ? `\nDo NOT repeat or paraphrase these recent cards (verbs, actions, body parts): ${recent.join('; ')}.` : '';
+    return P.render(nsfw ? 'enc_cards_nsfw' : 'enc_cards_combat', { user }) + '\n' + P.render('enc_cards_labels', { user }) + avoid;
+}
 
 export function startPrompt({ state, kind, partner, narration, card, user, char, forced = false }) {
     const nsfw = kind === 'nsfw';
-    return `An ${nsfw ? 'intimate scene' : 'action encounter'} is starting in an interactive story. Set it up as a mini-game.
-
-${nsfw ? `Variations: duet (mutual lovemaking, both move toward the peak together — the default), duel (a playful or real contest of pleasure: whoever comes first loses — for succubi, rivals, bets, competitive or predatory characters), her_lead (she is dominant and in charge: ${user} must please her and hold out until she allows), your_lead (she is submissive or asks ${user} to take charge; ${user} leads, her trust must hold).` : `Variations: fight (a physical fight), chase (someone runs, someone pursues), standoff (a tense confrontation of nerves, threats or words).`}
-Pick the variation that fits the character and the moment.${forced ? ` She is taking ${user} without asking: pick her_lead or duel, and make one of the four cards a way to break free or push her off (kind defy).` : ''}
-
-Character card (${char}):
-${String(card || '').slice(0, 1800)}
-
-${nsfw ? `Partner record:\n${partnerSheet(state, { partner })}\n` : ''}Last narration:
-<narration>
-${String(narration || '').slice(-1800)}
-</narration>
-
-Reply with ONE line of JSON:
-{"variant":"${nsfw ? 'duet|duel|her_lead|your_lead' : 'fight|chase|standoff'}","participants":[${partsSchema(nsfw)}],"partner":"${nsfw ? 'her name' : 'opponent name, 1-3 words'}","title_ru":"короткое название сцены",${nsfw ? `"prefs":{"loves":[1-2 tags],"likes":[2-4 tags],"dislikes":[1-2 tags]},` : `"power":1-3 (opponent strength: 1 weak, 2 even match, 3 dangerous),"role":"chaser|fleeing",`}
-${optionsSchema(nsfw)}}
-${partsRule(nsfw).replace('${user}', user)}
-${nsfw ? `prefs: her hidden tastes, true to the card, from these tags only: ${TAG_IDS.join(', ')}.` : ''}
-${optionsRules(nsfw, user)}${erogeNote(state)}`;
-}
-
-function optionsSchema(nsfw) {
-    return `"pose_ru":"${nsfw ? 'текущая поза и действие прямо сейчас, 3-7 слов, например «Она сверху, медленно двигается» или «Прижата к стене, его рука под юбкой»' : 'положение сейчас, 3-7 слов, например «Сцепились у стойки»'}","intent":{"who":"кто именно действует","ru":"что она/он сейчас собирается сделать, 4-10 слов","en":"what they are about to do, 1 short sentence, third person","power":1-3${nsfw ? ',"tags":[]' : ''}},
-"options":[{"say":bool,"ru":"ПРОСТАЯ метка, 1-2 слова, до 16 символов («Атаковать», «Поцеловать», «Уклониться», «Раздеть», «Прижать», «Дразнить»); для реплики — короткая фраза в «ёлочках», до 4 слов","detail_ru":"подробно по-русски, одно предложение: что именно делает герой и чем рискует (показывается только после выбора)","risk_ru":"1-3 слова о риске или отдаче, можно пусто","en":"*detailed, specific first-person action in English, 1-2 sentences grounded in the scene; write {target} where the target's name goes*","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[1-3 tags],"stage":0-8,"limit":bool' : ',"item":"item name if it uses one"'}}]`;
-}
-
-function optionsRules(nsfw, user, recent = []) {
-    const avoid = recent.length ? `\nDo NOT repeat or paraphrase these recent cards (verbs, actions, body parts): ${recent.join('; ')}.` : '';
-    const lang = `\nLabels ("ru"): Russian, SIMPLE and SHORT: 1-2 words, at most 16 characters ("Атаковать", "Поцеловать", "Уклониться", "Раздеть", "Прижать", "Дразнить"); spoken cards are a short phrase in «ёлочках», at most 4 words. All the detail goes into "en": it is sent as ${user}'s message, so make it a specific, vivid first-person action (1-2 sentences) using details of the scene; use {target} for the name of whoever the move is aimed at when there are several characters. "risk_ru": 1-3 words about the gamble or the payoff ("рискованно", "может понравиться", "она может отказать", "надёжно"), different on each card.`;
-    return (nsfw
-        ? `Options: exactly 4 cards that are genuinely DIFFERENT from each other, each grounded in a specific detail of the latest narration (her body, her clothes, the place, a prop, ${user}'s inventory, what she just said or did). Required mix:
-1. TENDER or sensual (power 1-2): slow, attentive, a touch or a kiss placed somewhere specific.
-2. BOLD (power 3): the high-risk move that can ruin the mood or blow her away.
-3. SITUATION-CHANGER: a new position, a new place, removing or moving clothing, using the room or an item ${user} carries, a game, a tease, a bit of roleplay, a dare.
-4. VERBAL or TACTICAL: holding back, or turning her telegraphed move (kind redirect or resist).
-SPOKEN LINES: one or two of the four cards are things ${user} SAYS, not does (say: true): a tease, a compliment, a command, a confession, a dirty promise, a question that makes her blush, a challenge; in his own voice, fitting the moment and the variation. For these, ru = the phrase itself in Russian in «ёлочках», at most 4 words ("«Ты дрожишь»"), and en = *the exact words in quotes, plus at most a short tag* (e.g. "I lean in. \"You're shaking. I like that.\""); skill charm (or passion for dirty talk, insight for a question that reads her). A spoken card can be any of the four styles.
-Rotate which style leads from round to round; do not repeat the pattern of the previous round. Follow the variation: duel = every card fights for control (pin, steal the initiative, make her break first); her_lead = obey / please / defy with real stakes (defy can win her over or cost ${user}); your_lead = ${user} leads with care, reads her, asks, builds trust; bold cards risk her trust. ${user}'s skill passion = technique, charm = words, finesse = precise hands, resolve = holding out, insight = reading her. power 1 = light, 3 = intense. stage = the ladder step the act belongs to; never offer acts more than one step above "ready now". limit: true only if it touches one of her limits. The intent is her next move toward ${user}, building from the narration.`
-        : `Options: exactly 4 cards, each specific to the opponent's telegraphed move and to the surroundings in the latest narration:
-1. ATTACK (name the strike and the target).
-2. DEFEND or EVADE aimed at the telegraphed move.
-3. ENVIRONMENT TRICK: use a named object, terrain, light, crowd or a hazard from the narration.
-4. WILDCARD: a bold gamble (power 3), or an item ${user} carries.
-SPOKEN LINES: one of the four cards (two in a standoff) is something ${user} SAYS (say: true): a taunt, a threat, a bluff, a bargain, a calm word, kind talk; ru = the phrase in Russian in «ёлочках», at most 4 words; en = *the exact words in quotes, plus at most a short tag*; skill charm (bluff, persuade), resolve (calm, threat) or insight.
-Do not offer two cards of the same kind. The intent is the opponent's next move, telegraphed so ${user} can react.`) + lang + avoid;
+    const k = nsfw ? 'nsfw' : 'combat';
+    return P.render(`enc_start_${k}`, {
+        user, char,
+        forced: forced ? ` She is taking ${user} without asking: pick her_lead or duel, and make one of the four cards a way to break free or push her off (kind defy).` : '',
+        card: String(card || '').slice(0, 1800),
+        partner_record: nsfw ? partnerSheet(state, { partner }) : '',
+        narration: String(narration || '').slice(-1800),
+        format: P.render(`enc_start_${k}_format`, { user }),
+        cards: cardsRules(nsfw, user),
+        eroge: erogeNote(state),
+    });
 }
 
 export function nextPrompt({ state, narration, user }) {
     const enc = state.enc;
     const nsfw = enc.kind === 'nsfw';
-    const B = enc.bars;
-    return `Mini-game round ${enc.round + 1} of ${VARIANTS[enc.variant].en} between ${user} and ${enc.partner}.
-${nsfw ? partnerSheet(state, enc) : `Opponent strength ${enc.power}/3. ${user} carries: ${E.itemsLine(state) || 'nothing useful'}.`}
-Bars: ${Object.entries(B).map(([k, x]) => `${k} ${x}`).join(', ')}. Last moves: ${enc.log.slice(-3).map(l => l.ru).join('; ') || 'none'}.
-
-Latest narration:
-<narration>
-${String(narration || '').slice(-1600)}
-</narration>
-
-Participants now: ${(enc.participants || []).map(p => `${p.name} (${p.side}, bar ${p.bar})`).join('; ') || 'single opponent'}. Selected target: ${targetName(enc)}.
-Reply with ONE line of JSON: {"participants":[{"name":"","side":"enemy|ally|partner","power":1-3,"gone":bool,"bar":0 only if knocked out}],${optionsSchema(nsfw)}}
-participants: include only NEW arrivals, and anyone knocked out, fled or gone (gone:true or bar 0); otherwise [].
-${optionsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru))}${erogeNote(state)}${enc.forced && nsfw ? `\nShe started this without asking: one of the four cards is always a way to break free or push her off (kind defy)${enc.escape ? ' — he already got partly free once' : ''}.` : ''}`;
+    return P.render('enc_next', {
+        user,
+        round: enc.round + 1, variant: VARIANTS[enc.variant].en, partner: enc.partner,
+        sheet: nsfw ? partnerSheet(state, enc) : `Opponent strength ${enc.power}/3. ${user} carries: ${E.itemsLine(state) || 'nothing useful'}.`,
+        bars: Object.entries(enc.bars).map(([k, x]) => `${k} ${x}`).join(', '),
+        last_moves: enc.log.slice(-3).map(l => l.ru).join('; ') || 'none',
+        narration: String(narration || '').slice(-1600),
+        participants: (enc.participants || []).map(p => `${p.name} (${p.side}, bar ${p.bar})`).join('; ') || 'single opponent',
+        target: targetName(enc),
+        format: P.render(nsfw ? 'enc_next_nsfw_format' : 'enc_next_combat_format', { user }),
+        cards: cardsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru)),
+        eroge: erogeNote(state),
+        forced: enc.forced && nsfw ? `\nShe started this without asking: one of the four cards is always a way to break free or push her off (kind defy)${enc.escape ? ' — he already got partly free once' : ''}.` : '',
+    });
 }
 
 export function classifyPrompt({ state, action, narration, user }) {
     const enc = state.enc;
     const nsfw = enc.kind === 'nsfw';
-    return `In a ${VARIANTS[enc.variant].en} mini-game, ${user} wrote their own move. Classify it as one option card.
-${nsfw ? partnerSheet(state, enc) : ''}
-Narration: ${String(narration || '').slice(-800)}
-${user}'s move: ${String(action || '').slice(0, 600)}
-Selected target: ${targetName(enc)}.
-Reply with ONE line of JSON: {"ru":"1-2 слова, до 16 символов","en":"the move, 1-2 specific sentences","skill":"${nsfw ? 'passion|charm|finesse|resolve|insight' : 'might|finesse|insight|charm|resolve|lore'}","power":1-3,"kind":"${nsfw ? KINDS_NSFW.join('|') : KINDS_COMBAT.join('|')}"${nsfw ? ',"tags":[from: ' + TAG_IDS.join(', ') + '],"stage":0-8,"limit":bool' : ',"item":""'}}`;
+    return P.render('enc_classify', {
+        user, variant: VARIANTS[enc.variant].en,
+        sheet: nsfw ? partnerSheet(state, enc) : '',
+        narration: String(narration || '').slice(-800), action: String(action || '').slice(0, 600),
+        target: targetName(enc),
+        format: P.render(nsfw ? 'enc_classify_nsfw_format' : 'enc_classify_combat_format', { user }),
+    });
 }
