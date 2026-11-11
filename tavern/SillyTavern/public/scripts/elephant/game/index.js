@@ -566,7 +566,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
     const P = enc.participants || [];
     const tgt = X.targetOf(enc);
     const min = Boolean(S().encMin);
-    const chip = (p) => `<button class="eg-tgt${p.name === enc.target ? ' eg-on' : ''}${p.bar <= 0 && p.side !== 'partner' ? ' eg-down' : ''}" data-tgt="${escapeHtml(p.name)}">${p.side === 'ally' ? '🛡' : p.side === 'partner' ? '💗' : '👹'} ${escapeHtml(p.name)}${p.status ? ` <em class="eg-st">${X.STATUSES[p.status.id]} ·${p.status.left}</em>` : ''} <i class="eg-tgt-bar"><b style="width:${Math.max(0, Math.min(100, p.side === 'ally' ? p.bar : p.bar))}%"></b></i></button>`;
+    const chip = (p) => `<button class="eg-tgt${p.name === enc.target ? ' eg-on' : ''}${p.bar <= 0 && p.side !== 'partner' ? ' eg-down' : ''}" data-tgt="${escapeHtml(p.name)}">${p.side === 'ally' ? '🛡' : p.side === 'partner' ? '💗' : '👹'} ${escapeHtml(p.name)}${E.status.listOf(p).map(x => ` <em class="eg-cond">${E.status.STATUSES[x.id].icon}${x.left}</em>`).join('')} <i class="eg-tgt-bar"><b style="width:${Math.max(0, Math.min(100, p.side === 'ally' ? p.bar : p.bar))}%"></b></i></button>`;
     const targets = enc.status === 'active' ? `<div class="eg-tgts"><span>🎯</span>${P.map(chip).join('')}<button class="eg-tgt eg-tgt-add" data-act="tgt-add" aria-label="Добавить цель">+</button></div>` : '';
     const topBars = (v.bars.filter(k => B[k] != null).slice(0, 2)).map(k => { const b = X.BARS[k]; const mn = b.min ?? 0, mx = b.max ?? 100; return `<i class="eg-thin eg-eb-${k}" title="${b.ru}"><b style="width:${Math.max(0, Math.min(100, Math.round((B[k] - mn) / (mx - mn) * 100)))}%"></b></i>`; }).join('');
     const waiting = loading || (!enc.options?.length && enc.status === 'active');
@@ -580,7 +580,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
                 <b class="eg-elabel">${o.say ? '💬 ' : ''}${escapeHtml(o.ru)}</b>
                 ${o.detail_ru ? `<span class="eg-edetail">${escapeHtml(o.detail_ru)}</span>` : o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
                 ${fx.length ? `<span class="eg-efx">${fx.map(x => `<i>${escapeHtml(x)}</i>`).join('')}</span>` : ''}
-                <small>${E.SKILLS[o.skill]?.icon || ''} <b class="eg-pct" data-p="${pct >= 70 ? 'hi' : pct >= 45 ? 'mid' : 'lo'}">${pct}%</b>${set.locked ? ' · 🔒 рано' : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
+                <small>${E.SKILLS[o.skill]?.icon || ''} <b class="eg-pct" data-p="${pct >= 70 ? 'hi' : pct >= 45 ? 'mid' : 'lo'}">${pct}%</b>${set.locked ? ' · 🔒 рано' : ''}${set.blocked ? ` · ⛓ ${escapeHtml(set.blocked)}` : ''}${set.open ? ' · 🎯 беззащитен' : ''}${o.inflict ? ` · ${E.status.STATUSES[o.inflict].icon}` : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
             </button>`;
         }).join('');
     if (min) {
@@ -599,6 +599,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
         ${enc.pose ? `<div class="eg-pose">${enc.kind === 'nsfw' ? '🌀' : '📍'} ${escapeHtml(enc.pose)}</div>` : ''}
         ${enc.forced ? `<div class="eg-forced">⚠️ ${escapeHtml(enc.partner)} не спрашивает${enc.escape ? ' · ты почти вырвался' : ' · вырваться: 2 удачных рывка'}</div>` : ''}
         ${enc.intent && !loading ? `<div class="eg-intent">${enc.kind === 'nsfw' ? '💭' : '⚠️'} <b>${escapeHtml(enc.intent.who || enc.partner)}:</b> ${escapeHtml(enc.intent.ru)}</div>` : ''}
+        ${E.status.listOf(st).length ? `<div class="eg-forced">${E.status.chips(st).map(c => `${c.icon} ${c.ru} (${c.left})`).join(' · ')} — ${escapeHtml((E.status.chips(st).find(c => E.status.STATUSES[c.id].block) || E.status.chips(st)[0]).cure)}</div>` : ''}
         ${enc.edge && !waiting ? `<div class="eg-edge-line">⚡ Преимущество: следующий ${enc.kind === 'nsfw' ? 'шаг' : 'удар'} легче и в полтора раза сильнее</div>` : ''}
         ${waiting ? '' : targets}
         <div class="eg-ecards">${cards}</div>
@@ -1019,8 +1020,9 @@ function noteLines(notes = [], state = null) {
             case 'dislike': out.push({ text: `👎 ${n.name} не нравится: ${n.text}`, tone: 'warn' }); break;
             case 'enc_peak': out.push({ text: `💦 ${n.name}: пик${n.n > 1 ? ` ×${n.n}` : ''}!`, tone: 'gold' }); break;
             case 'enc_you_peak': out.push({ text: '🔥 Ты не сдержался', tone: 'warn' }); break;
-            case 'status': out.push({ text: `✨ ${n.name}: ${X.STATUSES[n.id]}`, tone: 'bad' }); break;
-            case 'status_end': out.push({ text: `🔓 ${n.name} свободна`, tone: 'good' }); break;
+            case 'status': { const d = E.status.STATUSES[n.id]; out.push({ text: `${d?.icon || '✨'} ${n.name || 'Ты'}: ${n.name ? d?.noun : d?.ru}`, sub: d ? `${d.cure} · ${n.left || d.left} ход.` : '', tone: 'bad' }); break; }
+            case 'status_end': { const d = E.status.STATUSES[n.id]; out.push({ text: n.name ? `🔓 ${n.name}: ${d?.noun} прошло` : `🔓 Ты больше не ${d?.ru}`, tone: 'good' }); break; }
+            case 'helpless': { const d = E.status.STATUSES[n.id]; out.push({ text: `${d?.icon || '⛓'} ${n.name} не может действовать`, sub: d?.noun || '', tone: 'good' }); break; }
             case 'molest': out.push({ text: `🫳 Враг распускает руки: ${n.name}`, tone: 'warn' }); break;
             case 'ally_hit': out.push({ text: `💢 ${n.name}: доверие −5`, tone: 'bad' }); break;
             case 'enc_limit': out.push({ text: `🚫 ${n.name}: это — нет`, tone: 'bad' }); break;
@@ -1355,6 +1357,7 @@ function heroHtml(s) {
             <button class="eg2-stat" data-hint="st"><small>Силы</small><b>${s.spent ? 'Выдохся' : `${E.energyOf(s)} из ${E.STRESS_MAX}`}</b><span>${pips(E.energyOf(s), E.STRESS_MAX, 'eg-pip eg-pip-st')}</span></button>
             <button class="eg2-stat" data-hint="mn"><small>Деньги</small><b>${escapeHtml(s.currency)} ${s.money}</b><span class="eg-muted">${s.ledger?.length ? `${s.ledger.at(-1).amount > 0 ? '+' : '−'}${Math.abs(s.ledger.at(-1).amount)} недавно` : 'что это?'}</span></button>
         </div>
+        ${E.status.listOf(s).length ? `<div class="eg2-pills">${E.status.chips(s).map(c => `<span class="eg2-pill eg2-pill-bad">${c.icon} ${c.ru} · ${c.left} ход. · ${escapeHtml(c.cure)}</span>`).join('')}</div>` : ''}
         ${Object.entries(hints).map(([k, t]) => `<p class="eg2-hint" data-for="${k}" hidden>${t}</p>`).join('')}
         <div class="eg-enc-start">${s.enc ? '<span class="eg-muted">Идёт сцена — панель над полем ввода</span>' : '<button class="eg-btn eg-btn-soft" data-enc="nsfw">💗 Сцена близости</button><button class="eg-btn eg-btn-soft" data-enc="combat">⚔️ Бой</button>'}</div>
         <h4 class="eg-h">Навыки <small>от 0 до ${E.SKILL_MAX}, очко за уровень</small></h4>

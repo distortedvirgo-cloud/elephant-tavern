@@ -121,6 +121,8 @@ export function negativeFor(prompt, base = '') {
 /* Style presets (research: Anima's default look is neutral; era and source tags give it a real anime look,
    "anime coloring" keeps it from glossy AI slop). */
 export const STYLES = {
+    // The user's pick: two artists blended so it is nobody's single style (tested on Anima, 1K).
+    csr: 'masterpiece, best quality, newest, @cutesexyrobutts, @krekkov, mature female, tall female',
     // Bold lineart, flat colour, adult proportions (picked in tests against the user's references: tall bodies, no chibi).
     bold: 'masterpiece, best quality, newest, bold lineart, flat color, cel shading, shiny skin, warm colors, mature female, tall female, long legs, realistic proportions',
     flat: 'masterpiece, best quality, newest, flat color, bold lineart, thick lineart, simple shading, shiny skin, mature female, tall female, realistic proportions',
@@ -139,11 +141,12 @@ export const STYLES = {
 /** Pushes the non-anime styles away from the anime look the model defaults to. */
 const NO_SIGN = 'signature, artist name, twitter username, patreon username, watermark, logo';
 const TALL = 'chibi, child, petite, short, big head, white outline, sticker';
-const STYLE_NEGATIVE = { bold: `${NO_SIGN}, ${TALL}`, flat: `${NO_SIGN}, ${TALL}, gradient, soft shading`, vivid: `${NO_SIGN}, ${TALL}, anime screenshot, soft shading`, glossy: `${NO_SIGN}, chibi, big head`, glossy_plump: NO_SIGN, glossy_soft: NO_SIGN, western: 'anime screenshot, anime coloring, chibi', comic: 'anime screenshot, anime coloring, chibi', semireal: 'anime screenshot, chibi' };
+const MARKS = 'patreon logo, web address, signature, artist name, twitter username, patreon username, watermark, logo';
+const STYLE_NEGATIVE = { csr: `${MARKS}, chibi, child, petite, big head, white outline, sticker, border, letterboxed, multiple views, panels, split screen`, bold: `${NO_SIGN}, ${TALL}`, flat: `${NO_SIGN}, ${TALL}, gradient, soft shading`, vivid: `${NO_SIGN}, ${TALL}, anime screenshot, soft shading`, glossy: `${NO_SIGN}, chibi, big head`, glossy_plump: NO_SIGN, glossy_soft: NO_SIGN, western: 'anime screenshot, anime coloring, chibi', comic: 'anime screenshot, anime coloring, chibi', semireal: 'anime screenshot, chibi' };
 export const styleNegative = (settings) => STYLE_NEGATIVE[settings?.style] || '';
 
 export function stylePrefixFor(settings) {
-    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.bold);
+    const base = settings.style === 'custom' ? (settings.stylePrefix || '') : (STYLES[settings.style] || STYLES.csr);
     const artist = String(settings.artist || '').trim();
     const at = artist ? (artist.startsWith('@') ? artist : `@${artist}`) : '';
     return [base.trim(), at].filter(Boolean).join(', ');

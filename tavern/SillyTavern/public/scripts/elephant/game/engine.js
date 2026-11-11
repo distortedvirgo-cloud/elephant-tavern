@@ -9,6 +9,7 @@
 import { MOOD_IDS } from '../stage/scene.js';
 
 import * as P from './prompts.js';
+import * as ST from './status.js';
 
 export const SKILLS = {
     might:   { ru: 'Сила',     icon: '💪', en: 'Might' },
@@ -318,6 +319,7 @@ export function ensureNpc(n) {
     n.schedule ??= null;
     n.dislikes ??= [];
     n.aliases ??= [];
+    n.statuses ??= [];
     n.other ??= {};
     n.other.counts ??= {}; n.other.partners ??= []; n.other.orgasms ??= 0; n.other.past ??= null; n.other.sess ??= null; n.other.last ??= null;
     n.sess ??= null;
@@ -519,6 +521,7 @@ export function ensureState(s) {
     if (s.v < 4) { for (const n of Object.values(s.npcs || {})) ensureNpc(n); dedupeNpcs(s); }
     if (s.v < 5) { s.stress = clamp(Math.round((s.stress || 0) * 6 / 9), 0, STRESS_MAX); s.spent = s.stress >= STRESS_MAX; }
     s.spent ??= false;
+    s.statuses ??= [];
     s.v = 5;
     s.eroge ??= true;
     s.econ ??= null;
@@ -579,7 +582,12 @@ export function consumeItem(s, name, userName = 'The player') {
     const g = s.gear?.[name];
     if (!g || !ITEM_EFFECTS[g.effect]) return null;
     const notes = [];
-    if (g.effect === 'heal') { if (!(s.harm > 0)) return null; notes.push({ kind: 'harm', from: s.harm, to: s.harm - 1 }); s.harm -= 1; }
+    if (g.effect === 'heal') {
+        const sick = ['poisoned', 'bleeding'].filter(id => ST.has(s, id));
+        if (!(s.harm > 0) && !sick.length) return null;
+        for (const id of sick) { ST.remove(s, id); notes.push({ kind: 'status_end', name: '', id }); }
+        if (s.harm > 0) { notes.push({ kind: 'harm', from: s.harm, to: s.harm - 1 }); s.harm -= 1; }
+    }
     if (g.effect === 'calm') { if (!(s.stress > 0)) return null; strain(s, -3, notes, name); }
     useItem(s, name, 1, notes);
     s.pending = [...(s.pending || []), `${userName} used ${name} (${g.effect === 'heal' ? 'wounds treated' : 'nerves settled'}; already counted)`];
@@ -653,6 +661,7 @@ export function newState(setup = {}) {
     return {
         v: 5,
         spent: false,
+        statuses: [],
         pace: PACES[setup.pace] ? setup.pace : 'medium',
         eroge: setup.eroge === undefined ? true : Boolean(setup.eroge),
         econ: null,
@@ -694,7 +703,7 @@ export function tierOf(trust) {
 
 /** Modifier the player gets for a skill right now (skill + harm penalty). */
 export function modifier(state, skill) {
-    return (state.skills?.[skill] ?? 1) + HARM[clamp(state.harm, 0, 3)].penalty + (gearFor(state, skill)?.bonus || 0) - (state.spent ? 1 : 0);
+    return (state.skills?.[skill] ?? 1) + HARM[clamp(state.harm, 0, 3)].penalty + (gearFor(state, skill)?.bonus || 0) - (state.spent ? 1 : 0) + ST.modOf(state);
 }
 
 // ------------------------------------------------------------------ gear
@@ -1085,6 +1094,20 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
     const events = [];
     s.turn += 1;
     sweepClocks(s);
+    // conditions: one turn passes (hours of story time pass faster), poison and bleeding drain the hero
+    const ticks = 1 + Math.min(12, Math.floor((Number(report?.minutes) || 0) / 60));
+    for (const id of ST.tick(s, ticks)) notes.push({ kind: 'status_end', name: '', id });
+    for (const n of Object.values(s.npcs)) for (const id of ST.tick(n, ticks)) notes.push({ kind: 'status_end', name: n.name, id });
+    if (ST.dotOf(s) && s.turn % 3 === 0) strain(s, 1, notes, ST.has(s, 'poisoned') ? 'яд' : 'кровь');
+    for (const c of (Array.isArray(report?.statuses) ? report.statuses : []).slice(0, 4)) {
+        const who = String(c?.who || '').trim();
+        const hero = !who || /^(\{\{user\}\}|user|player|hero|you)$/i.test(who) || (userName && sameName(who, userName));
+        const holder = hero ? s : resolveNpc(s, who);
+        const id = ST.statusId(c?.id);
+        if (!holder || !id) continue;
+        if (c.on === false) { if (ST.remove(holder, id)) notes.push({ kind: 'status_end', name: hero ? '' : holder.name, id }); }
+        else if (!ST.has(holder, id)) { const e = ST.add(holder, id, { by: c.by }); notes.push({ kind: 'status', name: hero ? '' : holder.name, id, left: e.left }); }
+    }
     const xp = (n, why) => { if (n > 0) { s.xp += n; notes.push({ kind: 'xp', delta: n, why }); } };
     const learner = hasPerk(s, 'fast_learner') ? 1 : 0;
     // A new scene starts with a scene change or a big jump in time; the intimacy pace counts per scene.
@@ -1473,12 +1496,20 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
         if (ev.kind === 'clock_full' && ev.clock.kind === 'progress') lines.push(`MILESTONE REACHED: "${ev.clock.name}" is achieved — let it land.`);
         if (ev.kind === 'breakdown') lines.push(`${userName}'s nerves snap — show a brief loss of composure (do not dictate their words).`);
     }
+    const cond = conditionsLine(state, userName);
+    if (cond) lines.push(`${cond} Show each condition in how they move, speak and look.`);
     const extra = P.render('narrator_extra', { user: userName }).trim();
     if (extra) lines.push(extra);
     return lines.join('\n');
 }
 
 // ------------------------------------------------------------------ referee / extractor prompts
+
+/** "CONDITIONS: Igor is POISONED…; Mara is BOUND…" for every prompt that must respect them. */
+export function conditionsLine(state, userName = '{{user}}') {
+    const parts = [ST.describe(userName, state), ...Object.values(state.npcs || {}).filter(n => n.present !== false || ST.listOf(n).length).map(n => ST.describe(n.name, n))].filter(Boolean);
+    return parts.length ? `CONDITIONS (binding): ${parts.join('; ')}. Nobody does what their condition forbids until it ends or they are cured or freed.` : '';
+}
 
 export function stateSummary(state0) {
     const state = ensureState(clone(state0));
@@ -1490,7 +1521,7 @@ export function stateSummary(state0) {
         const r = readiness(n, ro);
         return `${n.name} (${tierOf(n.trust).en}, trust ${n.trust}, affection ${n.affection}, attraction ${n.attraction}, arousal ${n.lust}, openness ${n.openness}, intimacy reached: ${STAGE_IDS[r.reached]}, willing now up to: ${STAGE_IDS[r.ready]}${n.experience ? `, ${n.experience}` : ''})`;
     }).join('; ') || 'none';
-    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, energy ${energyOf(state)}/${STRESS_MAX}${state.spent ? ' (spent)' : ''}. Skills (0-6): ${skills}. Money: ${state.money} ${state.currency} (price scale: ${scaleLine(state)}). Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
+    return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, energy ${energyOf(state)}/${STRESS_MAX}${state.spent ? ' (spent)' : ''}.${conditionsLine(state, '{{user}}') ? ` ${conditionsLine(state, '{{user}}')}` : ''} Skills (0-6): ${skills}. Money: ${state.money} ${state.currency} (price scale: ${scaleLine(state)}). Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
 }
 
 export function refereePrompt({ state, lastNarration, action, user, char }) {
@@ -1520,3 +1551,5 @@ export function parseJsonLine(text) {
         try { return JSON.parse(m[0].replace(/,\s*([}\]])/g, '$1')); } catch { return null; }
     }
 }
+
+export { ST as status };

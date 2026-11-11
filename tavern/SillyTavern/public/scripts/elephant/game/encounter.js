@@ -12,6 +12,7 @@
  */
 import * as E from './engine.js';
 import * as P from './prompts.js';
+import * as ST from './status.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -54,8 +55,10 @@ const TAG_IDS = Object.keys(TAGS);
 // ------------------------------------------------------------------ participants (several foes / partners / allies)
 
 const FOE_BAR = [0, 45, 70, 100];
-export const STATUSES = { paralyzed: 'парализована', charmed: 'очарована', aroused: 'шатает', bound: 'связана', asleep: 'уснула', weakened: 'ослаблена' };
-export const STATUS_EN = { paralyzed: 'paralysed, unable to move', charmed: 'dazed by a charm, unfocused', aroused: 'dizzy and flushed, off balance', bound: 'bound or webbed in place', asleep: 'put to sleep', weakened: 'drained by a weakening curse' };
+/** Conditions an enemy uses in eroge mode to put someone in a predicament. */
+const PREDICAMENTS = ['paralyzed', 'charmed', 'aroused', 'bound', 'asleep', 'weakened'];
+/** Old saves kept one `status` per fighter. */
+function upgrade(p) { if (p && p.status) { ST.add(p, p.status.id, { left: p.status.left }); delete p.status; } return p; }
 export const SIDES = ['enemy', 'ally', 'partner'];
 const foesOf = (enc) => (enc.participants || []).filter(p => p.side === 'enemy');
 const aliveFoes = (enc) => foesOf(enc).filter(p => p.bar > 0);
@@ -69,7 +72,8 @@ export function cleanParticipants(list, kind, state = null, old = []) {
         const name = String(raw?.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
         if (!name) continue;
         const ex = out.find(p => p.name.toLowerCase() === name.toLowerCase());
-        if (raw.gone) { if (ex) out.splice(out.indexOf(ex), 1); continue; }
+        if (ex) upgrade(ex);
+        if (raw.gone) { if (ex && !ST.cannotLeave(ex)) out.splice(out.indexOf(ex), 1); continue; }
         const power = clamp(Math.round(Number(raw.power) || ex?.power || 2), 1, 3);
         if (ex) {
             ex.power = power;
@@ -83,7 +87,7 @@ export function cleanParticipants(list, kind, state = null, old = []) {
         if (side === 'enemy') bar = FOE_BAR[power];
         else if (side === 'ally') bar = 100;
         else { const n = state ? findNpc(state, name) : null; bar = n ? clamp(Math.round((n.lust ?? 30) * 0.5), 0, 50) : 15; }
-        out.push({ name, side, bar, power, peaks: 0 });
+        out.push({ name, side, bar, power, peaks: 0, statuses: [] });
     }
     return out.slice(0, 8);
 }
@@ -186,6 +190,8 @@ export function startEncounter(state, opts = {}) {
         if (variant === 'chase') { bars.distance = 50; delete bars.foe; }
     }
     const participants = cleanParticipants(opts.participants, v.kind, s);
+    // a lone opponent is a participant too: conditions (stunned, bound…) need someone to hold them
+    if (!participants.length && partner !== '?') participants.push({ name: npc?.name || partner, side: v.kind === 'nsfw' ? 'partner' : 'enemy', bar: v.kind === 'nsfw' ? bars.her : (bars.foe ?? 100), power, peaks: 0, statuses: [] });
     if (participants.length) {
         if (v.kind === 'combat' && variant !== 'chase') {
             const f = participants.filter(p => p.side === 'enemy');
@@ -243,6 +249,8 @@ export function cleanIntent(i) {
         en: String(i.en || '').slice(0, 220),
         power: clamp(Math.round(Number(i.power) || 1), 1, 3),
         tags: (Array.isArray(i.tags) ? i.tags : []).map(String).filter(x => TAG_IDS.includes(x)).slice(0, 3),
+        inflict: ST.statusId(i.inflict) || '',
+        target: String(i.target || '').slice(0, 40),
     };
 }
 
@@ -272,6 +280,7 @@ export function cleanOptions(list, kind = 'nsfw') {
         limit: Boolean(o?.limit),
         item: String(o?.item || '').slice(0, 40),
         say: Boolean(o?.say) || /^[«"„]/.test(String(o?.ru || '').trim()),
+        inflict: ST.statusId(o?.inflict) || '',
     })).filter(o => o.en);
 }
 
@@ -280,6 +289,23 @@ export function findNpc(s, name) {
 }
 
 // ------------------------------------------------------------------ odds for a card
+
+/** Why the hero cannot play this card right now (his own condition), or ''. */
+export function heroBlocked(s, enc, option) {
+    const b = ST.blockOf(s);
+    if (!b || !enc) return '';
+    const k = option.kind;
+    const allowed = b === 'act' ? ['defend', 'resist', 'defy'] : b === 'move' ? ['defend', 'resist', 'defy', 'talk', 'please', 'obey'] : ['defend', 'resist', 'defy', 'talk', 'trick', 'flee', 'item', 'please', 'obey', 'redirect', 'act'];
+    if (allowed.includes(k) && !(b === 'attack' && k === 'attack')) return '';
+    const st = ST.listOf(s).find(x => ST.STATUSES[x.id].block === b);
+    return ST.STATUSES[st.id].ru;
+}
+/** The fighter behind the announced move. */
+function actorOf(enc) {
+    const who = enc.intent?.who;
+    const P = enc.participants || [];
+    return (who && P.find(p => E.sameName(p.name, who))) || (enc.kind === 'combat' ? aliveFoes(enc)[0] : targetOf(enc)) || null;
+}
 
 export function optionSetup(state, option, { focus = false } = {}) {
     const s = E.ensureState(clone(state));
@@ -297,13 +323,17 @@ export function optionSetup(state, option, { focus = false } = {}) {
         if (option.stage > r.ready) { locked = true; dc += 2 * (option.stage - r.ready); }
     }
     dc = clamp(dc + E.DIFFICULTY[s.difficulty].dc, 4, 18);
-    const edge = usesEdge(enc, option);
+    const tg = targetOf(enc);
+    const open = Boolean(tg && tg.side !== 'ally' && ST.isOpen(tg) && PAYOFF_KINDS[enc.kind].includes(option.kind));
+    const edge = usesEdge(enc, option) || open;
+    const blocked = heroBlocked(s, enc, option);
+    if (blocked) dc = clamp(dc + 4, 4, 18);
     const canFocus = E.energyOf(s) > 0;
     const mod = E.modifier(s, option.skill) + (edge ? EDGE_MOD : 0) + (focus && canFocus ? FOCUS_MOD : 0);
     const adv = E.hasAdvantage(s, option.skill);
     const lucky = E.hasPerk(s, 'lucky');
     const o = E.odds(mod, dc, 'risky', { adv, lucky });
-    return { dc, mod, adv, lucky, locked, edge, focus: Boolean(focus && canFocus), odds: o };
+    return { dc, mod, adv, lucky, locked, edge, open, blocked, focus: Boolean(focus && canFocus), odds: o };
 }
 
 /**
@@ -445,6 +475,7 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
                 break;
             }
             default: { // act
+                if (option.inflict === 'bound' && mult >= 1 && !refused && tgt) { const e = ST.add(tgt, 'bound', { by: '{{user}}' }); notes.push({ kind: 'status', name: tgt.name, id: 'bound', left: e.left }); }
                 B.her = clamp(B.her + gain, 0, 100);
                 B.you = clamp(B.you + 2 * option.power, 0, 100);
                 if (v === 'duel') B.control = clamp(B.control + (mult >= 1 ? 10 * option.power : -10), -100, 100);
@@ -474,7 +505,11 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
 
         // her move
         const intent = enc.intent;
-        if (intent && intentLands) {
+        const partnerHeld = Boolean(tgt && ST.blockOf(tgt));
+        // the hero strains out of what holds him
+        if (mult >= 1 && ['resist', 'defy'].includes(option.kind)) for (const id of ST.free(s)) notes.push({ kind: 'status_end', name: '', id });
+        if (intent && intentLands && partnerHeld) notes.push({ kind: 'helpless', name: tgt.name, id: ST.listOf(tgt).find(x => ST.STATUSES[x.id].block)?.id });
+        if (intent && intentLands && !partnerHeld) {
             const resistF = 1 - 0.06 * Math.max(0, passion - 1) - (E.hasPerk(s, 'cool') ? 0.1 : 0);
             const domF = PUSH_F[v] * (v === 'duel' ? 1 - (B.control || 0) / 200 : 1);
             B.you = clamp(B.you + Math.round(intent.power * 10 * resistF * domF * intentMult), 0, 100);
@@ -539,23 +574,39 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
             }
             retarget(enc);
         }
-        // eroge: enemies press an advantage; the failed roll can leave an ally (or the hero) harassed or hit by a binding effect
         const victims = (enc.participants || []).filter(p => p.side === 'ally' && p.bar > 0);
-        for (const p of (enc.participants || [])) if (p.status && --p.status.left <= 0) { notes.push({ kind: 'status_end', name: p.name }); delete p.status; }
-        const rescue = tgt && tgt.status && !hitAlly && ['defend', 'item', 'talk', 'trick'].includes(k) && mult >= 1;
-        if (rescue) { notes.push({ kind: 'status_end', name: tgt.name }); delete tgt.status; }
-        if (s.eroge && foesOf(enc).length && (outcome === 'fail' || outcome === 'disaster') && !rescue) {
+        const baseOk = OUT_MULT[outcome] >= 1;
+        // a blow wakes a sleeper; a move that really pins, blinds or scares leaves its mark
+        if (tgt && OUT_MULT[outcome] > 0 && ['attack', 'item'].includes(k) && ST.has(tgt, 'asleep')) { ST.remove(tgt, 'asleep'); notes.push({ kind: 'status_end', name: tgt.name, id: 'asleep' }); }
+        if (option.inflict && baseOk && tgt && tgt.side === 'enemy' && tgt.bar > 0) {
+            const e = ST.add(tgt, option.inflict, { by: '{{user}}' });
+            if (e) { if (outcome === 'crit') e.left += 1; notes.push({ kind: 'status', name: tgt.name, id: e.id, left: e.left }); }
+        }
+        // the hero breaks out of what holds him; an ally is freed by a successful rescue
+        if (baseOk && k === 'defend') for (const id of ST.free(s)) notes.push({ kind: 'status_end', name: '', id });
+        const rescue = tgt && tgt.side === 'ally' && ST.blockOf(tgt) && !hitAlly && ['defend', 'item', 'talk', 'trick'].includes(k) && baseOk;
+        if (rescue) for (const id of ST.free(tgt)) notes.push({ kind: 'status_end', name: tgt.name, id });
+        // poison and bleeding wear a fighter down
+        for (const p of (enc.participants || [])) {
+            const dot = ST.dotOf(p);
+            if (dot && p.bar > 0 && p.side !== 'partner') { p.bar = clamp(p.bar - dot, 0, 100); if (p === targetOf(enc) && B.foe != null) B.foe = p.bar; }
+        }
+        retarget(enc);
+        // eroge: enemies press an advantage; a disastrous roll can leave an ally in a predicament
+        const actor = actorOf(enc);
+        const helpless = Boolean(actor && ST.cannotStrike(actor));
+        if (s.eroge && !helpless && foesOf(enc).length && (outcome === 'fail' || outcome === 'disaster') && !rescue) {
             const vic = (tgt && tgt.side === 'ally' && tgt.bar > 0 ? tgt : null) || victims[Math.floor(Math.random() * victims.length)];
             const by = aliveFoes(enc)[0]?.name || 'the enemy';
-            if (outcome === 'disaster' && vic && !vic.status) {
-                const id = Object.keys(STATUSES)[Math.floor(Math.random() * 6)];
-                vic.status = { id, left: 3 };
-                notes.push({ kind: 'status', name: vic.name, id });
+            if (outcome === 'disaster' && vic && !ST.blockOf(vic) && !enc.intent?.inflict) {
+                const e = ST.add(vic, PREDICAMENTS[Math.floor(Math.random() * PREDICAMENTS.length)], { left: 3, by });
+                notes.push({ kind: 'status', name: vic.name, id: e.id, left: e.left });
             }
             complication = 'molest';
             enc.molest = { who: vic?.name || '', by };
             notes.push({ kind: 'molest', name: vic?.name || '{{user}}' });
         }
+        if (helpless) { intentLands = false; notes.push({ kind: 'helpless', name: actor.name, id: ST.listOf(actor).find(x => ST.STATUSES[x.id].block)?.id }); }
         if (outcome === 'crit') intentLands = false;
         else if ((outcome === 'success' || outcome === 'near') && ['defend', 'flee'].includes(k)) intentLands = false;
         else if (outcome === 'success' && k === 'trick') intentLands = false;
@@ -578,6 +629,11 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
                 if (outcome === 'disaster') stress += 1;
             }
         }
+        if (intent?.inflict && intentLands && OUT_MULT[outcome] < 0.6) {
+            const vname = intent.target && (enc.participants || []).find(p => p.side === 'ally' && E.sameName(p.name, intent.target));
+            const e = ST.add(vname || s, intent.inflict, { by: actor?.name || intent.who });
+            if (e) notes.push({ kind: 'status', name: vname ? vname.name : '', id: e.id, left: e.left });
+        }
         if (harm && E.hasPerk(s, 'tough') && outcome === 'disaster') harm -= 1;
         if (stress && E.hasPerk(s, 'cool')) stress = Math.max(0, stress - 1);
         const ev = [];
@@ -587,7 +643,7 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
         if (k === 'item' && option.item) E.useItem(s, option.item, 1, notes);
         const enc2 = s.enc;
         if (ev.some(e => e.kind === 'defeat')) { enc2.status = 'lost'; enc2.defeat = true; }
-        else if (k === 'flee' && mult >= 1 && v !== 'chase') enc2.status = 'fled';
+        else if (k === 'flee' && mult >= 1 && v !== 'chase' && !ST.cannotLeave(s)) enc2.status = 'fled';
         else if (v === 'chase' && B.distance <= 0) enc2.status = enc2.role === 'chaser' ? 'won' : 'lost';
         else if (v === 'chase' && B.distance >= 100) enc2.status = enc2.role === 'chaser' ? 'lost' : 'won';
         else if (B.foe != null && (enc2.participants?.length ? !aliveFoes(enc2).length : B.foe <= 0)) enc2.status = 'won';
@@ -597,6 +653,7 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
         s.enc.bars = B;
     }
     const encNow = s.enc;
+    for (const p of (encNow.participants || [])) { upgrade(p); for (const id of ST.tick(p)) notes.push({ kind: 'status_end', name: p.name, id }); }
     // an opening: a successful set-up move (or any brilliant one) makes the next strike easier and stronger
     const baseMult = OUT_MULT[outcome];
     if (!refused && !usedEdge && ((baseMult >= 1 && makesEdge(encNow, option)) || outcome === 'crit')) { encNow.edge = true; notes.push({ kind: 'edge' }); }
@@ -609,7 +666,7 @@ export function resolveRound(state, option0, { dice = null, free = false, focus 
         hitAlly,
         option: { ru: option.ru, en: option.en, skill: option.skill, power: option.power, kind: option.kind, tags: option.tags },
         free,
-        dice: roll, dc: set.dc, mod: set.mod, adv: set.adv, usedEdge, focus: set.focus, edge: Boolean(encNow.edge),
+        dice: roll, dc: set.dc, mod: set.mod, adv: set.adv, blocked: set.blocked, usedEdge, focus: set.focus, edge: Boolean(encNow.edge),
         outcome,
         effect,
         refused,
@@ -724,9 +781,12 @@ export function encounterBlock(state, userName = '{{user}}') {
         const band = (p) => enc.kind === 'nsfw' ? bandHer(p.bar) : p.side === 'ally' ? (p.bar <= 0 ? 'knocked out' : p.bar <= 40 ? 'battered' : 'holding up') : (p.bar <= 0 ? 'down' : p.bar <= 25 ? 'nearly broken' : p.bar <= 60 ? 'hurt' : 'still strong');
         lines.push(`WHO IS HERE: ${P.map(p => `${p.name} (${p.side}, ${band(p)})`).join('; ')}. ${u}'s move this round was aimed at ${who}; the others act around it, in character.`);
     }
-    const sts = P.filter(p => p.status);
-    if (sts.length) lines.push(`STATUS: ${sts.map(p => `${p.name} is ${STATUS_EN[p.status.id]} (${p.status.left} more rounds unless freed)`).join('; ')}. Show it in the beat. This is a predicament to escape or be rescued from — a status is only a combat debuff.`);
-    if (r.notes.some(n => n.kind === 'status')) lines.push(`NEW EFFECT: ${r.notes.filter(n => n.kind === 'status').map(n => `${n.name} is hit by a ${STATUS_EN[n.id]} effect`).join('; ')} — the enemy's spell, venom, web or potion lands; describe it.`);
+    const cond = [...P.filter(p => ST.listOf(p).length).map(p => ST.describe(p.name, p)), ST.describe(u, state)].filter(Boolean);
+    if (cond.length) lines.push(`CONDITIONS (binding): ${cond.join('; ')}. Nobody does what their condition forbids: no blow, no escape, no getting up, no turning the tables until it ends or they are freed. Show the condition in the beat.`);
+    for (const n of r.notes.filter(x => x.kind === 'status')) lines.push(`NEW CONDITION: ${n.name || u} is now ${n.id.toUpperCase()} — show exactly how it happened in this beat.`);
+    for (const n of r.notes.filter(x => x.kind === 'status_end')) lines.push(`${n.name || u} is no longer ${n.id}: show them shaking it off or being freed.`);
+    for (const n of r.notes.filter(x => x.kind === 'helpless')) lines.push(`${n.name} is ${n.id} and cannot carry out their move this round: show them helpless, struggling or dazed instead.`);
+    if (enc.status === 'active') lines.push(`The ${enc.kind === 'nsfw' ? 'scene' : 'encounter'} is NOT over: in this beat nobody leaves, flees, yields, faints, is knocked out, calls it off or finishes it — the game decides when it ends, and it will say so.${enc.kind === 'nsfw' ? ` Her clear "stop" always counts: if ${who} wants it to end, she says so in words and the beat honours it.` : ''}`);
     if (r.hitAlly) lines.push(`${u} turned on his ally ${who}: show her shock, hurt or anger; she may fight back or lose trust in him.`);
     const act = r.free ? `${u}'s own move` : `${u}'s move ("${r.option.en.replace(/\{target\}/g, who).replace(/^\*|\*$/g, '')}")`;
     if (r.refused) lines.push(`THIS ROUND: ${act} — ${who} stops it or turns it down: ${enc.kind === 'nsfw' ? 'not that, not now; in character, the mood dips but she stays in the scene' : 'it fails'}.`);
@@ -757,7 +817,7 @@ export function encounterBlock(state, userName = '{{user}}') {
         const end = {
             won: enc.kind === 'nsfw' ? (enc.variant === 'her_lead' ? `${who} finally allows ${u} to finish. This is the last beat of the scene: let it land, then the afterglow.` : `This is the last beat of the scene: the release lands, then the afterglow.`) : `${u} wins: ${who} is beaten, gives up or is caught. Last beat of the encounter.`,
             early: `${u} came before her. Last beat of the scene: she reacts in character (teasing, amused, a little frustrated, or kind), afterglow.`,
-            lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? `${who} stops the scene: it went too far for her. Last beat: she pulls back, in character.` : `${who} wins this one. Last beat: she savours her victory, in character.`) : `${u} loses this ${v.en.replace(/^a /, '')}: the worst plausible outcome lands. Last beat of the encounter.`,
+            lost: enc.kind === 'nsfw' ? (enc.variant === 'your_lead' ? `${who} stops the scene: it went too far for her. Last beat: she says stop (if she is bound or held, the word is enough and ${u} lets go at once), in character.` : `${who} wins this one. Last beat: she savours her victory, in character.`) : `${u} loses this ${v.en.replace(/^a /, '')}: the worst plausible outcome lands. Last beat of the encounter.`,
             draw: 'They break together. Last beat of the scene, then the afterglow.',
             fled: enc.kind === 'nsfw' ? `${u} breaks free and stops it. Last beat: ${who} reacts in character (amused, offended, hungry for a next time, or backing off).` : `${u} gets away. Last beat of the encounter.`,
             ended: 'This is the last beat of the encounter: wind it down.',
@@ -778,7 +838,18 @@ function partnerSheet(state, enc) {
     return `${E.npcLine(n, '{{user}}', state)}\nIntimacy ladder (0-8): ${E.STAGES.map((s, i) => `${i}=${s.id}`).join(', ')}. Ready now up to: ${r.ready}.${n.limits.length ? `\nHer limits: ${n.limits.join(', ')}` : ''}`;
 }
 
-const erogeNote = (state) => state?.eroge ? '\n' + E.erogeHelperNote() + (state.enc?.participants?.some(p => p.status) ? '\nSomeone in the scene is under a status effect: make 1-2 of the four cards a way to free or protect them (kind defend/item/talk aimed at that character: resist, dispel, cure, pull them away, rescue).' : '') : '';
+const erogeNote = (state) => (state?.eroge ? '\n' + E.erogeHelperNote() : '') + conditionsNote(state);
+/** Conditions in play, for the card designer: who cannot act, and what the hero's own cards must be. */
+function conditionsNote(state) {
+    const enc = state?.enc;
+    if (!enc) return '';
+    const held = (enc.participants || []).filter(p => ST.listOf(p).length);
+    const lines = [];
+    if (held.length) lines.push(`Conditions: ${held.map(p => ST.describe(p.name, p)).join('; ')}. A character cannot do what their condition forbids: the announced move ("intent") must come from someone who is able to act, or be that character struggling against the condition; nobody under a condition leaves the scene ("gone").`);
+    if (held.some(p => p.side === 'ally' && ST.blockOf(p))) lines.push('An ally is held by a condition: make one or two of the four cards a way to free or protect them (kind defend, item, talk or trick aimed at that ally).');
+    if (ST.listOf(state).length) lines.push(`{{user}}'s own conditions: ${ST.describe('{{user}}', state)}. ${ST.blockOf(state) ? 'At least two of the four cards are ways to break free or resist (kind defend); the others only what the condition still allows.' : 'The cards reflect it.'}`);
+    return lines.length ? '\n' + lines.join('\n') : '';
+}
 
 /** The card rules for this kind of scene + the shared label rules + what not to repeat. */
 function cardsRules(nsfw, user, recent = []) {
@@ -811,7 +882,7 @@ export function nextPrompt({ state, narration, user }) {
         bars: Object.entries(enc.bars).map(([k, x]) => `${k} ${x}`).join(', '),
         last_moves: enc.log.slice(-3).map(l => l.ru).join('; ') || 'none',
         narration: String(narration || '').slice(-1600),
-        participants: (enc.participants || []).map(p => `${p.name} (${p.side}, bar ${p.bar})`).join('; ') || 'single opponent',
+        participants: (enc.participants || []).map(p => `${p.name} (${p.side}, bar ${p.bar}${ST.listOf(p).map(x => `, ${x.id.toUpperCase()} ${x.left}`).join('')})`).join('; ') || 'single opponent',
         target: targetName(enc),
         format: P.render(nsfw ? 'enc_next_nsfw_format' : 'enc_next_combat_format', { user }),
         cards: cardsRules(nsfw, user, enc.log.slice(-5).map(l => l.ru)),

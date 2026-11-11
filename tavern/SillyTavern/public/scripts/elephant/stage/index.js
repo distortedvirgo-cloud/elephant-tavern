@@ -42,7 +42,7 @@ const DEFAULTS = {
         every: 8,
         mode: 'auto',  // auto (pov when the player is in the action, else a wide shot) | pov | scene | portrait
         size: 'auto',
-        style: 'bold',      // bold | flat | vivid | glossy | glossy_plump | glossy_soft | western | comic | semireal | anime | art | custom
+        style: 'csr',       // csr | bold | flat | vivid | glossy | glossy_plump | glossy_soft | western | comic | semireal | anime | art | custom
         artist: '',         // optional "@artist" for a specific look
         hires: true,        // 1.5K output: sharper details and anatomy
         stylePrefix: 'masterpiece, best quality',
@@ -72,6 +72,7 @@ export function S() {
     if (!s.images.westernMigrated) { if (s.images.style === 'anime') s.images.style = 'western'; s.images.westernMigrated = true; }
     // 0.9.7: the glossy look from the user's references became the default.
     // 1.4.2: the default look moved to "bold" (taller, adult proportions); only an untouched default is switched
+    if (!s.images.csrMigrated) { if (['bold', 'glossy'].includes(s.images.style) && !s.images.artist) s.images.style = 'csr'; s.images.csrMigrated = true; s.images.boldMigrated = true; }
     if (!s.images.boldMigrated) { if (s.images.style === 'glossy' && !s.images.artist) s.images.style = 'bold'; s.images.boldMigrated = true; }
     s.dnaTag ??= {};
     if (!s.images.glossyMigrated) { if (['anime', 'western'].includes(s.images.style)) s.images.style = 'glossy'; s.images.glossyMigrated = true; }
