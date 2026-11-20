@@ -817,7 +817,7 @@ async function buy(i) {
     writeSnapshot(idx, { state: st });
     await ctx().saveChat();
     renderHud(st);
-    toastEnc(`🛒 ${it.name_ru} — ${it.price} ${st.currency}`, 'good');
+    showNotes(notes.filter(note => note.kind === 'money'));
     haptic('tick');
     openStateSheet('items');
 }
@@ -845,13 +845,18 @@ async function handleDefeat(index, state, cutFrom = index) {
 
 // ------------------------------------------------------------------ UI: HUD
 
+// The reward objects are decorative. Amounts and currencies stay in the text layer.
+const coinToken = '<span class="eg-piece" aria-hidden="true"><span class="eg-coin"><i></i><i></i><i></i><i></i></span></span>';
+const gemToken = `<span class="eg-piece" aria-hidden="true"><span class="eg-gem">${[0, 90, 180, 270].map(angle =>
+    `<span class="eg-gem-side" style="--angle:${angle}deg"><i></i><i></i></span>`).join('')}</span></span>`;
+
 function ensureHud() {
     if (document.getElementById('eg-hud')) return;
     const hud = $(`
         <div id="eg-hud" role="button" aria-label="Состояние игры">
             <div class="eg-hud-row">
                 <span class="eg-time"></span><span class="eg-sep">·</span><span class="eg-loc"></span>
-                <span class="eg-spacer"></span><span class="eg-weather"></span><span class="eg-money"></span>
+                <span class="eg-spacer"></span><span class="eg-weather"></span><span class="eg-money">${coinToken}<span class="eg-balance"></span></span>
             </div>
             <div class="eg-hud-row eg-hud-stats">
                 <span class="eg-harm"></span><span class="eg-stress"></span>
@@ -893,7 +898,8 @@ function renderHud(state = currentState()) {
     $h.find('.eg-time').text(E.timeRu(state.time));
     $h.find('.eg-loc').text(state.location || '—');
     $h.find('.eg-weather').text(WEATHER_ICON[state.weather] || '');
-    $h.find('.eg-money').text(`${state.currency} ${state.money}`);
+    $h.find('.eg-balance').text(state.currency === '🪙' ? state.money : `${state.currency} ${state.money}`);
+    $h.find('.eg-money').attr('aria-label', `Деньги: ${state.money} ${state.currency}`);
     $h.find('.eg-harm').html(`<b class="eg-lbl">♥</b>${pips(3 - state.harm, 3, 'eg-pip eg-pip-hp')}`).attr('title', E.HARM[state.harm].ru);
     $h.find('.eg-stress').html(`<b class="eg-lbl">⚡</b>${pips(E.energyOf(state), E.STRESS_MAX, 'eg-pip eg-pip-st')}`);
     const clocks = state.clocks.filter(c => c.filled < c.size).sort((a, b) => (b.kind === 'threat') - (a.kind === 'threat') || b.filled / b.size - a.filled / a.size).slice(0, 2);
@@ -1096,8 +1102,13 @@ function noteLines(notes = [], state = null) {
             case 'recovered': out.push({ text: '💪 Силы вернулись', tone: 'good' }); break;
             case 'edge': out.push({ text: '⚡ Преимущество!', sub: 'следующий ход легче и сильнее', tone: 'gold' }); break;
             case 'harm': out.push({ text: n.to > n.from ? `Рана: ${E.HARM[n.to].ru}` : `Легче: ${E.HARM[n.to].ru}`, tone: n.to > n.from ? 'bad' : 'good' }); break;
-            case 'xp': out.push({ text: `+${n.delta} опыта${n.why ? ` · ${n.why}` : ''}`, tone: 'info' }); break;
-            case 'money': { const k = E.MONEY_KINDS[n.op]; out.push({ text: `${k ? k.icon + ' ' : ''}${n.delta > 0 ? '+' : '−'}${Math.abs(n.delta)} ${cur}${k ? ` · ${k.ru}` : ''}`, sub: [n.why, n.who].filter(Boolean).join(' · '), tone: n.delta > 0 ? 'good' : 'bad' }); break; }
+            case 'xp': out.push({ token: gemToken, text: `+${n.delta} опыта${n.why ? ` · ${n.why}` : ''}`, tone: 'info' }); break;
+            case 'money': {
+                const amount = `${n.delta > 0 ? '+' : '−'}${Math.abs(n.delta)}`;
+                const label = E.MONEY_KINDS[n.op]?.ru || 'Деньги';
+                out.push({ token: coinToken, text: `${label} · ${amount}${cur === '🪙' ? '' : ' ' + cur}`, sub: [n.why, n.who].filter(Boolean).join(' · '), tone: n.delta > 0 ? 'good' : 'bad' });
+                break;
+            }
             case 'other': out.push({ text: `👀 ${n.name}: близость с другим`, sub: n.who, tone: 'warn' }); break;
             case 'gift': out.push({ text: `🎁 ${n.name}: подарок принят`, sub: `${n.item} · +${n.affection} 💞`, tone: 'good' }); break;
             case 'item': out.push({ text: `🎒 ${n.delta > 0 ? 'Получено' : 'Ушло'}: ${n.name}${Math.abs(n.delta) > 1 ? ` ×${Math.abs(n.delta)}` : ''}`, tone: n.delta > 0 ? 'good' : 'warn' }); break;
@@ -1113,7 +1124,8 @@ function showNotes(notes = []) {
     const out = noteLines(notes);
     ensureSheets();
     out.slice(0, 5).forEach((t, i) => setTimeout(() => {
-        const el = $(`<div class="eg-toast" data-tone="${t.tone}"><b>${escapeHtml(t.text)}</b>${t.sub ? `<small>${escapeHtml(t.sub)}</small>` : ''}</div>`);
+        const el = $(`<div class="eg-toast" data-tone="${t.tone}">${t.token || ''}<div><b>${escapeHtml(t.text)}</b>${t.sub ? `<small>${escapeHtml(t.sub)}</small>` : ''}</div></div>`);
+        if (t.token) el.addClass('eg-reward').toggleClass('eg-motion', gameMotion());
         $('#eg-toasts').append(el);
         setTimeout(() => el.addClass('eg-out'), 2600);
         setTimeout(() => el.remove(), 3100);

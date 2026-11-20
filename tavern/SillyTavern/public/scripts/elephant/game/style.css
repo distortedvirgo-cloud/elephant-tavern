@@ -809,7 +809,7 @@ body.eg-in-enc #ec-ideas { display: none !important; }
 .eg-deal:nth-child(3) { animation-delay: 70ms; }
 .eg-deal:nth-child(4) { animation-delay: 105ms; }
 @keyframes eg-deal {
-    from { opacity: 0; transform: translateY(8px) rotate(-1.5deg); }
+    from { opacity: 0; transform: perspective(460px) translateY(10px) rotateX(-22deg) rotateZ(-1.5deg); }
     to { opacity: 1; transform: none; }
 }
 #eg-check {
@@ -900,4 +900,65 @@ body.eg-in-enc #ec-ideas { display: none !important; }
 }
 @media (prefers-reduced-motion: reduce) {
     #eg-check, #eg-scrim, #eg-enc, #eg-enc *, #eg-check *, .eg-roll-dialog * { transition-duration: 0s; animation: none !important; }
+}
+
+/* The reward turns once while its amount stays still. */
+.eg-piece {
+    display: inline-grid;
+    place-items: center;
+    position: relative;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 34px;
+    perspective: 190px;
+}
+.eg-coin, .eg-gem, .eg-gem-side { position: relative; display: block; transform-style: preserve-3d; }
+.eg-coin { width: 21px; height: 21px; transform: rotateX(-14deg) rotateY(-24deg) rotateZ(-8deg); }
+.eg-coin > i {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    border-radius: 50%; background: #af772e; border: 1px solid #dba653;
+}
+.eg-coin > i:first-child, .eg-coin > i:last-child {
+    background: linear-gradient(145deg, #fff0a7, #e4ae53 55%, #bd7e36);
+    border-color: #ffe49a; box-shadow: inset 0 0 0 2px #b78337;
+}
+.eg-coin > i:first-child::after, .eg-coin > i:last-child::after { content: '✦'; color: #986020; font: 800 15px/1 Georgia, serif; text-shadow: 0 1px #fff2b8; }
+.eg-coin > i:first-child { transform: translateZ(-3px) rotateY(180deg); }
+.eg-coin > i:nth-child(2) { transform: translateZ(-1px); }
+.eg-coin > i:nth-child(3) { transform: translateZ(1px); }
+.eg-coin > i:last-child { transform: translateZ(3px); }
+.eg-gem { width: 16px; height: 32px; transform: rotateX(-10deg) rotateY(32deg) rotateZ(8deg); }
+.eg-gem-side { position: absolute; inset: 0; transform: rotateY(var(--angle)) translateZ(8px); }
+.eg-gem-side > i { position: absolute; left: 0; width: 100%; height: 50%; }
+.eg-gem-side > i:first-child {
+    top: 0; transform-origin: center bottom; transform: rotateX(30deg);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%); background: linear-gradient(125deg, #d7fcff, #71b9ed);
+}
+.eg-gem-side > i:last-child {
+    bottom: 0; transform-origin: center top; transform: rotateX(-30deg);
+    clip-path: polygon(0 0, 100% 0, 50% 100%); background: linear-gradient(145deg, #649ee1, #664da5);
+}
+.eg-gem-side:nth-child(even) > i:first-child { background: linear-gradient(145deg, #bfb3ff, #8498ed); }
+.eg-gem-side:nth-child(even) > i:last-child { background: linear-gradient(145deg, #8a77ce, #423a79); }
+.eg-money { display: inline-flex; align-items: center; gap: 3px; }
+.eg-money .eg-piece { width: 17px; height: 17px; }
+.eg-money .eg-coin { width: 14px; height: 14px; }
+.eg-money .eg-coin > i::after { font-size: 9px; }
+.eg-toast.eg-reward { display: flex; align-items: center; gap: 7px; text-align: left; padding: 5px 12px 5px 7px; overflow-wrap: anywhere; }
+.eg-reward:not(.eg-motion) { animation: none; }
+.eg-reward.eg-motion .eg-coin { animation: eg-coin-turn .85s cubic-bezier(.12,.65,.25,1) both; }
+.eg-reward.eg-motion .eg-gem { animation: eg-gem-turn .85s cubic-bezier(.12,.65,.25,1) both; }
+@keyframes eg-coin-turn {
+    from { transform: translateY(4px) rotateX(20deg) rotateY(-285deg) rotateZ(-18deg); }
+    to { transform: rotateX(-14deg) rotateY(-24deg) rotateZ(-8deg); }
+}
+@keyframes eg-gem-turn {
+    from { transform: translateY(4px) rotateX(18deg) rotateY(-210deg) rotateZ(-12deg); }
+    to { transform: rotateX(-10deg) rotateY(32deg) rotateZ(8deg); }
+}
+@media (prefers-reduced-motion: no-preference) {
+    #eg-enc.eg-motion .eg-ecard:active { transform: perspective(450px) rotateX(5deg) scale(.98); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .eg-toast.eg-reward, .eg-reward .eg-piece > span { animation: none !important; }
 }
