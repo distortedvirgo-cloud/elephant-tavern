@@ -160,7 +160,7 @@ function buildShell() {
     $('body').append(buildHub());
     $('body').append(buildSceneSheet());
     $('body').append('<section class="et-sheet" id="et-sheet-stage"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
-    $('body').append('<section class="et-sheet et-sheet-tall et-book" id="et-sheet-chars"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
+    $('body').append('<section class="et-sheet et-sheet-tall et-menu-sheet" id="et-sheet-chars"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
     $('body').append(buildAppSheet());
 
     $(document).on('click', '[data-et-act]', onAction);
@@ -197,7 +197,7 @@ function buildHub() {
     const tile = s => `<button class="et-tile" data-et-act="section" data-et-section="${s.id}">
         <i class="fa-solid ${s.icon}"></i><span>${s.label}</span></button>`;
     return `
-        <section class="et-sheet et-book" id="et-sheet-hub">
+        <section class="et-sheet et-menu-sheet" id="et-sheet-hub">
             <div class="et-grip"></div>
             <div class="et-sheet-body">
                 ${menuHeading('Таверна')}
@@ -228,7 +228,7 @@ function buildSceneSheet() {
     const moods = Object.entries(MOODS).map(([id, m]) =>
         `<button class="et-mood-btn" data-et-act="lockmood" data-mood="${id}" style="--m:${m.accent}">${m.icon}<span>${m.label}</span></button>`).join('');
     return `
-        <section class="et-sheet et-book" id="et-sheet-scene">
+        <section class="et-sheet et-menu-sheet" id="et-sheet-scene">
             <div class="et-grip"></div>
             <div class="et-sheet-body">
                 ${menuHeading('Сцена')}
@@ -256,7 +256,7 @@ function buildSceneSheet() {
 function buildAppSheet() {
     if (!inApp()) return '';
     return `
-        <section class="et-sheet et-book" id="et-sheet-app">
+        <section class="et-sheet et-menu-sheet" id="et-sheet-app">
             <div class="et-grip"></div>
             <div class="et-sheet-body">
                 ${menuHeading('Приложение')}

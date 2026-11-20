@@ -43,14 +43,14 @@ class SplashView(context: Context) : FrameLayout(context) {
         }
         title.apply {
             text = "Elephant Tavern"
-            setTextColor(Color.parseColor("#F4EFDF"))
+            setTextColor(Color.parseColor("#f1f1f4"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-            typeface = resources.getFont(R.font.pt_serif_bold)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             gravity = Gravity.CENTER
             letterSpacing = 0.02f
         }
         status.apply {
-            setTextColor(Color.parseColor("#BEC9BC"))
+            setTextColor(Color.parseColor("#c2c3c9"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER
             maxLines = 3
@@ -62,14 +62,14 @@ class SplashView(context: Context) : FrameLayout(context) {
             indeterminateTintList = progressTintList
         }
         logView.apply {
-            setTextColor(Color.parseColor("#B3BEB0"))
+            setTextColor(Color.parseColor("#b8b9c0"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             typeface = Typeface.MONOSPACE
             movementMethod = ScrollingMovementMethod()
             setPadding(px(12), px(10), px(12), px(10))
             background = GradientDrawable().apply {
                 cornerRadius = px(14).toFloat()
-                setColor(Color.parseColor("#17271F"))
+                setColor(Color.parseColor("#18191c"))
                 setStroke(px(1), Color.parseColor("#22FFFFFF"))
             }
             visibility = GONE
@@ -97,15 +97,15 @@ class SplashView(context: Context) : FrameLayout(context) {
     private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = Button(context).apply {
         text = label
         isAllCaps = false
-        setTextColor(Color.parseColor("#F4EFDF"))
+        setTextColor(Color.parseColor("#f1f1f4"))
         background = GradientDrawable().apply {
             cornerRadius = px(16).toFloat()
             if (primary) {
-                setColor(Color.parseColor("#315843"))
+                setColor(Color.parseColor("#47484f"))
                 setStroke(px(1), context.getColor(R.color.accent))
             } else {
-                setColor(Color.parseColor("#304438"))
-                setStroke(px(1), Color.parseColor("#607561"))
+                setColor(Color.parseColor("#303137"))
+                setStroke(px(1), Color.parseColor("#62636b"))
             }
         }
         layoutParams = LinearLayout.LayoutParams(-1, px(50)).apply { topMargin = px(8) }

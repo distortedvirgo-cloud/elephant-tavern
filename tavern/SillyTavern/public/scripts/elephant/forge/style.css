@@ -16,7 +16,7 @@ body.ef-sheet-open #ef-scrim { opacity: 1; pointer-events: auto; }
 .ef-grip { flex: 0 0 auto; height: 20px; display: grid; place-items: center; }
 .ef-grip::after { content: ''; width: 42px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); }
 .ef-body { overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 18px; display: flex; flex-direction: column; gap: 10px; }
-.ef-title { margin: 2px 0 0; font-family: var(--journal-serif); font-size: 21px; }
+.ef-title { margin: 2px 0 0; font-family: var(--et-interface-font); font-size: 21px; }
 .ef-note { margin: 0; font-size: 13px; color: rgba(220, 214, 235, 0.62); line-height: 1.45; }
 .ef-body .text_pole { margin: 0; font-size: 15px; border-radius: 14px; padding: 10px 12px; }
 .ef-check { display: flex; gap: 10px; align-items: center; font-size: 13.5px; }
@@ -38,7 +38,7 @@ body.ef-sheet-open #ef-scrim { opacity: 1; pointer-events: auto; }
 .ef-hero { display: flex; gap: 14px; align-items: flex-start; }
 .ef-hero img, .ef-noimg { width: 112px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 16px; flex: 0 0 auto; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
 .ef-noimg { display: grid; place-items: center; font-size: 40px; background: rgba(255, 255, 255, 0.05); }
-.ef-hero h3 { margin: 2px 0 6px; font-family: var(--journal-serif); font-size: 22px; }
+.ef-hero h3 { margin: 2px 0 6px; font-family: var(--et-interface-font); font-size: 22px; }
 .ef-hero p { margin: 8px 0 0; font-size: 13.5px; line-height: 1.45; color: rgba(240, 236, 250, 0.85); }
 .ef-chip { display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: color-mix(in srgb, var(--et-accent, #b48cff) 18%, transparent); color: var(--et-accent, #b48cff); }
 .ef-tags { display: flex; flex-wrap: wrap; gap: 5px; }

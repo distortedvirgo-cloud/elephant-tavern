@@ -1,7 +1,7 @@
 body.login {
-    --SmartThemeBodyColor: #f0eee2;
-    --SmartThemeBlurTintColor: #182921;
-    --SmartThemeBorderColor: #516456;
+    --SmartThemeBodyColor: #f2f2f3;
+    --SmartThemeBlurTintColor: #191a1e;
+    --SmartThemeBorderColor: #515259;
     color-scheme: dark;
 }
 

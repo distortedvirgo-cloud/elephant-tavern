@@ -10,7 +10,7 @@
 
 /** Visual identity of each mood. Colours are used for CSS variables. */
 export const MOODS = {
-    calm:     { label: 'Спокойно',    icon: '🌿', accent: '#9fd8c4', accent2: '#6aa8ff', bgA: '#0e1418', bgB: '#101a1f', glow: 0.18, haptic: null },
+    calm:     { label: 'Спокойно',    icon: '🌿', accent: '#c3c5ce', accent2: '#6aa8ff', bgA: '#0e1418', bgB: '#101a1f', glow: 0.18, haptic: null },
     cozy:     { label: 'Уютно',       icon: '🕯️', accent: '#ffc58a', accent2: '#ff9f6b', bgA: '#17110c', bgB: '#1d140e', glow: 0.22, haptic: null },
     joy:      { label: 'Радость',     icon: '✨', accent: '#ffe08a', accent2: '#8ad7ff', bgA: '#141420', bgB: '#191a28', glow: 0.25, haptic: 'tick' },
     romance:  { label: 'Романтика',   icon: '💗', accent: '#ff8fb8', accent2: '#c08bff', bgA: '#1a0f17', bgB: '#22111d', glow: 0.3, haptic: 'heartbeat' },
@@ -28,7 +28,7 @@ export const MOODS = {
     festive:  { label: 'Праздник',    icon: '🎉', accent: '#ffd166', accent2: '#ff6fb5', bgA: '#18120c', bgB: '#1e1311', glow: 0.32, haptic: 'tick' },
     noir:     { label: 'Нуар',        icon: '🚬', accent: '#cfd3da', accent2: '#8b6f4e', bgA: '#0b0b0d', bgB: '#131315', glow: 0.14, haptic: null },
     neon:     { label: 'Неон',        icon: '🌃', accent: '#ff4fd8', accent2: '#3df2ff', bgA: '#0d0718', bgB: '#150a26', glow: 0.4, haptic: 'tick' },
-    sacred:   { label: 'Свет',        icon: '🕊️', accent: '#ffe9a8', accent2: '#bfe3ff', bgA: '#15130c', bgB: '#1b1a12', glow: 0.34, haptic: null },
+    sacred:   { label: 'Свет',        icon: '🕊️', accent: '#f0f0f4', accent2: '#bfe3ff', bgA: '#15130c', bgB: '#1b1a12', glow: 0.34, haptic: null },
     nightmare:{ label: 'Кошмар',      icon: '🕷️', accent: '#b0183a', accent2: '#5b2a8c', bgA: '#070508', bgB: '#10060c', glow: 0.3, haptic: 'heartbeat' },
     wild:     { label: 'Дикая природа', icon: '🌲', accent: '#9bd67a', accent2: '#e0b866', bgA: '#0b130c', bgB: '#101a10', glow: 0.2, haptic: null },
     abyss:    { label: 'Глубина',     icon: '🌊', accent: '#5cc8ff', accent2: '#3a6bd9', bgA: '#06101a', bgB: '#081626', glow: 0.26, haptic: null },
