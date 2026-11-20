@@ -862,6 +862,7 @@ async function openStageSettings() {
     const body = document.querySelector('#et-sheet-stage .et-sheet-body');
     if (!body.dataset.ready) {
         body.innerHTML = await fetch(new URL('./settings.html', import.meta.url)).then(r => r.text());
+        body.querySelector('.et-title').outerHTML = menuHeading('Сцена и арт');
         body.dataset.ready = '1';
         bindSettings($(body));
     }

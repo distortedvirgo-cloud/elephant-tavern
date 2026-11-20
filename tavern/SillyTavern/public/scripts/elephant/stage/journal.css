@@ -1,0 +1,122 @@
+/* Paper for reading and setup, dark green for play and the surrounding shell. */
+:root {
+    --journal-cover: #20372e;
+    --journal-night: #182921;
+    --journal-paper: #f4efdf;
+    --journal-ink: #2c3028;
+    --journal-green: #315843;
+    --journal-brass: #d3bb84;
+    --journal-edge: #cbc5b4;
+    --journal-serif: Georgia, 'Noto Serif', serif;
+}
+body.et-shell { --et-panel: var(--journal-night); }
+body.et-shell #et-header {
+    background: var(--journal-cover);
+    border-bottom-color: #536453;
+    box-shadow: none;
+}
+body.et-shell #send_form {
+    background: var(--journal-night) !important;
+    border-radius: 12px !important;
+    box-shadow: none;
+}
+body.et-shell .mes:not([is_user="true"]) .mes_block {
+    background: rgb(23 35 28 / 93%);
+    border-radius: 4px 12px 12px 4px;
+    box-shadow: inset 2px 0 0 #a39871;
+}
+body.et-shell .mes[is_user="true"] .mes_block { border-radius: 12px 4px 4px 12px; }
+body.et-shell #eg-hud { background: var(--journal-cover); border-radius: 8px; color: var(--journal-paper); }
+.et-sheet.et-book { background: var(--journal-paper); color: var(--journal-ink); }
+
+#ew-overlay {
+    background: var(--journal-cover);
+    color: var(--journal-ink);
+    place-items: safe center;
+    text-shadow: none;
+}
+.ew-card {
+    box-sizing: border-box;
+    color-scheme: light;
+    background: var(--journal-paper);
+    border-top: 4px solid var(--journal-brass);
+    border-radius: 4px 16px 16px 4px;
+    padding: clamp(20px, 6vw, 32px);
+    gap: 16px;
+}
+.ew-card h2 {
+    text-align: start;
+    font: 36px/1.15 var(--journal-serif);
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--journal-edge);
+}
+.ew-card .ew-field, .ew-card .ew-more summary { color: var(--journal-ink); }
+.ew-card :is(.ew-field small, .ew-more > small, .ew-link) { color: #525d51; }
+.ew-field a { color: var(--journal-green); }
+.ew-field .text_pole {
+    color: var(--journal-ink); background: #fffdf6; border: 1px solid #aaa997;
+    border-radius: 6px; text-shadow: none; min-width: 0; box-sizing: border-box;
+}
+.ew-field .text_pole:focus { border-color: var(--journal-green); outline: 1px solid var(--journal-green); }
+.ew-more { border: solid var(--journal-edge); border-width: 1px 0; border-radius: 0; }
+.ew-more summary { padding: 4px 0; }
+.ew-more .ew-field { margin: 12px 0; }
+.ew-btn { color: var(--journal-paper); background: var(--journal-green); border-radius: 8px; font-weight: 600; box-shadow: none; }
+.ew-error { color: #923719; }
+.ew-link { min-height: 44px; }
+
+.eg-sheet, .ef-sheet, .ec-sheet, #et-sheet-stage {
+    --eg-a: #d3bb84;
+    --et-accent: #b4d6b2;
+    --et-muted: #bdc6ba;
+    --et-text: #f4efdf;
+    color-scheme: dark;
+    background: var(--journal-night);
+    color: var(--journal-paper);
+    border-top: 3px solid #8b987e;
+    border-radius: 16px 16px 0 0;
+    text-shadow: none;
+    box-shadow: none;
+}
+:is(.eg-sheet, .ef-sheet, .ec-sheet, #et-sheet-stage) :is(button, input, summary, select, textarea):focus-visible {
+    outline: 2px solid var(--journal-brass); outline-offset: -2px;
+}
+#et-sheet-stage .et-menu-heading button { color: var(--journal-paper); }
+#et-sheet-stage .et-inline > :not(button) { min-width: 0; }
+:is(.eg-sheet, .ef-sheet, #et-sheet-stage) :is(.eg-title, .ef-title, .et-menu-heading h2) {
+    color: var(--journal-paper);
+    font: 30px/1.2 var(--journal-serif);
+    overflow-wrap: anywhere;
+}
+:is(.eg-sheet, #et-sheet-stage) :is(.eg-h, .et-h) {
+    font: 19px/1.25 var(--journal-serif); color: #e2dcc9;
+    text-transform: none; letter-spacing: normal;
+}
+.eg2-sec, .ef-sec { border-radius: 8px; border-color: #455446; }
+#eg-state .eg-tabs {
+    flex-shrink: 0; grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding: 0 8px 8px; border-bottom: 1px solid #536453;
+}
+#eg-state .eg-tab { white-space: normal; overflow-wrap: anywhere; min-height: 44px; border-radius: 6px; }
+#eg-state .eg-tab.eg-on { background: #354c3c; color: #fff9e8; border-color: #82927a; }
+.eg-sheet .eg2-pill { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.ef-sheet .ef-btn { border-radius: 8px; background: #c4d8bb; color: #203529; font-weight: 600; }
+.ef-sheet .ef-ghost { color: var(--journal-paper); background: #304337; }
+.ef-body .text_pole { border-radius: 8px; min-width: 0; background: #101e17; color: var(--journal-paper); }
+.ef-sheet :is(.ef-note, .ef-model, .ef-lbl, .ef-link) { color: #bdc6ba; }
+.ef-body { overflow-wrap: anywhere; }
+.ef-orb { background: transparent; border: 3px solid #495a49; border-top-color: var(--journal-brass); filter: none; box-shadow: none; width: 44px; height: 44px; }
+.ec-preview b { color: var(--journal-brass); font: 22px/1.2 var(--journal-serif); text-transform: none; letter-spacing: normal; }
+.ec-sheet .ec-item { min-height: 44px; border-radius: 0; border-bottom: 1px solid #384b3f; }
+
+@media (min-width: 640px) {
+    .eg-sheet, .ef-sheet, .ec-sheet, #et-sheet-stage {
+        width: 600px; left: calc(50% - 300px); margin-left: 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    #ew-overlay, .ef-orb, .eg-sheet, .ef-sheet, .ec-sheet, #et-sheet-stage,
+    body.et-shell .drawer-content.openDrawer, body.et-shell .mes.last_mes {
+        animation: none; transition: none;
+    }
+}

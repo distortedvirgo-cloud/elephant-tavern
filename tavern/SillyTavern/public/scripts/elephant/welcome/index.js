@@ -28,9 +28,7 @@ function html(name, withName) {
     return `
     <div id="ew-overlay" role="dialog" aria-modal="true">
         <div class="ew-card">
-            <div class="ew-logo">🐘</div>
             <h2>Elephant Tavern</h2>
-            <p class="ew-sub">Пара шагов — и можно играть.</p>
             ${withName ? `
             <label class="ew-field"><span>Как тебя зовут в историях?</span>
                 <input id="ew_name" type="text" class="text_pole" value="${escapeHtml(name)}" maxlength="60" autocomplete="off">
@@ -55,7 +53,7 @@ function html(name, withName) {
             </details>
             <div class="ew-error" hidden></div>
             <button id="ew_go" class="ew-btn">Начать</button>
-            <button id="ew_skip" class="ew-link">Пропустить — настрою сам</button>
+            <button id="ew_skip" class="ew-link">Настроить позже</button>
         </div>
     </div>`;
 }

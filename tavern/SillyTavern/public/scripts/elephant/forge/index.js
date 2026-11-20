@@ -239,7 +239,7 @@ function openPersona() {
 function renderPersonaForm(prev = {}) {
     const ch = openCard();
     $('#ef-sheet .ef-body').html(`
-        <h3 class="ef-title">🧑 Персона для «${escapeHtml(ch?.name || '')}»</h3>
+        <h3 class="ef-title">Персона для «${escapeHtml(ch?.name || '')}»</h3>
         <p class="ef-note">Кем ты будешь в этой истории? Модель прочитает карточку и придумает героя под её мир и первую сцену. Поле можно оставить пустым — тогда она выберет сама.</p>
         <textarea id="ef_p_request" class="text_pole" rows="4" placeholder="Например: «парень, наёмник с тёмным прошлым, её старый знакомый» или «новенькая в команде, наивная, но упрямая»">${escapeHtml(prev.request || '')}</textarea>
         <input id="ef_p_name" class="text_pole" type="text" maxlength="40" placeholder="Имя (необязательно)" value="${escapeHtml(prev.name || '')}">
@@ -355,7 +355,7 @@ function close() {
 
 function renderForm(prev = '') {
     $('#ef-sheet .ef-body').html(`
-        <h3 class="ef-title">✨ Новый персонаж</h3>
+        <h3 class="ef-title">Новый персонаж</h3>
         <p class="ef-note">Опиши, кого создать. Персонажей из аниме, игр, книг и фильмов модель знает — они останутся каноничными, а картинка подхватит их теги.</p>
         <textarea id="ef_request" class="text_pole" rows="4" placeholder="Например: «Рем из Re:Zero, но она капитан пиратского корабля» или «оригинальная вампирша-библиотекарь в дождливом Лондоне 1890-х»">${escapeHtml(prev)}</textarea>
         <textarea id="ef_scene" class="text_pole" rows="2" placeholder="С чего начать историю? (необязательно)"></textarea>
