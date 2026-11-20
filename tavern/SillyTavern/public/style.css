@@ -164,7 +164,7 @@ body {
     font-size: var(--mainFontSize);
     color: var(--SmartThemeBodyColor);
     overflow: hidden;
-    color-scheme: only light;
+    color-scheme: dark;
 }
 
 ::-webkit-scrollbar {

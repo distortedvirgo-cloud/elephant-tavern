@@ -97,10 +97,13 @@ class SplashView(context: Context) : FrameLayout(context) {
     private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = Button(context).apply {
         text = label
         isAllCaps = false
-        setTextColor(if (primary) Color.parseColor("#20372E") else Color.parseColor("#F4EFDF"))
+        setTextColor(Color.parseColor("#F4EFDF"))
         background = GradientDrawable().apply {
             cornerRadius = px(16).toFloat()
-            if (primary) setColor(context.getColor(R.color.accent)) else {
+            if (primary) {
+                setColor(Color.parseColor("#315843"))
+                setStroke(px(1), context.getColor(R.color.accent))
+            } else {
                 setColor(Color.parseColor("#304438"))
                 setStroke(px(1), Color.parseColor("#607561"))
             }

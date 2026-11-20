@@ -1,3 +1,10 @@
+body.login {
+    --SmartThemeBodyColor: #f0eee2;
+    --SmartThemeBlurTintColor: #182921;
+    --SmartThemeBorderColor: #516456;
+    color-scheme: dark;
+}
+
 body.login #shadow_popup {
     opacity: 1;
     display: flex;
