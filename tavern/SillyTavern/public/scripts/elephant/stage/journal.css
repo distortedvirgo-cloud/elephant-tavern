@@ -11,7 +11,7 @@
     --journal-green: #315843;
     --journal-brass: #d3bb84;
     --journal-edge: #516456;
-    --journal-serif: Georgia, 'Noto Serif', serif;
+    --journal-serif: 'PT Serif', Georgia, serif;
 }
 body.et-shell { --et-panel: var(--journal-night); }
 #preloader { background-color: var(--journal-night); color: var(--journal-text); }
@@ -42,6 +42,7 @@ body.et-shell .mes:not([is_user="true"]) .mes_block {
     border-radius: 4px 12px 12px 4px;
     box-shadow: inset 2px 0 0 #a39871;
 }
+#chat .mes:not([is_system="true"]) .mes_text { font-family: var(--journal-serif); }
 body.et-shell .mes[is_user="true"] .mes_block { border-radius: 12px 4px 4px 12px; }
 body.et-shell #eg-hud { background: var(--journal-cover); border-radius: 8px; color: var(--journal-text); }
 

@@ -17,7 +17,7 @@
 
 .ew-card { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
 .ew-logo { font-size: 58px; text-align: center; line-height: 1; filter: drop-shadow(0 6px 24px rgba(180, 140, 255, 0.45)); }
-.ew-card h2 { margin: 0; text-align: center; font-family: Georgia, 'Noto Serif', serif; font-size: 28px; }
+.ew-card h2 { margin: 0; text-align: center; font-family: var(--journal-serif); font-size: 28px; }
 .ew-sub { margin: -4px 0 8px; text-align: center; color: rgba(220, 214, 235, 0.65); }
 
 .ew-field { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: rgba(220, 214, 235, 0.75); }

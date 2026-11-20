@@ -45,7 +45,7 @@ class SplashView(context: Context) : FrameLayout(context) {
             text = "Elephant Tavern"
             setTextColor(Color.parseColor("#F4EFDF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = resources.getFont(R.font.pt_serif_bold)
             gravity = Gravity.CENTER
             letterSpacing = 0.02f
         }

@@ -5,7 +5,7 @@
     display: grid; place-items: center; pointer-events: none; opacity: 0;
 }
 #ep-title span {
-    font-family: Georgia, 'Noto Serif', serif; font-size: clamp(28px, 9vw, 46px); font-weight: 700;
+    font-family: var(--journal-serif); font-size: clamp(28px, 9vw, 46px); font-weight: 700;
     letter-spacing: 0.08em; text-align: center; padding: 0 24px;
     color: #fff; text-shadow: 0 0 30px var(--et-accent, #b48cff), 0 2px 10px rgba(0, 0, 0, 0.9);
 }
@@ -33,7 +33,7 @@
     box-shadow: 0 0 40px color-mix(in srgb, var(--et-accent, #b48cff) 35%, transparent);
 }
 #ep-whisper small { display: block; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.6; margin-bottom: 4px; }
-#ep-whisper span { font-family: Georgia, 'Noto Serif', serif; font-style: italic; font-size: 17px; color: #fff; }
+#ep-whisper span { font-family: var(--journal-serif); font-style: italic; font-size: 17px; color: #fff; }
 #ep-whisper.ep-show { animation: ep-whisper 6s ease-in-out; }
 @keyframes ep-whisper {
     0% { opacity: 0; filter: blur(6px); transform: translateX(-50%) translateY(8px); }
