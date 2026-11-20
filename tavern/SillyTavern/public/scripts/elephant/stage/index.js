@@ -160,7 +160,7 @@ function buildShell() {
     $('body').append(buildHub());
     $('body').append(buildSceneSheet());
     $('body').append('<section class="et-sheet" id="et-sheet-stage"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
-    $('body').append('<section class="et-sheet et-sheet-tall" id="et-sheet-chars"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
+    $('body').append('<section class="et-sheet et-sheet-tall et-book" id="et-sheet-chars"><div class="et-grip"></div><div class="et-sheet-body"></div></section>');
     $('body').append(buildAppSheet());
 
     $(document).on('click', '[data-et-act]', onAction);
@@ -178,25 +178,36 @@ const SECTIONS = [
     { id: 'lore', icon: 'fa-book-atlas', label: 'Лорбуки', drawer: '#WI-SP-button' },
     { id: 'persona', icon: 'fa-face-smile', label: 'Персона', drawer: '#persona-management-button' },
     { id: 'memory', icon: 'fa-brain', label: 'Память', action: () => openMemory() },
-    { id: 'stage', icon: 'fa-wand-magic-sparkles', label: 'Сцена и арт', action: () => openStageSettings() },
+    { id: 'scene', icon: 'fa-clapperboard', label: 'Сцена', action: () => openSheet('scene') },
+    { id: 'stage', icon: 'fa-wand-magic-sparkles', label: 'Настройки сцены и арта', action: () => openStageSettings() },
     { id: 'bg', icon: 'fa-panorama', label: 'Фоны', drawer: '#backgrounds-button' },
     { id: 'ext', icon: 'fa-cubes', label: 'Расширения', drawer: '#extensions-settings-button' },
     { id: 'ui', icon: 'fa-palette', label: 'Интерфейс', drawer: '#user-settings-button' },
     { id: 'app', icon: 'fa-mobile-screen-button', label: 'Приложение', action: () => openSheet('app'), appOnly: true },
 ];
 
+function menuHeading(title) {
+    return `<div class="et-menu-heading"><h2>${title}</h2>
+        <button data-et-act="closemenu" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button></div>`;
+}
+
 function buildHub() {
-    const tiles = SECTIONS.filter(s => !s.appOnly || inApp()).map(s => `
-        <button class="et-tile" data-et-act="section" data-et-section="${s.id}">
-            <i class="fa-solid ${s.icon}"></i><span>${s.label}</span>
-        </button>`).join('');
+    const destinations = ['chars', 'lore', 'persona', 'memory', 'scene', 'bg'];
+    const sections = SECTIONS.filter(s => !s.appOnly || inApp());
+    const tile = s => `<button class="et-tile" data-et-act="section" data-et-section="${s.id}">
+        <i class="fa-solid ${s.icon}"></i><span>${s.label}</span></button>`;
     return `
-        <section class="et-sheet" id="et-sheet-hub">
+        <section class="et-sheet et-book" id="et-sheet-hub">
             <div class="et-grip"></div>
             <div class="et-sheet-body">
+                ${menuHeading('Таверна')}
                 <div class="et-hub-quick">
                     <button class="et-pill" data-et-act="newchat"><i class="fa-solid fa-plus"></i> Новый чат</button>
                     <button class="et-pill" data-et-act="chatlist"><i class="fa-solid fa-clock-rotate-left"></i> Чаты</button>
+                </div>
+                <div class="et-tiles">${sections.filter(s => destinations.includes(s.id)).map(tile).join('')}</div>
+                <details class="et-menu-group"><summary>Действия с чатом</summary>
+                <div class="et-hub-quick">
                     <button class="et-pill" data-et-act="stopt" data-opt="option_continue"><i class="fa-solid fa-forward"></i> Продолжить</button>
                     <button class="et-pill" data-et-act="stopt" data-opt="option_regenerate"><i class="fa-solid fa-rotate"></i> Заново</button>
                     <button class="et-pill" data-et-act="stopt" data-opt="option_impersonate"><i class="fa-solid fa-user-pen"></i> Написать за меня</button>
@@ -204,8 +215,11 @@ function buildHub() {
                     <button class="et-pill" data-et-act="stopt" data-opt="option_toggle_AN"><i class="fa-solid fa-note-sticky"></i> Заметка автора</button>
                     <button class="et-pill" data-et-act="exportchat"><i class="fa-solid fa-file-export"></i> Выгрузить чат</button>
                 </div>
+                </details>
+                <details class="et-menu-group"><summary>Настройки таверны</summary>
+                    <div class="et-menu-settings">${sections.filter(s => !destinations.includes(s.id)).map(tile).join('')}</div>
+                </details>
                 <div class="et-hub-cost" data-et-act="section" data-et-section="stage"></div>
-                <div class="et-tiles">${tiles}</div>
             </div>
         </section>`;
 }
@@ -214,9 +228,10 @@ function buildSceneSheet() {
     const moods = Object.entries(MOODS).map(([id, m]) =>
         `<button class="et-mood-btn" data-et-act="lockmood" data-mood="${id}" style="--m:${m.accent}">${m.icon}<span>${m.label}</span></button>`).join('');
     return `
-        <section class="et-sheet" id="et-sheet-scene">
+        <section class="et-sheet et-book" id="et-sheet-scene">
             <div class="et-grip"></div>
             <div class="et-sheet-body">
+                ${menuHeading('Сцена')}
                 <div class="et-scene-card">
                     <div class="et-scene-big"></div>
                     <div class="et-scene-meta"></div>
@@ -229,7 +244,7 @@ function buildSceneSheet() {
                 <div class="et-row">
                     <button class="et-btn et-btn-ghost" data-et-act="rescene"><i class="fa-solid fa-rotate"></i> Перечитать сцену</button>
                 </div>
-                <h4 class="et-h">Настроение <small>— нажмите, чтобы закрепить</small></h4>
+                <h4 class="et-h">Закрепить настроение</h4>
                 <div class="et-moods">
                     <button class="et-mood-btn" data-et-act="lockmood" data-mood="" style="--m:#ffffff">🎭<span>Авто</span></button>
                     ${moods}
@@ -241,10 +256,10 @@ function buildSceneSheet() {
 function buildAppSheet() {
     if (!inApp()) return '';
     return `
-        <section class="et-sheet" id="et-sheet-app">
+        <section class="et-sheet et-book" id="et-sheet-app">
             <div class="et-grip"></div>
             <div class="et-sheet-body">
-                <h3 class="et-title">🐘 Elephant Tavern</h3>
+                ${menuHeading('Приложение')}
                 <div class="et-app-info"></div>
                 <div class="et-list">
                     <button class="et-li" data-et-act="backup"><i class="fa-solid fa-box-archive"></i><span>Сохранить бэкап<small>Персонажи, чаты, настройки и ключи — одним zip</small></span></button>
@@ -359,7 +374,7 @@ function renderCharsSheet() {
         </div>`).join('');
     const body = document.querySelector('#et-sheet-chars .et-sheet-body');
     body.innerHTML = `
-        <h4 class="et-h">Персонажи</h4>
+        ${menuHeading('Персонажи')}
         <div class="et-row">
             <button class="et-btn" data-et-act="newchar"><i class="fa-solid fa-wand-magic-sparkles"></i> Создать</button>
             <button class="et-btn et-btn-ghost" data-et-act="importchar"><i class="fa-solid fa-file-import"></i> Импорт</button>
@@ -431,6 +446,7 @@ async function onAction(e) {
     if (act === 'hub' && document.body.classList.contains('et-drawer-open')) act = 'closedrawers';
     switch (act) {
         case 'hub': return document.getElementById('et-sheet-hub').classList.contains('et-open') ? closeSheets() : openSheet('hub');
+        case 'closemenu': return closeSheets();
         case 'scene': e.stopPropagation(); return openSheet('scene');
         case 'char':
             if (e.target.closest('.et-sub')) return; // the scene line has its own action

@@ -842,3 +842,51 @@ body.et-shell .mes .et-cost { margin-top: 6px; font-size: 11px; color: var(--et-
 #et-slash.et-go { animation: et-slash 0.42s cubic-bezier(.2, .8, .2, 1); }
 @keyframes et-slash { 0% { opacity: 1; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(0); } 45% { opacity: 1; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(1); } 100% { opacity: 0; transform: rotate(var(--et-slash-rot, -24deg)) scaleX(1); } }
 @media (prefers-reduced-motion: reduce) { #et-slash.et-go { animation: none; } }
+
+/* The main menus share a paper surface and the ink colours of a bound journal. */
+.et-sheet.et-book {
+    --et-text: #2c3028;
+    --et-muted: #565e50;
+    --et-line: #cbc5b4;
+    --et-accent: #315843;
+    color-scheme: light;
+    background: #f4efdf;
+    border-top: 4px solid #42634e;
+    border-radius: 20px 20px 0 0;
+    box-shadow: none;
+    text-shadow: none;
+}
+.et-book .et-sheet-body { padding: 0 20px 20px; }
+.et-book .et-grip::after { background: #bdb8a8; height: 4px; }
+.et-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--et-line); padding-bottom: 12px; margin-bottom: 16px; }
+.et-menu-heading h2 { margin: 0; font: normal 36px/1.15 Georgia, 'Noto Serif', serif; color: var(--et-text); }
+.et-menu-heading button, .et-book .et-char-edit { width: 44px; height: 44px; color: var(--et-muted); background: transparent; border: 0; }
+.et-book :is(button, summary):focus-visible { outline: 2px solid #83562e; outline-offset: -2px; }
+.et-book .et-hub-quick, .et-book .et-tiles, .et-menu-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.et-book .et-hub-quick { gap: 8px; margin: 0 0 12px; }
+.et-book .et-tile { aspect-ratio: auto; min-height: 48px; border: 0; border-bottom: 1px solid var(--et-line); border-radius: 0; background: transparent; flex-direction: row; justify-content: flex-start; gap: 8px; padding: 8px 4px; font-size: 14px; font-weight: 500; text-align: start; overflow-wrap: anywhere; }
+.et-book .et-tile i { width: 20px; text-align: center; font-size: 16px; filter: none; }
+.et-book .et-tile[data-eg-tile] { grid-column: 1 / -1; background: #315843; color: #fff9e8; border-radius: 8px; padding: 12px 16px; min-height: 54px; font: 24px Georgia, serif; }
+.et-book .et-tile[data-eg-tile] i { color: inherit; margin-right: 4px; }
+.et-book .et-pill, .et-book .et-btn { min-height: 44px; padding: 8px; border: 1px solid var(--et-line); border-radius: 8px; background: #eae4d4; color: var(--et-text); font-weight: 500; }
+.et-book .et-tile.et-attn { animation: none; box-shadow: inset 3px 0 #9f592f; }
+.et-menu-group { border-bottom: 1px solid var(--et-line); }
+.et-menu-group summary { padding: 12px 4px; cursor: pointer; font: 18px/1.4 Georgia, serif; }
+.et-book .et-hub-cost { margin: 12px 0 0; }
+.et-book .et-char, .et-book .et-li { background: transparent; border: 0; border-bottom: 1px solid var(--et-line); border-radius: 0; }
+.et-book .et-char.et-on { background: #e2e8d9; }
+.et-book .et-char img { border-radius: 8px; }
+.et-book .et-char-text b { white-space: normal; overflow-wrap: anywhere; }
+.et-book .et-char-search { background: #fffcf2; color: var(--et-text); }
+.et-book .et-scene-card { background: #e3e8db; border: 0; border-left: 3px solid var(--et-accent); border-radius: 0; }
+.et-book .et-h { text-transform: none; letter-spacing: normal; font: 20px Georgia, serif; color: var(--et-text); }
+.et-book .et-moods { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+.et-book .et-mood-btn { border-radius: 8px; background: transparent; }
+.et-book .et-mood-btn.et-on { border: 2px solid var(--et-accent); background: #e2e8d9; }
+.et-book .et-mood-btn span { font-size: 13px; }
+@media (min-width: 640px) {
+    .et-sheet.et-book { width: 600px; left: calc(50% - 300px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .et-sheet.et-book, .et-book * { transition: none; }
+}
