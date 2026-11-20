@@ -272,7 +272,7 @@ class MainActivity : Activity() {
     private fun openWeb(port: Int) {
         hideWeb()
         val wv = WebView(this)
-        wv.setBackgroundColor(Color.parseColor("#0D0F14"))
+        wv.setBackgroundColor(getColor(R.color.bg))
         with(wv.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
