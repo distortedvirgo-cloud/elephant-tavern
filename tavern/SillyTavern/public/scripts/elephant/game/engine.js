@@ -123,7 +123,7 @@ export const EFFECTS = {
 export const OUTCOMES = {
     crit:     { ru: 'Блестяще!',           en: 'CRITICAL SUCCESS', tone: 'gold' },
     success:  { ru: 'Успех',               en: 'SUCCESS',          tone: 'good' },
-    near:     { ru: 'Успех ценой',         en: 'NEAR MISS',        tone: 'warn' },
+    near:     { ru: 'Успех с осложнением', en: 'NEAR MISS',        tone: 'warn' },
     fail:     { ru: 'Провал',              en: 'FAILURE',          tone: 'bad' },
     disaster: { ru: 'Катастрофа',          en: 'DISASTER',         tone: 'dark' },
 };

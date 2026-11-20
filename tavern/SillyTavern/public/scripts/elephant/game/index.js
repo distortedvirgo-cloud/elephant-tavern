@@ -11,6 +11,7 @@
  * State is snapshotted on every message (message.extra.elephant_game.state = state AFTER
  * that message), so swipes, edits and deletions roll the game back for free.
  */
+import { diceTray, landDice } from './dice.js';
 import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter, whenRevealed, personaText } from '../stage/helper.js';
 import * as E from './engine.js';
 import * as X from './encounter.js';
@@ -38,6 +39,10 @@ function S() {
     return es[MODULE];
 }
 const stageSettings = () => ctx().extensionSettings?.elephant_stage ?? {};
+
+function gameMotion() {
+    return S().juice && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 function meta() {
     const m = ctx().chatMetadata;
@@ -68,12 +73,37 @@ function writeSnapshot(index, patch) {
     if (!msg) return;
     msg.extra ??= {};
     msg.extra.elephant_game = { ...(msg.extra.elephant_game || {}), ...patch };
+    if (patch.record || patch.encRound) {
+        const element = document.querySelector(`#chat .mes[mesid="${index}"]`);
+        if (element) renderRollReceipt(element);
+    }
     // keep the snapshot with the active swipe too
     if (Array.isArray(msg.swipe_info) && msg.swipe_info[msg.swipe_id ?? 0]) {
         const si = msg.swipe_info[msg.swipe_id ?? 0];
         si.extra ??= {};
         si.extra.elephant_game = msg.extra.elephant_game;
     }
+}
+
+/** Keep the visible message in sync when a roll resolves or chat history is restored. */
+function renderRollReceipt(messageElement) {
+    const msg = ctx().chat?.[Number(messageElement.getAttribute('mesid'))];
+    const snapshot = msg?.extra?.elephant_game;
+    const record = snapshot?.encRound || snapshot?.record;
+    let receipt = messageElement.querySelector('.eg-roll-receipt');
+    const verdict = E.OUTCOMES[record?.outcome];
+    if (!isActive() || !msg?.is_user || !verdict || !Array.isArray(record.dice) || record.dice.length < 2) {
+        receipt?.remove();
+        return;
+    }
+    if (!receipt) {
+        receipt = document.createElement('small');
+        receipt.className = 'eg-roll-receipt';
+        messageElement.querySelector('.mes_text')?.after(receipt);
+    }
+    const roll = rollSummary(record.dice, record.mod, record.dc);
+    receipt.dataset.tone = verdict.tone;
+    receipt.textContent = `${roll.dice} ${roll.modifier} = ${roll.total} / ${roll.dc} · ${verdict.ru}`;
 }
 
 // ------------------------------------------------------------------ narrator injection
@@ -504,6 +534,11 @@ function ensureEncDom() {
             if (!$ta.val()) $ta.val('*I gently stop her.* "Not tonight."').trigger('input').trigger('focus');
         });
     $('#eg-enc').on('click', '[data-act="enc-end"]', endEncounter)
+        .on('click', '[data-act="enc-details"]', function () {
+            const expanded = this.getAttribute('aria-pressed') !== 'true';
+            this.setAttribute('aria-pressed', String(expanded));
+            $('#eg-enc').toggleClass('eg-expanded-cards', expanded);
+        })
         .on('click', '[data-act="enc-focus"]', () => { encFocus = !encFocus; renderEnc(currentState()); haptic('tick'); })
         .on('click', '[data-act="enc-min"]', () => { S().encMin = !S().encMin; ctx().saveSettingsDebounced(); renderEnc(currentState()); haptic('tick'); })
         .on('click', '[data-act="tgt-add"]', function () {
@@ -540,6 +575,20 @@ async function switchVariant() {
     haptic('tick');
 }
 
+/** All displayed totals follow the engine's keep-best-two rule. */
+function rollSummary(dice, mod, dc) {
+    const [a, b] = E.bestTwo(dice);
+    return { dice: `${a} + ${b}`, modifier: `${mod < 0 ? '−' : '+'} ${Math.abs(mod)}`, total: a + b + mod, dc };
+}
+
+function revealRoll(result, dice, mod, dc, outcome) {
+    const roll = rollSummary(dice, mod, dc);
+    const verdict = E.OUTCOMES[outcome];
+    result.attr('data-tone', verdict.tone).html(`
+        <span class="eg-equation"><span>${roll.dice}</span><span>${roll.modifier}</span><strong>= ${roll.total}</strong><span>порог ${dc}</span></span>
+        <b class="eg-stamp">${verdict.ru}</b>`);
+}
+
 function encBar(key, value, enc) {
     const b = X.BARS[key];
     const min = b.min ?? 0;
@@ -554,7 +603,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
     const $p = $('#eg-enc');
     const enc = st?.enc;
     document.body.classList.toggle('eg-in-enc', Boolean(enc));
-    if (!enc || !isActive()) { $p.removeClass('eg-show').empty(); return; }
+    if (!enc || !isActive()) { $p.removeAttr('data-dealt').removeClass('eg-show').empty(); return; }
     clearEncChip();
     const v = X.VARIANTS[enc.variant];
     const B = { ...enc.bars };
@@ -570,23 +619,29 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
     const targets = enc.status === 'active' ? `<div class="eg-tgts"><span>🎯</span>${P.map(chip).join('')}<button class="eg-tgt eg-tgt-add" data-act="tgt-add" aria-label="Добавить цель">+</button></div>` : '';
     const topBars = (v.bars.filter(k => B[k] != null).slice(0, 2)).map(k => { const b = X.BARS[k]; const mn = b.min ?? 0, mx = b.max ?? 100; return `<i class="eg-thin eg-eb-${k}" title="${b.ru}"><b style="width:${Math.max(0, Math.min(100, Math.round((B[k] - mn) / (mx - mn) * 100)))}%"></b></i>`; }).join('');
     const waiting = loading || (!enc.options?.length && enc.status === 'active');
+    const dealKey = enc.id + '/' + enc.round;
+    const dealCards = !waiting && !min && gameMotion() && $p[0].dataset.dealt !== dealKey;
+    $p.attr('data-kind', enc.kind).toggleClass('eg-motion', gameMotion());
     const cards = waiting
         ? `<div class="eg-enc-wait"><i class="fa-solid fa-dice fa-spin"></i> ${resolved ? 'Раунд разыгран — ждём ответ…' : enc.round ? 'Готовлю следующий ход…' : 'Готовлю сцену…'}</div>`
         : enc.options.map((o, i) => {
             const set = X.optionSetup(st, o, { focus: encFocus });
             const pct = Math.round(set.odds.atLeastSuccess * 100);
             const fx = X.previewOption(st, o);
-            return `<button class="eg-ecard eg-ek-${o.kind}${o.say ? ' eg-say' : ''}${set.edge ? ' eg-edge' : ''}" data-opt="${i}">
+            return `<button class="eg-ecard${dealCards ? ' eg-deal' : ''} eg-ek-${o.kind}${o.say ? ' eg-say' : ''}${set.edge ? ' eg-edge' : ''}" data-opt="${i}">
+                <span class="eg-action-icon" aria-hidden="true">${E.SKILLS[o.skill]?.icon || '◆'}</span>
                 <b class="eg-elabel">${o.say ? '💬 ' : ''}${escapeHtml(o.ru)}</b>
                 ${o.detail_ru ? `<span class="eg-edetail">${escapeHtml(o.detail_ru)}</span>` : o.risk_ru ? `<span class="eg-erisk">${escapeHtml(o.risk_ru)}</span>` : ''}
                 ${fx.length ? `<span class="eg-efx">${fx.map(x => `<i>${escapeHtml(x)}</i>`).join('')}</span>` : ''}
-                <small>${E.SKILLS[o.skill]?.icon || ''} <b class="eg-pct" data-p="${pct >= 70 ? 'hi' : pct >= 45 ? 'mid' : 'lo'}">${pct}%</b>${set.locked ? ' · 🔒 рано' : ''}${set.blocked ? ` · ⛓ ${escapeHtml(set.blocked)}` : ''}${set.open ? ' · 🎯 беззащитен' : ''}${o.inflict ? ` · ${E.status.STATUSES[o.inflict].icon}` : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
+                <b class="eg-pct" style="--chance:${pct}%" aria-label="Шанс успеха ${pct}%" data-p="${pct >= 70 ? 'hi' : pct >= 45 ? 'mid' : 'lo'}"><span>${pct}%</span></b>
+                <small>${E.SKILLS[o.skill]?.ru || ''} · порог ${set.dc}${set.locked ? ' · 🔒 рано' : ''}${set.blocked ? ` · ⛓ ${escapeHtml(set.blocked)}` : ''}${set.open ? ' · 🎯 беззащитен' : ''}${o.inflict ? ` · ${E.status.STATUSES[o.inflict].icon}` : ''}${o.limit ? ' · ⚠️' : ''} <span class="eg-pow">${'•'.repeat(o.power)}</span></small>
             </button>`;
         }).join('');
     if (min) {
         $p.toggleClass('eg-min', true).html(`<button class="eg-enc-mini" data-act="enc-min" aria-label="Развернуть"><span>${v.icon}</span><b>${escapeHtml(enc.title_ru || v.ru)}</b><small>${enc.round ? `р.${enc.round + (resolved ? 0 : 1)}` : ''}${enc.pose ? ` · ${escapeHtml(enc.pose)}` : ''}</small><span class="eg-thins">${topBars}</span><em>▴</em></button>`).addClass('eg-show');
         return;
     }
+    if (!waiting) $p[0].dataset.dealt = dealKey;
     $p.removeClass('eg-min');
     $p.html(`
         <div class="eg-enc-head">
@@ -603,7 +658,7 @@ function renderEnc(st, { loading = false, resolved = null } = {}) {
         ${enc.edge && !waiting ? `<div class="eg-edge-line">⚡ Преимущество: следующий ${enc.kind === 'nsfw' ? 'шаг' : 'удар'} легче и в полтора раза сильнее</div>` : ''}
         ${waiting ? '' : targets}
         <div class="eg-ecards">${cards}</div>
-        ${waiting ? '' : `<div class="eg-enc-tools"><button class="eg-focus${encFocus ? ' eg-on' : ''}" data-act="enc-focus" ${energy ? '' : 'disabled'}>⚡ Собраться <small>+2 к броску · −1 сила (${energy})</small></button></div><div class="eg-enc-foot">или напиши своё действие — кубик бросится сам</div>`}`).addClass('eg-show');
+        ${waiting ? '' : `<div class="eg-enc-tools"><button class="eg-focus" data-act="enc-details" aria-pressed="${$p.hasClass('eg-expanded-cards')}">Подробности</button><button class="eg-focus${encFocus ? ' eg-on' : ''}" data-act="enc-focus" ${energy ? '' : 'disabled'}>⚡ Собраться <small>+2 к броску · −1 сила (${energy})</small></button></div><div class="eg-enc-foot">или напиши своё действие — кубик бросится сам</div>`}`).addClass('eg-show');
 }
 
 /** A tapped card: roll right in the panel, then send the move as the player's message. */
@@ -615,24 +670,34 @@ async function playCard(i) {
     const set = X.optionSetup(st, o, { focus: encFocus });
     const dice = E.rollDice(Math.random, set.adv ? 3 : 2);
     const outcome = E.classifyDice(dice, set.mod, set.dc, 'risky', { lucky: set.lucky });
-    const tone = E.OUTCOMES[outcome].tone;
-    const faces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+    const chatId = ctx().getCurrentChatId?.();
     const $p = $('#eg-enc').addClass('eg-rolling');
-    globalThis.ElephantStage?.sound?.play('dice');
-    $p.find('.eg-ecards').html(`<div class="eg-enc-roll"><span class="eg-mini-dice">${dice.map(() => '<i>⚀</i>').join('')}</span><b>${escapeHtml(o.ru)}</b><em></em>${o.detail_ru ? `<small class="eg-detail">${escapeHtml(o.detail_ru)}</small>` : ''}</div>`);
-    if (S().juice) haptic('tick');
-    await new Promise((res) => {
-        let n = 0;
-        const t = setInterval(() => {
-            $p.find('.eg-mini-dice i').each(function () { this.textContent = faces[Math.floor(Math.random() * 6)]; });
-            if (++n >= 8) { clearInterval(t); res(); }
-        }, 60);
-    });
-    $p.find('.eg-mini-dice i').each(function (k) { this.textContent = faces[dice[k] - 1]; });
-    $p.find('.eg-enc-roll em').attr('data-tone', tone).text(E.OUTCOMES[outcome].ru);
-    juiceOutcome(outcome);
-    await new Promise(r => setTimeout(r, 700));
-    $p.removeClass('eg-rolling');
+    const button = $p.find('[data-opt]')[i];
+    button.classList.add('eg-chosen');
+    const dialog = document.createElement('dialog');
+    dialog.className = 'eg-roll-dialog';
+    dialog.classList.toggle('eg-motion', gameMotion());
+    dialog.setAttribute('aria-labelledby', 'eg-round-title');
+    dialog.innerHTML = `<h3 id="eg-round-title">${escapeHtml(o.ru)}</h3>
+        <div class="eg-dice"><span class="eg-dice-set">${diceTray(dice.length)}</span><div class="eg-roll-result" aria-live="polite"></div></div>`;
+    dialog.addEventListener('cancel', event => event.preventDefault());
+    document.body.append(dialog);
+    try {
+        if (gameMotion()) await new Promise(r => setTimeout(r, 160));
+        if (!button.isConnected) return;
+        dialog.showModal();
+        globalThis.ElephantStage?.sound?.play('dice');
+        if (S().juice) haptic('tick');
+        await landDice(dialog, dice, gameMotion());
+        revealRoll($(dialog).find('.eg-roll-result'), dice, set.mod, set.dc, outcome);
+        juiceOutcome(outcome);
+        await new Promise(r => setTimeout(r, 1300));
+    } finally {
+        dialog.remove();
+        button.classList.remove('eg-chosen');
+        $p.removeClass('eg-rolling');
+    }
+    if (!button.isConnected || ctx().getCurrentChatId?.() !== chatId || currentState().enc?.id !== st.enc.id) return;
     const sendText = X.aimText(st.enc, o.en);
     pendingRound = { text: sendText, option: o, dice, focus: set.focus };
     encFocus = false;
@@ -852,13 +917,14 @@ function ensureSheets() {
     if (document.getElementById('eg-check')) return;
     $('body').append(`
         <div id="eg-scrim"></div>
-        <section id="eg-check" class="eg-sheet" aria-live="polite"></section>
+        <dialog id="eg-check" class="eg-sheet" aria-label="Проверка навыка" aria-live="polite"></dialog>
         <section id="eg-state" class="eg-sheet"><div class="eg-grip"></div><div class="eg-tabs"></div><div class="eg-sheet-body"></div></section>
         <section id="eg-setup" class="eg-sheet"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
         <section id="eg-card" class="eg-sheet"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
         <section id="eg-prompts" class="eg-sheet eg-sheet-tall"><div class="eg-grip"></div><div class="eg-sheet-body"></div></section>
         <div id="eg-toasts"></div>
         <div id="eg-banner"></div>`);
+    document.getElementById('eg-check').addEventListener('cancel', event => event.preventDefault());
     $('#eg-scrim').on('click', () => { if (!$('#eg-check').hasClass('eg-open')) closeEgSheets(); });
 }
 
@@ -869,12 +935,16 @@ function openPromptsSheet() {
 function openEgSheet(id) {
     ensureSheets();
     $('.eg-sheet').removeClass('eg-open');
+    const check = document.getElementById('eg-check');
+    if (id === 'eg-check' && !check.open) check.showModal();
+    if (id !== 'eg-check' && check.open) check.close();
     $(`#${id}`).addClass('eg-open');
     document.body.classList.add('eg-sheet-open');
 }
 
 function closeEgSheets() {
     const was = $('.eg-sheet.eg-open').length > 0;
+    document.getElementById('eg-check')?.close();
     $('.eg-sheet').removeClass('eg-open');
     document.body.classList.remove('eg-sheet-open');
     return was;
@@ -900,10 +970,11 @@ function showCheckCard(state, v) {
             const o = E.odds(mod, dc, pos, { adv, lucky });
             const pct = Math.round(o.atLeastSuccess * 100);
             const nearPct = Math.round(o.near * 100);
-            $card.attr('data-pos', pos).html(`
+            $card.removeClass('eg-has-roll').toggleClass('eg-motion', gameMotion()).removeAttr('data-tone').attr('data-pos', pos).html(`
                 <div class="eg-grip"></div>
+                <h3 class="eg-check-action">${escapeHtml(v.label_ru || 'Проверка')}</h3>
                 <div class="eg-check-head">
-                    <div class="eg-skill"><span class="eg-skill-ico">${E.SKILLS[skill].icon}</span><div><b>${E.SKILLS[skill].ru.toUpperCase()} ${mod >= 0 ? '+' : ''}${mod}</b><small>${escapeHtml(v.label_ru || 'Проверка')}</small></div></div>
+                    <div class="eg-skill"><span class="eg-skill-ico">${E.SKILLS[skill].icon}</span><div><b>${E.SKILLS[skill].ru.toUpperCase()} ${mod >= 0 ? '+' : ''}${mod}</b></div></div>
                     <div class="eg-odds"><b>${pct}%</b><small>успех</small></div>
                 </div>
                 <div class="eg-badges">
@@ -913,11 +984,11 @@ function showCheckCard(state, v) {
                     ${adv ? '<span class="eg-badge eg-badge-perk">✨ талант: 3 кубика</span>' : ''}
                     ${(() => { const g = E.gearFor(state, skill); return g ? `<span class="eg-badge eg-badge-perk">🎒 ${escapeHtml(g.name)} +${g.bonus}</span>` : ''; })()}
                     ${bond.why.map(w => `<span class="eg-badge eg-badge-bond">💞 ${escapeHtml(w)}</span>`).join('')}${cond.why.map(w => `<span class="eg-badge eg-badge-cond">⛓ ${escapeHtml(w)}</span>`).join('')}${cond.frees ? '<span class="eg-badge eg-badge-cond">🔓 успех освободит</span>' : ''}
-                    <span class="eg-badge">+ ${nearPct}% успех ценой</span>
+                    <span class="eg-badge">${E.OUTCOMES.near.ru} · ${nearPct}%</span>
                     ${v.threat ? `<span class="eg-badge eg-badge-threat">⏳ ${escapeHtml(v.threat)}</span>` : ''}
                 </div>
                 <div class="eg-bar"><i style="width:${pct}%"></i><i class="eg-bar-near" style="width:${nearPct}%"></i></div>
-                <div class="eg-dice">${'<div class="eg-die">?</div>'.repeat(nDice)}<div class="eg-roll-result"></div></div>
+                <div class="eg-dice"><span class="eg-dice-set">${diceTray(nDice)}</span><div class="eg-roll-result"></div></div>
                 <div class="eg-actions">
                     <button class="eg-btn eg-btn-roll"><i class="fa-solid fa-dice"></i> Бросить</button>
                     <button class="eg-btn eg-btn-push ${push ? 'eg-on' : ''}" ${canPush ? '' : 'disabled'}>⚡ Собраться <small>+2 · −1 сила</small></button>
@@ -930,15 +1001,16 @@ function showCheckCard(state, v) {
 
         let rerolled = false;
         const roll = async () => {
-            $card.find('.eg-actions, .eg-btn-cancel, .eg-after').css('visibility', 'hidden');
+            $card.addClass('eg-has-roll');
             const dice = E.rollDice(Math.random, nDice);
-            await animateDice($card, dice);
+            $card.removeAttr('data-tone').find('.eg-roll-result').removeAttr('data-tone').empty();
+            globalThis.ElephantStage?.sound?.play('dice');
+            await landDice($card[0], dice, gameMotion());
+            if (S().juice) haptic('hit');
             const mod = baseMod + (push ? 2 : 0);
             const outcome = E.classifyDice(dice, mod, dc, pos, { lucky });
             const o = E.OUTCOMES[outcome];
-            const [a, b] = E.bestTwo(dice);
-            $card.find('.eg-die').each(function (i) { this.classList.toggle('eg-die-drop', adv && i === dice.indexOf(Math.min(...dice))); });
-            $card.find('.eg-roll-result').attr('data-tone', o.tone).html(`<b>${o.ru}</b><small>${a} + ${b} ${mod >= 0 ? '+' : '−'} ${Math.abs(mod)} = ${a + b + mod} / ${dc}</small>`);
+            revealRoll($card.find('.eg-roll-result'), dice, mod, dc, outcome);
             $card.attr('data-tone', o.tone);
             juiceOutcome(outcome);
             const finish = () => { closeEgSheets(); resolve({ roll: true, push, dice, rerolled }); };
@@ -957,28 +1029,8 @@ function showCheckCard(state, v) {
     });
 }
 
-function animateDice($card, final) {
-    const faces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-    const $d = $card.find('.eg-die');
-    $d.addClass('eg-rolling');
-    globalThis.ElephantStage?.sound?.play('dice');
-    return new Promise((res) => {
-        let n = 0;
-        const t = setInterval(() => {
-            $d.each(function () { this.textContent = faces[Math.floor(Math.random() * 6)]; });
-            if (++n >= 9) {
-                clearInterval(t);
-                $d.removeClass('eg-rolling');
-                $d.each(function (i) { this.textContent = faces[(final[i] ?? 1) - 1]; });
-                if (S().juice) haptic('hit');
-                res();
-            }
-        }, 60);
-    });
-}
-
 function juiceOutcome(outcome) {
-    if (!S().juice) return;
+    if (!gameMotion()) return;
     const st = globalThis.ElephantStage;
     switch (outcome) {
         case 'crit': st?.playEvents?.(['magic']); haptic('heartbeat'); break;
@@ -1509,8 +1561,8 @@ function journalHtml(s) {
         body = s.log.length ? `<div class="eg2-sec eg2-sec-list">${s.log.map(r => {
             const o = E.OUTCOMES[r.outcome];
             return `<div class="eg-log-row" data-tone="${o.tone}">
-                <span class="eg-log-dice">${r.dice[0]}·${r.dice[1]}</span>
-                <div><b>${escapeHtml(r.label_ru || r.action_en)}</b><small>${E.SKILLS[r.skill].ru} ${r.mod >= 0 ? '+' : ''}${r.mod} · ${r.total} против ${r.dc}${r.push ? ' · надавил' : ''}</small></div>
+                <span class="eg-log-dice">${r.dice.join('·')}</span>
+                <div><b>${escapeHtml(r.label_ru || r.action_en)}</b><small>${E.SKILLS[r.skill].ru} ${r.mod >= 0 ? '+' : ''}${r.mod} · ${r.total} против ${r.dc}${r.push ? ' · собрался' : ''}</small></div>
                 <span class="eg-log-out">${o.ru}</span>
             </div>`;
         }).join('')}</div>` : '<div class="eg2-empty"><i>🎲</i><b>Бросков ещё не было</b><small>Кубики падают, когда исход действия не очевиден: драка, взлом, обман, соблазнение.</small></div>';
@@ -1702,8 +1754,9 @@ function openSetup(editing = false) {
 
 function hideTrackerLines() {
     const on = isActive() && S().hideTracker;
-    document.querySelectorAll('#chat .mes .mes_text').forEach((el) => {
-        const first = el.firstElementChild;
+    document.querySelectorAll('#chat .mes').forEach((element) => {
+        renderRollReceipt(element);
+        const first = element.querySelector('.mes_text')?.firstElementChild;
         if (!first) return;
         const isTracker = /^\s*\[\s*🕐/u.test(first.textContent || '');
         first.classList.toggle('eg-tracker-hidden', on && isTracker);

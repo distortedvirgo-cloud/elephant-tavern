@@ -268,7 +268,7 @@ export function cleanOptions(list, kind = 'nsfw') {
     const kinds = kind === 'nsfw' ? KINDS_NSFW : KINDS_COMBAT;
     return (Array.isArray(list) ? list : []).slice(0, 4).map((o, i) => ({
         id: `o${i}`,
-        ru: trimLabel(o?.ru || o?.en || '…', (o?.say || /^[«"„]/.test(String(o?.ru || '').trim())) ? 34 : 16),
+        ru: trimLabel(o?.ru || o?.en || '…', 96),
         detail_ru: String(o?.detail_ru || '').replace(/\s+/g, ' ').trim().slice(0, 140),
         risk_ru: String(o?.risk_ru || '').replace(/\s+/g, ' ').trim().slice(0, 24),
         en: String(o?.en || o?.ru || '').slice(0, 360),
