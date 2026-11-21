@@ -1,5 +1,7 @@
 import dagre from '../../../lib/dagre/dagre-1.1.5.js';
 
+import { placeVisits } from './place-history.js';
+
 const width = 128;
 const height = 56;
 const normalize = text => typeof text === 'string' ? text.trim().replace(/\s+/g, ' ') : '';
@@ -27,9 +29,7 @@ function placeGraph(initial, chat, state) {
         }
         previous = id;
     }
-    visit(initial?.location);
-    for (const message of chat) visit(message.extra?.elephant_game?.state?.location);
-    visit(state.location);
+    for (const label of placeVisits(initial, chat, state)) visit(label);
     if (ids.size) dagre.layout(graph);
     return { graph, current: ids.get(normalize(state.location).toLowerCase()) };
 }

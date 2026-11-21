@@ -11,6 +11,7 @@
  * State is snapshotted on every message (message.extra.elephant_game.state = state AFTER
  * that message), so swipes, edits and deletions roll the game back for free.
  */
+import { hasExit } from './place-history.js';
 import { diceTray, landDice } from './dice.js';
 import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter, whenRevealed, personaText } from '../stage/helper.js';
 import * as E from './engine.js';
@@ -1145,11 +1146,18 @@ function banner(text, tone = 'gold') {
 
 const TABS = [['hero', '🧍', 'Герой'], ['people', '🫂', 'Связи'], ['items', '🎒', 'Вещи'], ['goals', '🎯', 'Цели'], ['log', '📖', 'Журнал'], ['map', '⌖', 'Карта']];
 
+function canOpenMap(state = currentState()) {
+    return isActive() && !(state.enc?.kind === 'combat' && state.enc.status === 'active')
+        && hasExit(meta()?.initial, ctx().chat || [], state);
+}
+
 function openStateSheet(tab = 'hero') {
     ensureSheets();
     const s = currentState();
     const dots = { hero: s.unspent > 0 || E.perkPicks(s) > 0, goals: (s.offers || []).some(o => o.status === 'offered') };
-    $('#eg-state .eg-tabs').html(TABS.map(([id, icon, label]) => `<button class="eg-tab ${id === tab ? 'eg-on' : ''}" data-tab="${id}"><i>${icon}</i><span>${label}</span>${dots[id] ? '<u></u>' : ''}</button>`).join(''))
+    const tabs = TABS.filter(([id]) => id !== 'map' || canOpenMap(s));
+    if (tab === 'map' && !tabs.some(([id]) => id === 'map')) tab = 'hero';
+    $('#eg-state .eg-tabs').css('--eg-tab-count', tabs.length).html(tabs.map(([id, icon, label]) => `<button class="eg-tab ${id === tab ? 'eg-on' : ''}" data-tab="${id}"><i>${icon}</i><span>${label}</span>${dots[id] ? '<u></u>' : ''}</button>`).join(''))
         .off('click').on('click', '.eg-tab', function () { openStateSheet(this.dataset.tab); });
     const $b = $('#eg-state .eg-sheet-body');
     if (tab === 'map') {
@@ -1879,7 +1887,7 @@ export async function init() {
     ensureSheets();
     addHubTile();
     setTimeout(() => { addHubTile(); patchBack(); }, 1500);
-    globalThis.ElephantGame = { isActive, ownsScene: isActive, currentState, openSetup, openStateSheet, openCard, openPrompts: openPromptsSheet, prompts: P, startEncounter: startEncounterFlow, engine: E, encounter: X };
+    globalThis.ElephantGame = { isActive, canOpenMap, ownsScene: isActive, currentState, openSetup, openStateSheet, openCard, openPrompts: openPromptsSheet, prompts: P, startEncounter: startEncounterFlow, engine: E, encounter: X };
     refresh();
     log('game mode ready');
 }

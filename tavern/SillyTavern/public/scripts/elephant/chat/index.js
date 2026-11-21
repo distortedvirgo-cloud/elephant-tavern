@@ -178,10 +178,67 @@ let ideasBusy = false;
 function ensureIdeasBar() {
     if (document.getElementById('ec-ideas')) return;
     $('#form_sheld').prepend('<div id="ec-ideas"></div>');
-    if (!document.getElementById('ec-ideas-btn')) {
-        $('#leftSendForm').append('<div id="ec-ideas-btn" class="fa-solid fa-lightbulb interactable" title="Варианты ответа" tabindex="0"></div>');
-        $('#ec-ideas-btn').on('click', () => (document.getElementById('ec-ideas').childElementCount ? clearIdeas() : loadIdeas(true)));
+    $('#form_sheld').prepend('<div id="ec-quick" role="group" aria-label="Действия в чате" hidden></div>');
+    $('#leftSendForm').append('<button type="button" id="ec-quick-btn" aria-label="Действия в чате" aria-expanded="false" aria-controls="ec-quick"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>');
+    $('#ec-quick-btn').on('click', () => {
+        if (closeQuick()) return;
+        const actions = quickActions();
+        const panel = document.getElementById('ec-quick');
+        panel.replaceChildren();
+        for (const [label, icon, run] of actions) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i>${label}`;
+            button.onclick = () => {
+                closeQuick(true);
+                if (quickActions().some(([name]) => name === label)) run();
+            };
+            panel.append(button);
+        }
+        panel.hidden = false;
+        $('#ec-quick-btn').attr('aria-expanded', 'true');
+        panel.firstElementChild?.focus({ preventScroll: true });
+    });
+    document.addEventListener('pointerdown', event => {
+        if (!event.target.closest('#ec-quick, #ec-quick-btn')) closeQuick();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && closeQuick(true)) event.preventDefault();
+    });
+}
+
+function closeQuick(focus = false) {
+    const panel = document.getElementById('ec-quick');
+    if (!panel || panel.hidden) return false;
+    panel.hidden = true;
+    $('#ec-quick-btn').attr('aria-expanded', 'false');
+    if (focus) document.getElementById('ec-quick-btn').focus({ preventScroll: true });
+    return true;
+}
+
+function quickActions() {
+    const game = globalThis.ElephantGame;
+    const state = game?.isActive() ? game.currentState() : null;
+    const actions = [];
+    if (state && game.canOpenMap(state)) actions.push(['Карта', 'fa-map', () => game.openStateSheet('map')]);
+    if (state?.items?.length) actions.push(['Инвентарь', 'fa-box-open', () => game.openStateSheet('items')]);
+    if (state?.goals?.some(g => g.status === 'active') || state?.offers?.some(o => o.status === 'offered')) {
+        actions.push(['Цели', 'fa-bullseye', () => game.openStateSheet('goals')]);
     }
+    if (S().ideas !== 'off' && ctx().chat?.length && !ctx().chat.at(-1).is_user) {
+        if ($('#ec-ideas').children().length) actions.push(['Скрыть варианты ответа', 'fa-eye-slash', clearIdeas]);
+        else actions.push(['Варианты ответа', 'fa-lightbulb', () => loadIdeas(true)]);
+    }
+    if (state) actions.push(['Герой', 'fa-user', () => game.openStateSheet('hero')]);
+    else actions.push(['Персонажи', 'fa-address-book', () => {
+        if (shell()) globalThis.ElephantStage.openSheet('chars');
+        else {
+            const drawer = $('#rightNavHolder');
+            if (!drawer.find('.drawer-content').hasClass('openDrawer')) drawer.find('.drawer-toggle').first().trigger('click');
+            $('#rm_button_characters').trigger('click');
+        }
+    }]);
+    return actions;
 }
 
 function clearIdeas() {
@@ -274,10 +331,10 @@ function settingsHtml() {
     return `<div class="et-group" id="ec_settings">
         <h4 class="et-h">💬 Чат</h4>
         <label class="et-check"><input type="checkbox" id="ec_gestures" ${s.gestures ? 'checked' : ''}><span>Жесты: свайп последнего ответа — другой вариант, удержание сообщения — меню</span></label>
-        <label class="et-field">Варианты ответа (💡 у поля ввода)
+        <label class="et-field">Варианты ответа
             <select id="ec_ideas" class="text_pole">
                 <option value="off" ${s.ideas === 'off' ? 'selected' : ''}>Выключены</option>
-                <option value="button" ${s.ideas === 'button' ? 'selected' : ''}>По кнопке 💡</option>
+                <option value="button" ${s.ideas === 'button' ? 'selected' : ''}>Из меню действий</option>
                 <option value="auto" ${s.ideas === 'auto' ? 'selected' : ''}>Автоматически после каждого ответа (~$0.001 за раз)</option>
             </select>
         </label>
@@ -291,7 +348,7 @@ export async function init() {
     const et = c.eventTypes ?? c.event_types;
     bindGestures();
     ensureSheet();
-    if (S().ideas !== 'off') ensureIdeasBar();
+    ensureIdeasBar();
     if (shell()) document.body.classList.add('ec-gesture-ui');
 
     ev.on(et.MESSAGE_RECEIVED, (_id, type) => {
@@ -299,7 +356,7 @@ export async function init() {
         if (type === 'impersonate') return;
         if (S().ideas === 'auto') setTimeout(() => loadIdeas(false), 400);
     });
-    for (const e of [et.MESSAGE_SENT, et.CHAT_CHANGED, et.MESSAGE_SWIPED, et.MESSAGE_DELETED, et.GENERATION_STARTED]) if (e) ev.on(e, clearIdeas);
+    for (const e of [et.MESSAGE_SENT, et.CHAT_CHANGED, et.MESSAGE_SWIPED, et.MESSAGE_DELETED, et.GENERATION_STARTED]) if (e) ev.on(e, () => { closeQuick(); clearIdeas(); });
 
     document.addEventListener('et-settings-refresh', () => {
         const $body = $('#et-sheet-stage .et-sheet-body .et-settings, #elephant_stage_settings .et-settings').first();
@@ -309,14 +366,15 @@ export async function init() {
     $(document).on('change', '#ec_ideas', function () {
         S().ideas = this.value;
         c.saveSettingsDebounced();
-        if (this.value === 'off') { clearIdeas(); $('#ec-ideas-btn').remove(); } else ensureIdeasBar();
+        closeQuick();
+        if (this.value === 'off') clearIdeas();
     });
 
     // Android back: our sheet first.
     const st = globalThis.ElephantStage;
     if (st && !st.__ecBack) {
         const original = st.handleBack;
-        st.handleBack = () => closeActions() || original();
+        st.handleBack = () => closeQuick(true) || closeActions() || original();
         st.__ecBack = true;
     }
     globalThis.ElephantChat = { openActions, loadIdeas };

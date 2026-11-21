@@ -140,7 +140,7 @@ body.et-shell #eg-hud { background: var(--et-surface-cover); border-radius: 8px;
     }
 }
 
-#eg-state .eg-tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+#eg-state .eg-tabs { grid-template-columns: repeat(var(--eg-tab-count, 6), minmax(0, 1fr)); }
 @media (max-width: 370px) {
     #eg-state .eg-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

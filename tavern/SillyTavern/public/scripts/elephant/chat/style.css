@@ -67,6 +67,10 @@ body.ec-sheet-open #ec-scrim { opacity: 1; pointer-events: auto; }
 .ec-idea.ec-loading { flex-direction: row; align-items: center; gap: 8px; opacity: 0.8; }
 .ec-idea:active { transform: scale(0.97); }
 @keyframes ec-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }
-#ec-ideas-btn { color: #ffd58a; }
+#ec-quick-btn { width: 40px; height: 40px; border: 0; border-radius: 8px; color: inherit; background: transparent; cursor: pointer; }
+#ec-quick-btn[aria-expanded="true"] { background: var(--et-surface-raised); }
+#ec-quick:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 4px; max-height: 35dvh; overflow-y: auto; padding: 6px; margin-bottom: 4px; background: var(--et-surface-night); border: 1px solid var(--et-surface-edge); border-radius: 10px; }
+#ec-quick button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px; text-align: left; border: 0; border-radius: 6px; background: var(--et-surface-raised); color: var(--et-surface-text); }
+#ec-quick button:focus-visible, #ec-quick-btn:focus-visible { outline: 2px solid var(--et-highlight); outline-offset: -2px; }
 #ec-ideas { touch-action: pan-x; overscroll-behavior-x: contain; }
 .ec-idea { touch-action: pan-x; }
