@@ -246,6 +246,7 @@ export function mergeNpcs(s, keepName, dropName) {
     keep.positions = uniq(keep.positions, drop.positions, 12); keep.places = uniq(keep.places, drop.places, 10);
     keep.likes = uniq(keep.likes, drop.likes, 10); keep.spots = uniq(keep.spots, drop.spots, 6);
     keep.limits = uniq(keep.limits, drop.limits, 6); keep.dislikes = uniq(keep.dislikes, drop.dislikes, 6);
+    keep.deeds = uniq(keep.deeds, drop.deeds, 12);
     keep.diary = [...keep.diary, ...drop.diary].sort((x, y) => String(x.time).localeCompare(String(y.time))).slice(-40);
     keep.knows = { ...drop.knows, ...keep.knows };
     keep.aliases = uniq(keep.aliases, [drop.name, ...(drop.aliases || [])], 6).filter(a => a.toLowerCase() !== keep.name.toLowerCase());
@@ -1312,6 +1313,10 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
             const tk = keyOf(s, target);
             if ((npc.knows[tk] || 0) < st) { npc.knows[tk] = st; notes.push({ kind: 'knows', name: npc.name, about: target.name }); if (jealousNow(npc, s, target.name, 'learned')) notes.push({ kind: 'jealous', name: npc.name, about: target.name }); }
         }
+        const deed = typeof n.deed_ru === 'string' ? n.deed_ru.trim().slice(0, 180) : '';
+        if (deed && !(npc.deeds || []).includes(deed)) {
+            npc.deeds = [...(npc.deeds || []), deed].slice(-12);
+        }
         const moment = String(n.moment_ru || '').trim();
         if (moment) {
             npc.diary.push({ time: s.time, ru: moment.slice(0, 120), en: String(n.moment_en || '').slice(0, 160) });
@@ -1511,6 +1516,7 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
         if (n.feel?.en && state.turn - n.feel.turn <= 6) parts.push(`mood: ${n.feel.en}`);
         if (n.stage >= 1 && n.other?.last) parts.push(`has also been intimate with others in this story (${n.other.partners.slice(-3).join(', ') || n.other.last.who}; last: ${n.other.last.act} with ${n.other.last.who}): part of who they are now — they may hide it from ${userName}, confess it, or flaunt it, by their nature and how they feel about ${userName}`);
         if (n.meetCount > 1) parts.push(`${n.meetCount} meetings with ${userName} so far`);
+        if (n.deeds?.length) parts.push(`remembered actions: ${n.deeds.slice(-3).join(' / ')}. Let relevant memories shape this character's choices in keeping with their card`);
         const recent = (n.diary || []).slice(-3).map(d => d.en || d.ru);
         if (recent.length) parts.push(`shared history: ${recent.join(' / ')}`);
     }

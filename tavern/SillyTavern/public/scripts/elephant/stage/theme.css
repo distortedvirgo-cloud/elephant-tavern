@@ -139,3 +139,18 @@ body.et-shell #eg-hud { background: var(--et-surface-cover); border-radius: 8px;
         animation: none; transition: none;
     }
 }
+
+#eg-state .eg-tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 370px) {
+    #eg-state .eg-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.eg-map-picker { display: grid; gap: 6px; margin: 16px 0; color: var(--et-surface-muted); }
+.eg-map-picker select { width: 100%; min-height: 44px; }
+.eg-map-origin, .eg-map-place { border: 1px solid var(--et-surface-edge); border-radius: 8px; padding: 12px; overflow-wrap: anywhere; }
+.eg-map-origin { background: var(--et-surface-raised); display: grid; gap: 4px; }
+.eg-map-origin small { color: var(--et-surface-muted); }
+.eg-map-links { list-style: none; margin: 8px 0 16px 16px; padding: 0; }
+.eg-map-links li { position: relative; border-left: 1px solid var(--et-surface-edge); padding: 4px 0 4px 20px; }
+.eg-map-links li::before { content: ''; position: absolute; top: 50%; left: 0; width: 20px; border-top: 1px solid var(--et-surface-edge); }
+.eg-map-place { color: inherit; background: var(--et-surface-input); text-align: start; min-height: 44px; }
+.eg-deeds { padding-inline-start: 20px; overflow-wrap: anywhere; }

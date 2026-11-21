@@ -1143,7 +1143,47 @@ function banner(text, tone = 'gold') {
 
 // ------------------------------------------------------------------ UI: state sheet
 
-const TABS = [['hero', '🧍', 'Герой'], ['people', '🫂', 'Связи'], ['items', '🎒', 'Вещи'], ['goals', '🎯', 'Цели'], ['log', '📖', 'Журнал']];
+const TABS = [['hero', '🧍', 'Герой'], ['people', '🫂', 'Связи'], ['items', '🎒', 'Вещи'], ['goals', '🎯', 'Цели'], ['log', '📖', 'Журнал'], ['map', '⌖', 'Карта']];
+
+/** Read only the active message branch; older chats already contain location snapshots. */
+function renderMap(body, state) {
+    const places = new Map();
+    let last = '';
+    function visit(location) {
+        const label = typeof location === 'string' ? location.trim().replace(/\s+/g, ' ') : '';
+        const key = label.toLowerCase();
+        if (!key || key === last) return;
+        if (!places.has(key)) places.set(key, { label, neighbors: new Set() });
+        if (last) {
+            places.get(key).neighbors.add(last);
+            places.get(last).neighbors.add(key);
+        }
+        last = key;
+    }
+    visit(meta()?.initial?.location);
+    for (const message of ctx().chat || []) visit(message.extra?.elephant_game?.state?.location);
+    visit(state.location);
+    const current = state.location?.trim().replace(/\s+/g, ' ').toLowerCase();
+    const draw = key => {
+        const place = places.get(key);
+        const names = [...places.keys()];
+        const button = id => `<button class="eg-map-place" data-place-index="${names.indexOf(id)}">${escapeHtml(places.get(id).label)}</button>`;
+        body.innerHTML = `<h3 class="eg-title">Карта мест</h3>${place ? `
+            <label class="eg-map-picker">Место на схеме<select class="text_pole">${names.map((id, i) =>
+                `<option value="${i}" ${id === key ? 'selected' : ''}>${escapeHtml(places.get(id).label)}${id === current ? ' — вы здесь' : ''}</option>`).join('')}</select></label>
+            <div class="eg-map-origin"><b>${escapeHtml(place.label)}</b>${key === current ? '<small>Вы здесь</small>' : ''}</div>
+            ${place.neighbors.size ? `<p class="eg-small eg-muted">Переходы в истории</p><ul class="eg-map-links">${[...place.neighbors].map(id => `<li>${button(id)}</li>`).join('')}</ul>` : '<p class="eg-muted">Здесь появятся переходы, когда в истории сменится место.</p>'}
+        ` : '<p class="eg-muted">В этом чате пока не зафиксировано место действия.</p>'}`;
+        if (!place) return;
+        const picker = body.querySelector('select');
+        picker.onchange = () => { draw(names[Number(picker.value)]); body.querySelector('select').focus(); };
+        for (const node of body.querySelectorAll('[data-place-index]')) node.onclick = () => {
+            draw(names[Number(node.dataset.placeIndex)]);
+            body.querySelector('select').focus();
+        };
+    };
+    draw(current || last);
+}
 
 function openStateSheet(tab = 'hero') {
     ensureSheets();
@@ -1152,6 +1192,7 @@ function openStateSheet(tab = 'hero') {
     $('#eg-state .eg-tabs').html(TABS.map(([id, icon, label]) => `<button class="eg-tab ${id === tab ? 'eg-on' : ''}" data-tab="${id}"><i>${icon}</i><span>${label}</span>${dots[id] ? '<u></u>' : ''}</button>`).join(''))
         .off('click').on('click', '.eg-tab', function () { openStateSheet(this.dataset.tab); });
     const $b = $('#eg-state .eg-sheet-body');
+    if (tab === 'map') renderMap($b[0], s);
     if (tab === 'hero') $b.html(heroHtml(s));
     if (tab === 'people') $b.html(peopleHtml(s));
     if (tab === 'goals') $b.html(goalsHtml(s));
@@ -1342,6 +1383,7 @@ function cardHtml(state, name) {
         <h4 class="eg-h">💡 Что ты о ней знаешь</h4>
         ${tastes ? `<div class="eg2-sec eg2-sec-list eg3-pad">${tastes}</div>` : '<p class="eg-muted eg-small">Пока ничего: вкусы, чувствительные места и границы открываются по ходу истории.</p>'}
         ${n.meets?.length ? `<h4 class="eg-h">🗓 Встречи <small class="eg-muted">${n.meetCount || n.meets.length}</small></h4><div class="eg2-sec eg3-pad"><div class="eg-tl">${n.meets.slice(-8).reverse().map(m => `<div class="eg-tl-row"><span>📍</span><div><b>${escapeHtml(m.place || 'где-то')}</b><small>${fmt(m.time)} · ${agoRu(m.time, state.time)}</small></div></div>`).join('')}</div></div>` : ''}
+        ${n.deeds?.length ? `<h4 class="eg-h">Что помнит персонаж</h4><ul class="eg-deeds">${n.deeds.map(text => `<li>${escapeHtml(text)}</li>`).join('')}</ul>` : ''}
         ${n.diary?.length ? `<h4 class="eg-h">📔 Дневник отношений</h4><div class="eg2-sec eg3-pad"><div class="eg-tl">${n.diary.slice().reverse().map(d => `<div class="eg-tl-row"><span>•</span><div><b>${escapeHtml(d.ru)}</b><small>${fmt(d.time)}</small></div></div>`).join('')}</div></div>` : ''}
         ${Array.isArray(n.schedule) && n.schedule.length ? `<h4 class="eg-h">🗓 Распорядок</h4><div class="eg2-sec eg3-pad"><div class="eg-sched">${n.schedule.map(e => `<div><span>${e.from}–${e.to}</span><b>${escapeHtml(e.doing_ru || e.doing_en)}</b><small>${escapeHtml(e.where_ru)}${e.days !== 'all' ? ` · ${e.days === 'weekdays' ? 'будни' : 'выходные'}` : ''}</small></div>`).join('')}</div></div>` : ''}
         ${raw && others.length ? `<details class="eg2-fmt eg3-merge"><summary>Это дубль другого персонажа?</summary><div class="eg3-merge-body"><small class="eg-muted">Выбери, с кем объединить запись: отношения, счётчики и дневник сложатся в одну карточку.</small><div class="eg-chips">${others.map(o => `<button class="eg-chip" data-merge="${escapeHtml(o.name)}">${escapeHtml(o.name)}</button>`).join('')}</div></div></details>` : ''}
