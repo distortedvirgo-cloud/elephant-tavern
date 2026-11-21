@@ -1145,46 +1145,6 @@ function banner(text, tone = 'gold') {
 
 const TABS = [['hero', '🧍', 'Герой'], ['people', '🫂', 'Связи'], ['items', '🎒', 'Вещи'], ['goals', '🎯', 'Цели'], ['log', '📖', 'Журнал'], ['map', '⌖', 'Карта']];
 
-/** Read only the active message branch; older chats already contain location snapshots. */
-function renderMap(body, state) {
-    const places = new Map();
-    let last = '';
-    function visit(location) {
-        const label = typeof location === 'string' ? location.trim().replace(/\s+/g, ' ') : '';
-        const key = label.toLowerCase();
-        if (!key || key === last) return;
-        if (!places.has(key)) places.set(key, { label, neighbors: new Set() });
-        if (last) {
-            places.get(key).neighbors.add(last);
-            places.get(last).neighbors.add(key);
-        }
-        last = key;
-    }
-    visit(meta()?.initial?.location);
-    for (const message of ctx().chat || []) visit(message.extra?.elephant_game?.state?.location);
-    visit(state.location);
-    const current = state.location?.trim().replace(/\s+/g, ' ').toLowerCase();
-    const draw = key => {
-        const place = places.get(key);
-        const names = [...places.keys()];
-        const button = id => `<button class="eg-map-place" data-place-index="${names.indexOf(id)}">${escapeHtml(places.get(id).label)}</button>`;
-        body.innerHTML = `<h3 class="eg-title">Карта мест</h3>${place ? `
-            <label class="eg-map-picker">Место на схеме<select class="text_pole">${names.map((id, i) =>
-                `<option value="${i}" ${id === key ? 'selected' : ''}>${escapeHtml(places.get(id).label)}${id === current ? ' — вы здесь' : ''}</option>`).join('')}</select></label>
-            <div class="eg-map-origin"><b>${escapeHtml(place.label)}</b>${key === current ? '<small>Вы здесь</small>' : ''}</div>
-            ${place.neighbors.size ? `<p class="eg-small eg-muted">Переходы в истории</p><ul class="eg-map-links">${[...place.neighbors].map(id => `<li>${button(id)}</li>`).join('')}</ul>` : '<p class="eg-muted">Здесь появятся переходы, когда в истории сменится место.</p>'}
-        ` : '<p class="eg-muted">В этом чате пока не зафиксировано место действия.</p>'}`;
-        if (!place) return;
-        const picker = body.querySelector('select');
-        picker.onchange = () => { draw(names[Number(picker.value)]); body.querySelector('select').focus(); };
-        for (const node of body.querySelectorAll('[data-place-index]')) node.onclick = () => {
-            draw(names[Number(node.dataset.placeIndex)]);
-            body.querySelector('select').focus();
-        };
-    };
-    draw(current || last);
-}
-
 function openStateSheet(tab = 'hero') {
     ensureSheets();
     const s = currentState();
@@ -1192,7 +1152,16 @@ function openStateSheet(tab = 'hero') {
     $('#eg-state .eg-tabs').html(TABS.map(([id, icon, label]) => `<button class="eg-tab ${id === tab ? 'eg-on' : ''}" data-tab="${id}"><i>${icon}</i><span>${label}</span>${dots[id] ? '<u></u>' : ''}</button>`).join(''))
         .off('click').on('click', '.eg-tab', function () { openStateSheet(this.dataset.tab); });
     const $b = $('#eg-state .eg-sheet-body');
-    if (tab === 'map') renderMap($b[0], s);
+    if (tab === 'map') {
+        const panel = document.createElement('section');
+        $b.empty().append(panel);
+        import('./place-map.js').then(({ renderMap }) => {
+            if (panel.isConnected) renderMap(panel, meta()?.initial, ctx().chat || [], s, escapeHtml);
+        }).catch(error => {
+            log('map failed', error);
+            panel.textContent = 'Не удалось открыть карту.';
+        });
+    }
     if (tab === 'hero') $b.html(heroHtml(s));
     if (tab === 'people') $b.html(peopleHtml(s));
     if (tab === 'goals') $b.html(goalsHtml(s));

@@ -144,13 +144,21 @@ body.et-shell #eg-hud { background: var(--et-surface-cover); border-radius: 8px;
 @media (max-width: 370px) {
     #eg-state .eg-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-.eg-map-picker { display: grid; gap: 6px; margin: 16px 0; color: var(--et-surface-muted); }
-.eg-map-picker select { width: 100%; min-height: 44px; }
-.eg-map-origin, .eg-map-place { border: 1px solid var(--et-surface-edge); border-radius: 8px; padding: 12px; overflow-wrap: anywhere; }
-.eg-map-origin { background: var(--et-surface-raised); display: grid; gap: 4px; }
-.eg-map-origin small { color: var(--et-surface-muted); }
-.eg-map-links { list-style: none; margin: 8px 0 16px 16px; padding: 0; }
-.eg-map-links li { position: relative; border-left: 1px solid var(--et-surface-edge); padding: 4px 0 4px 20px; }
-.eg-map-links li::before { content: ''; position: absolute; top: 50%; left: 0; width: 20px; border-top: 1px solid var(--et-surface-edge); }
-.eg-map-place { color: inherit; background: var(--et-surface-input); text-align: start; min-height: 44px; }
+/* The scroll area is the camera. Graph coordinates stay stable while zooming. */
+.eg-map-tools { display: flex; gap: 6px; margin: 10px 0; align-items: center; }
+.eg-map-tools select { flex: 1; min-width: 0; }
+.eg-map-tools button, .eg-map-detail button { padding: 6px 10px; min-height: 40px; color: inherit; background: var(--et-surface-raised); border: 1px solid var(--et-surface-edge); border-radius: 6px; }
+.eg-map-view { position: relative; overflow: auto; overscroll-behavior: contain; height: clamp(180px, 40dvh, 430px); border: 1px solid var(--et-surface-edge); border-radius: 10px; background: radial-gradient(#34353b 1px, transparent 1px) 0 0 / 16px 16px, var(--et-surface-input); }
+.eg-map-size { position: relative; margin: 0 auto; overflow: hidden; }
+.eg-map-plane { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.eg-map-plane svg { display: block; }
+.eg-map-node { position: absolute; display: grid; align-content: center; padding: 4px 6px; background: #25262c; color: var(--et-surface-text); border: 1px solid #737681; border-radius: 10px; text-align: center; }
+.eg-map-node span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; line-height: 1.2; }
+.eg-map-node small { font-size: 10px; }
+.eg-map-node[aria-pressed="true"] { outline: 2px solid #e2e2e6; outline-offset: -2px; background: #41424b; }
+.eg-map-scale { justify-content: center; }
+.eg-map-detail { overflow-wrap: anywhere; }
+.eg-map-detail b, .eg-map-detail small { display: block; margin-bottom: 4px; }
+.eg-map-detail small { color: var(--et-surface-muted); }
+.eg-map-detail button { margin: 3px; }
 .eg-deeds { padding-inline-start: 20px; overflow-wrap: anywhere; }
