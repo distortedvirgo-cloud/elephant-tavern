@@ -4148,16 +4148,19 @@ export function createWorldInfoEntry(_name, data) {
     return newEntry;
 }
 
-async function _save(name, data) {
+async function _save(name, data, { updateCache = false } = {}) {
     // Prevent double saving if both immediate and debounced save are called
     cancelDebounce(saveWorldDebounced);
 
-    await fetch('/api/worldinfo/edit', {
+    const response = await fetch('/api/worldinfo/edit', {
         method: 'POST',
         headers: getRequestHeaders(),
         body: JSON.stringify({ name: name, data: data }),
     });
+    if (!response.ok) return false;
+    if (updateCache) worldInfoCache.set(name, data);
     await eventSource.emit(event_types.WORLDINFO_UPDATED, name, data);
+    return true;
 }
 
 
@@ -4179,13 +4182,11 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
-    // Update cache immediately, so any future call can pull from this
-    worldInfoCache.set(name, data);
-
     if (immediately) {
-        return await _save(name, data);
+        return await _save(name, data, { updateCache: true });
     }
 
+    worldInfoCache.set(name, data);
     saveWorldDebounced(name, data);
 }
 

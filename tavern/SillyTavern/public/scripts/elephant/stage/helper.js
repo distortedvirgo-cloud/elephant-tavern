@@ -37,7 +37,7 @@ export async function loadHelperModels() {
  *   2. a Connection Manager profile (ours, else Elephant Memory's);
  *   3. the main model, if allowed.
  */
-export async function callHelper(settings, systemText, userText, maxTokens = 400, { json = false } = {}) {
+export async function callHelper(settings, systemText, userText, maxTokens = 400, { json = false, requireComplete = false } = {}) {
     const c = ctx();
     const messages = [
         { role: 'system', content: systemText },
@@ -51,6 +51,7 @@ export async function callHelper(settings, systemText, userText, maxTokens = 400
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.message || `helper: ${res.status}`);
+        if (requireComplete && ['length', 'max_tokens'].includes(data.finish_reason)) throw new Error('helper-response-truncated');
         return String(data.content ?? '').trim();
     }
     const profileId = helperProfileId(settings);

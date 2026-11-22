@@ -1,3 +1,4 @@
+import { initOoc } from './ooc/index.js';
 /*
  * Elephant Core — client side. Loaded by script.js during app start-up
  * (not through the extension manager):
@@ -45,7 +46,7 @@ async function beforeGenerate(chat, contextSize, abort, type) {
 
 export async function initElephantCore() {
     globalThis.ElephantCore = { version: 2, beforeGenerate };
-    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['artifact', initArtifact], ['power', initPower], ['forge', initForge], ['director', initDirector], ['cost', initCost], ['voices', initVoices], ['transfer', initTransfer]]) {
+    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['artifact', initArtifact], ['ooc', initOoc], ['power', initPower], ['forge', initForge], ['director', initDirector], ['cost', initCost], ['voices', initVoices], ['transfer', initTransfer]]) {
         try {
             await init();
         } catch (e) {

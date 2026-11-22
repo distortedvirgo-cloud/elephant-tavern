@@ -125,7 +125,7 @@ export const EFFECTS = {
 export const OUTCOMES = {
     crit:     { ru: 'Блестяще!',           en: 'CRITICAL SUCCESS', tone: 'gold' },
     success:  { ru: 'Успех',               en: 'SUCCESS',          tone: 'good' },
-    near:     { ru: 'Успех с осложнением', en: 'NEAR MISS',        tone: 'warn' },
+    near:     { ru: 'Успех с осложнением', en: 'SUCCESS WITH A COMPLICATION',        tone: 'warn' },
     fail:     { ru: 'Провал',              en: 'FAILURE',          tone: 'bad' },
     disaster: { ru: 'Катастрофа',          en: 'DISASTER',         tone: 'dark' },
 };
@@ -1633,22 +1633,22 @@ export function narratorBlock(state0, {
         const consequence = {
             crit: record.success_en ? `${record.success_en} — and more than hoped: add an extra advantage.` : 'It works better than hoped: add an extra advantage.',
             success: record.success_en || 'It works.',
-            near: `It works, but at a cost: ${record.cost_en || 'a complication arises'}. Show the cost clearly.`,
+            near: `Achieved: ${record.success_en || 'the concrete result of the declared action within the established limits'}. Complication: ${record.cost_en || 'a plausible additional consequence'}.`,
             fail: `It fails: ${record.fail_en || 'the situation turns against them'}. Fail forward — the story moves, not stalls.`,
             disaster: `It goes badly wrong: ${record.fail_en || 'the worst plausible consequence'} — make it hurt and raise the stakes.`,
         }[record.outcome];
         lines.push(`OUTCOME of ${userName}'s attempt to ${record.action_en || 'act'} (${record.position}): ${o.en} — ${consequence.charAt(0).toUpperCase()}${consequence.slice(1)}${/[.!?]$/.test(consequence) ? '' : '.'}`);
         lines.push(`The OUTCOME only decides how well ${userName}'s action goes. What ${userName} is doing, and why, is exactly what ${userName} wrote; if the summary above reads the action differently, follow ${userName}'s own words.`);
+        if (record.outcome === 'near') lines.push('Show the achieved result in the scene before the complication. Keep the result even if the complication limits its duration or creates a new obstacle. If the proposed complication negates the result entirely, use a different plausible complication. A successful device activation cannot be narrated as a device that never activated.');
+        lines.push('Resolve only this action. An earlier or later action, any words the player has not supplied, and any further interaction require their own fictional basis. An effect that limits a character’s ability to act does not establish their consent to anything.');
         if (record.intimacy_push) lines.push(['crit', 'success', 'near'].includes(record.outcome)
             ? `${record.target} gives in to ${userName}'s push this time: they let it go one step further than they meant to.`
             : `${record.target} does not give in: they stop ${userName} and cool off a little (in character, not cruel).`);
         const harmNote = record.notes.find(n => n.kind === 'harm');
         if (harmNote) lines.push(`${userName} is hurt by this (${HARM[harmNote.to].ru === 'Тяжело ранен' ? 'seriously' : 'noticeably'}).`);
     }
-    if (!record && adjudication === 'no_roll') {
-        lines.push('TURN: The referee declined a roll. Resolve the action within established abilities, conditions and opposition. A skipped roll does not authorize an impossible result.');
-    } else if (!record && adjudication === 'unruled') {
-        lines.push('TURN: No mechanical verdict was issued. Treat declared goals as attempts. Show ordinary actions and what the fiction supports. For an uncertain or opposed goal, show the immediate response and leave the contested outcome open if it is not yet established.');
+    if (!record && (adjudication === 'no_roll' || adjudication === 'unruled')) {
+        lines.push('CURRENT ACTION: Resolve an ordinary action within established capabilities. If a goal is still contested or a required detail is missing, show the immediate observable response and leave the unresolved part open. Keep established equipment capabilities and possession unless a concrete event in the fiction changes them. An unestablished effect can remain uncertain without declaring the item defective or changing its history.');
     }
     for (const ev of events) {
         if (ev.kind === 'clock_full' && ev.clock.kind === 'threat') lines.push(`THREAT ARRIVES NOW: "${ev.clock.name}" comes to pass in this reply.`);
@@ -1659,6 +1659,7 @@ export function narratorBlock(state0, {
     if (cond) lines.push(`${cond} Show conditions through observable effects. Silence can be the entire response from a character.`);
     const extra = P.render('narrator_extra', { user: userName }).trim();
     if (extra) lines.push(extra);
+    lines.push(P.render('narrator_output'));
     return lines.join('\n');
 }
 

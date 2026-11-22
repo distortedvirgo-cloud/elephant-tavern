@@ -287,7 +287,7 @@ async function referee(state, narration, action, artifact) {
     const ss = stageSettings();
     if (!hasHelper(ss)) return heuristicReferee(action);
     try {
-        const out = await callHelper(ss, 'You are a fair, strict tabletop RPG referee. Output only JSON.',
+        const out = await callHelper(ss, P.render('referee_system'),
             (E.setPersona(personaText()), E.refereePrompt({ state, lastNarration: narration, action, artifact, user: c.name1, char: c.name2 })), 260, { json: true });
         const v = E.parseJsonLine(out);
         if (v && typeof v.check === 'boolean') return v;
@@ -378,7 +378,7 @@ async function onReply(mesId, reportReady) {
         setHudBusy(true);
         try {
             const econP = base.econ ? null : fetchEcon(base);
-            const out = await callHelper(ss, 'You are a meticulous game-state tracker. Output only JSON.',
+            const out = await callHelper(ss, P.render('tracker_system'),
                 (E.setPersona(personaText()), E.extractorPrompt)({ state: base, userText: ui >= 0 ? c.chat[ui].mes : '', reply: msg.mes, user: c.name1, char: c.name2, memoryState: memoryState() }), 700, { json: true });
             const econ = econP ? await econP : null;
             if (econ) E.setEcon(base, econ.meal, econ.day);

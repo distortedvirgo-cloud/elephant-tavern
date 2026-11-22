@@ -87,7 +87,7 @@ router.post('/complete', async (request, response) => {
         const body = {
             model: String(model),
             messages: messages.map(m => ({ role: String(m.role || 'user'), content: String(m.content ?? '') })),
-            max_tokens: Math.max(16, Math.min(4096, Number(max_tokens) || 400)),
+            max_tokens: Math.max(16, Math.min(8192, Number(max_tokens) || 400)),
             temperature: Math.max(0, Math.min(2, Number(temperature) || 0)),
             stream: false,
         };
@@ -107,7 +107,7 @@ router.post('/complete', async (request, response) => {
 
         const choice = result.data?.choices?.[0];
         const content = choice?.message?.content ?? choice?.text ?? '';
-        return response.json({ content: String(content), usage: result.data?.usage ?? null, model: result.data?.model ?? model });
+        return response.json({ content: String(content), finish_reason: choice?.finish_reason, usage: result.data?.usage ?? null, model: result.data?.model ?? model });
     } catch (error) {
         const aborted = error?.name === 'AbortError';
         console.error('[Elephant Core] complete error:', aborted ? 'timeout' : error);

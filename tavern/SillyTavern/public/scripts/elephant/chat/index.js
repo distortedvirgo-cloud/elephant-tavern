@@ -1,3 +1,4 @@
+import { openPromptEditor } from '../ooc/index.js';
 /*
  * Elephant Core — the mobile chat screen.
  *
@@ -227,6 +228,7 @@ function quickActions() {
     const game = globalThis.ElephantGame;
     const state = game?.isActive() ? game.currentState() : null;
     const actions = [];
+    if (ctx().chat?.length) actions.push(['ooc', 'Редактор инструкций OOC', 'fa-pen', () => openPromptEditor()]);
     if (state && game.canOpenMap(state)) actions.push(['map', 'Карта', 'fa-map', () => game.openStateSheet('map')]);
     if (state?.items?.length) actions.push(['items', 'Инвентарь', 'fa-box-open', () => game.openStateSheet('items')]);
     if (canOpenArtifact()) {
