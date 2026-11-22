@@ -1,0 +1,359 @@
+{
+    "chat_completion_source": "nanogpt",
+    "temperature": 0.8,
+    "frequency_penalty": 0,
+    "presence_penalty": 0,
+    "top_p": 0.95,
+    "top_k": 0,
+    "top_a": 0,
+    "min_p": 0,
+    "repetition_penalty": 1,
+    "max_context_unlocked": true,
+    "group_models": false,
+    "sort_models": "alphabetically",
+    "openai_model": "gpt-4-turbo",
+    "claude_model": "claude-sonnet-4-5",
+    "openrouter_model": "OR_Website",
+    "openrouter_use_fallback": false,
+    "openrouter_providers": [],
+    "openrouter_quantizations": [],
+    "openrouter_allow_fallbacks": true,
+    "openrouter_middleout": "on",
+    "tool_reasoning_mode": "active_chain",
+    "ai21_model": "jamba-large",
+    "mistralai_model": "mistral-large-latest",
+    "cohere_model": "command-r-plus",
+    "perplexity_model": "sonar-pro",
+    "groq_model": "llama-3.3-70b-versatile",
+    "chutes_model": "deepseek-ai/DeepSeek-V3-0324",
+    "siliconflow_model": "deepseek-ai/DeepSeek-V3",
+    "siliconflow_endpoint": "global",
+    "minimax_model": "MiniMax-M2.7",
+    "minimax_endpoint": "global",
+    "electronhub_model": "gpt-4o-mini",
+    "nanogpt_provider": "",
+    "nanogpt_payg_override": false,
+    "deepseek_model": "deepseek-v4-flash",
+    "aimlapi_model": "chatgpt-4o-latest",
+    "xai_model": "grok-3-beta",
+    "pollinations_model": "openai",
+    "moonshot_model": "kimi-latest",
+    "fireworks_model": "accounts/fireworks/models/kimi-k2-instruct",
+    "cometapi_model": "gpt-4o",
+    "custom_model": "z-ai/glm-5.3-uncensored",
+    "custom_prompt_post_processing": "",
+    "google_model": "gemini-2.5-pro",
+    "vertexai_model": "gemini-2.5-pro",
+    "zai_model": "glm-4.6",
+    "zai_endpoint": "common",
+    "workers_ai_model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "openai_max_context": 20000,
+    "openai_max_tokens": 3000,
+    "names_behavior": 0,
+    "send_if_empty": "(Continue)",
+    "impersonation_prompt": "(As an exercise, write your next reply from the point of view of {{user}}. Use the chat history so far and {{user}}'s profile as guidelines.)",
+    "new_chat_prompt": "",
+    "new_group_chat_prompt": "",
+    "new_example_chat_prompt": "# Chat Example",
+    "continue_nudge_prompt": "(Continue seamlessly from your last response, as if you are continuing the last paragraph.)",
+    "bias_preset_selected": "Default (none)",
+    "wi_format": "{0}",
+    "scenario_format": "{{scenario}}",
+    "personality_format": "{{personality}}",
+    "group_nudge_prompt": "",
+    "stream_openai": true,
+    "prompts": [
+        {
+            "identifier": "et2-main",
+            "name": "Co-author (main)",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "# Roleplay\nPlay {{char}}, other characters and the world. {{user}} has exclusive control of their character's new actions, words, thoughts and decisions. Describe what they can perceive and the consequences of choices they made.\n\nStart from what just changed. Let each NPC's motives, knowledge, duties and relationship shape their response. An NPC can act on their own plans, hesitate, decline or say little. Use the vocabulary and cadence of their card and example dialogue. Let a relevant promise, debt or shared experience affect a decision when it matters. NPCs learn through observation, conversation or established abilities. Keep facts, memories, rumors and plans distinct.\n\nTreat current engine outcomes, possession and physical conditions as binding. The player's message sets their intent. A declared goal can still face opposition, limits or uncertainty. Apply a supplied outcome and its cost. Resolve an ordinary action when the fiction supports it. Leave an unsettled contest open at the point the player can respond. Let a setback show a concrete consequence or opening for another move.\n\nStay in the present scene through meaningful choices. Keep agreed travel or routine waiting brief when the players choose to skip it. Continue from the last moment established in the scene.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-format",
+            "name": "Formatting",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "# Prose\nUse concrete actions and dialogue with subtext. Let a spoken answer, a telling gesture or a silence do the work of explaining a mood. Give each sentence a distinct purpose. Start with fresh scene information and avoid echoing the player's wording. Use natural paragraphs and quotation marks for speech. When the app supplies an NPC's dialogue color, wrap that character's spoken line in the supplied <font color=#RRGGBB> tag. Return the story text without a tracker or commentary on the mechanics.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "worldInfoBefore",
+            "name": "World Info (before)",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "charDescription",
+            "name": "Char Description",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "charPersonality",
+            "name": "Char Personality",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "personaDescription",
+            "name": "Persona Description",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "scenario",
+            "name": "Scenario",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "worldInfoAfter",
+            "name": "World Info (after)",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "dialogueExamples",
+            "name": "Chat Examples",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "chatHistory",
+            "name": "Chat History",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "et2-turn",
+            "name": "Reply Rules (end)",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "Write the immediate response to the player's latest move. Use the relevant facts and voices for this scene. Respect any binding turn outcome and leave the next player choice open. A quiet exchange can stay quiet.",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 100,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-len-s",
+            "name": "Length: short (80–150)",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "[Length: use a few sentences for a quick exchange.]",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 101,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-len-m",
+            "name": "Length: medium (110–220)",
+            "system_prompt": false,
+            "enabled": true,
+            "marker": false,
+            "role": "system",
+            "content": "[Length: let the beat set the length. A quick exchange can be a few lines. An eventful turn usually needs one to four short paragraphs.]",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 101,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "et2-len-l",
+            "name": "Length: long (300–500)",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "role": "system",
+            "content": "[Length: use more space when several meaningful details land in the same beat.]",
+            "injection_position": 1,
+            "injection_depth": 0,
+            "injection_order": 101,
+            "injection_trigger": [],
+            "forbid_overrides": false
+        }
+    ],
+    "prompt_order": [
+        {
+            "character_id": 100001,
+            "order": [
+                {
+                    "identifier": "et2-main",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-format",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoBefore",
+                    "enabled": true
+                },
+                {
+                    "identifier": "charDescription",
+                    "enabled": true
+                },
+                {
+                    "identifier": "charPersonality",
+                    "enabled": true
+                },
+                {
+                    "identifier": "personaDescription",
+                    "enabled": true
+                },
+                {
+                    "identifier": "scenario",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoAfter",
+                    "enabled": true
+                },
+                {
+                    "identifier": "dialogueExamples",
+                    "enabled": true
+                },
+                {
+                    "identifier": "chatHistory",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-turn",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-len-s",
+                    "enabled": false
+                },
+                {
+                    "identifier": "et2-len-m",
+                    "enabled": true
+                },
+                {
+                    "identifier": "et2-len-l",
+                    "enabled": false
+                }
+            ]
+        }
+    ],
+    "show_external_models": false,
+    "assistant_prefill": "",
+    "assistant_impersonation": "",
+    "use_sysprompt": true,
+    "vertexai_auth_mode": "express",
+    "squash_system_messages": true,
+    "media_inlining": false,
+    "inline_image_quality": "auto",
+    "continue_prefill": false,
+    "continue_postfix": " ",
+    "function_calling": false,
+    "tool_call_recurse_limit": 5,
+    "show_thoughts": true,
+    "reasoning_effort": "auto",
+    "verbosity": "high",
+    "enable_web_search": false,
+    "seed": -1,
+    "n": 1,
+    "bypass_status_check": false,
+    "request_images": false,
+    "request_image_aspect_ratio": "",
+    "request_image_resolution": "",
+    "azure_api_version": "2024-02-15-preview",
+    "azure_openai_model": "",
+    "extensions": {
+        "regex_scripts": [
+            {
+                "id": "b1c2d3e4-0001-4000-8000-000000000001",
+                "scriptName": "Strip VTK from Sent Context",
+                "findRegex": "/<!-- VTK_START -->[\\s\\S]*?<!-- VTK_END -->/gi",
+                "replaceString": "",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": false,
+                "promptOnly": true,
+                "runOnEdit": false,
+                "substituteRegex": 0,
+                "minDepth": 3,
+                "maxDepth": null
+            },
+            {
+                "id": "2b216375-774b-47ec-9308-7f68ffe93b34",
+                "scriptName": "Anti-slop: barely above a whisper → quietly",
+                "findRegex": "/,?\\s*(?:in a (?:voice|tone)|(?:his|her|their|my) voice)\\s+barely above a whisper/gi",
+                "replaceString": " quietly",
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": true,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null,
+                "trimStrings": []
+            },
+            {
+                "id": "9ed2f964-82a8-40ad-9146-79d9b6c8c003",
+                "scriptName": "Anti-slop: drop 'for a (long) moment/beat'",
+                "findRegex": "/\\s+for a (?:long )?(?:moment|beat)(?=[.,;!?])/gi",
+                "replaceString": "",
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": true,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null,
+                "trimStrings": []
+            },
+            {
+                "id": "290c1ca8-aec3-4781-8ed1-ffa63f54b8e2",
+                "scriptName": "Anti-slop: drop cliché narration sentences",
+                "findRegex": "/(?<=^|[.!?][\\\"\\u201d]?\\s+|\\n)[^.!?\\n\\\"<>]*\\b(?:shivers? (?:runs?|ran|went|goes) down (?:his|her|their|my) spine|(?:hangs?|hung) heavy in the air|words? (?:hangs?|hung) in the air|a mix(?:ture)? of \\w+ and \\w+|something primal)\\b[^.!?\\n\\\"<>]*[.!?](?:\\s+|$)/gi",
+                "replaceString": "",
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": true,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null,
+                "trimStrings": []
+            }
+        ]
+    },
+    "name": "Elephant Tavern — GLM 5.3 Roleplay"
+}

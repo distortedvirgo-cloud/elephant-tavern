@@ -63,7 +63,7 @@ function promptText() {
     const t = table();
     if (!t) return '';
     const known = Object.values(t).map(v => `${v.name} #${v.color}`).join('; ');
-    return `[Speech colours: every line a character speaks goes in <font color=#hex>"…"</font> in that character's own colour, so the reader can tell voices apart. ${known ? `Voices so far (keep them exactly): ${known}.` : 'No voices yet.'} Anyone who already spoke earlier in this chat keeps the colour they had there. Narration and ${c.name1}'s words stay uncoloured. When a character speaks for the first time, choose a colour for them yourself — readable on a dark background, clearly different from every colour above — and add <!--voice Name=#hex--> on its own line once. Never give two characters the same colour.]`;
+    return `[Speech colours: if a character speaks, their spoken line goes in <font color=#hex>"…"</font> in that character's own colour, so the reader can tell voices apart. ${known ? `Voices so far (keep them exactly): ${known}.` : 'No voices yet.'} Anyone who already spoke earlier in this chat keeps the colour they had there. Narration and ${c.name1}'s words stay uncoloured. When a character speaks for the first time, choose a colour for them yourself — readable on a dark background, clearly different from every colour above — and add <!--voice Name=#hex--> on its own line once. Never give two characters the same colour.]`;
 }
 
 export function updatePrompt() {

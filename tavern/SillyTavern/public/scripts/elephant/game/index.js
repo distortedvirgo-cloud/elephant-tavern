@@ -11,6 +11,8 @@
  * State is snapshotted on every message (message.extra.elephant_game.state = state AFTER
  * that message), so swipes, edits and deletions roll the game back for free.
  */
+import { privateKnowledge, secretRedactor } from './story-memory.js';
+import { artifactForReferee } from '../artifact/store.js';
 import { hasExit } from './place-history.js';
 import { diceTray, landDice } from './dice.js';
 import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast, currentCharacter, whenRevealed, personaText } from '../stage/helper.js';
@@ -22,6 +24,7 @@ import { openPrompts } from './prompts-ui.js';
 const $ = (...a) => globalThis.jQuery(...a);
 const MODULE = 'elephant_game';
 const PROMPT_KEY = 'elephant_game';
+const pendingReports = new WeakMap();
 
 const DEFAULTS = {
     checkCard: true,     // show the card and wait for the tap; off = roll automatically
@@ -120,7 +123,38 @@ function clearNarratorBlock() { setNarratorBlock(''); }
 function fullBlock(state, opts = {}) {
     const name = ctx().name1;
     const enc = X.encounterBlock(state, name);
-    return E.narratorBlock(state, { userName: name, ...opts }) + (enc ? `\n${enc}` : '');
+    const gate = opts.privateExchange && !ctx().groupId && privateKnowledge(state, opts.playerText);
+    return [E.narratorBlock(state, { userName: name, ...opts }), enc,
+        opts.roleplaySpeech === false ? '' : E.roleplaySpeechBlock(state), gate ? PRIVATE_KNOWLEDGE_GATE : '',
+    ].filter(Boolean).join('\n');
+}
+
+const PRIVATE_KNOWLEDGE_GATE = '[elephant-current-private-exchange]';
+
+function protectStoryPrompt(event) {
+    const c = ctx();
+    const state = currentState();
+    const redact = secretRedactor(state);
+    const latest = c.chat.at(-1);
+    const knowledge = redact && isActive() && !c.groupId && !event.dryRun && latest?.is_user
+        ? privateKnowledge(state, latest.mes) : '';
+    const protect = (text, system = false) => {
+        if (typeof text !== 'string') return text;
+        return (redact ? redact(text) : text).replaceAll(PRIVATE_KNOWLEDGE_GATE, () => system ? knowledge : '');
+    };
+    if (Array.isArray(event.chat)) {
+        for (const message of event.chat) {
+            if (!message) continue;
+            const system = message.role === 'system';
+            if (typeof message.content === 'string') message.content = protect(message.content, system);
+            else if (Array.isArray(message.content)) {
+                message.content = message.content.map(part =>
+                    part?.type === 'text' ? { ...part, text: protect(part.text, system) } : part);
+            }
+        }
+    } else if (typeof event.prompt === 'string') {
+        event.prompt = protect(event.prompt);
+    }
 }
 
 // ------------------------------------------------------------------ referee & check card
@@ -137,38 +171,60 @@ function lastNarrationBefore(chat, index) {
 
 /** Global generation interceptor (manifest.generate_interceptor). */
 export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
-    if (!isActive()) { clearNarratorBlock(); return; }
+    if (!isActive()) {
+        if (['normal', 'continue', 'swipe', 'regenerate'].includes(type)) setNarratorBlock(E.roleplaySpeechBlock());
+        else clearNarratorBlock();
+        return;
+    }
     const c = ctx();
     const chat = c.chat;
     const ui = lastUserIndex(chat);
     try {
+        if (type === 'normal' && ui >= 0) {
+            const previous = chat.slice(0, ui).findLast(message => !message.is_system && !message.is_user);
+            const pending = previous && pendingReports.get(previous);
+            if (pending) {
+                const chatId = c.getCurrentChatId();
+                await pending;
+                if (ctx().getCurrentChatId() !== chatId || !isActive() || chat[ui]?.is_user !== true) {
+                    clearNarratorBlock();
+                    abort(true);
+                    return;
+                }
+            }
+        }
         if (['quiet', 'impersonate'].includes(type) || ui < 0) {
-            setNarratorBlock(fullBlock(currentStateForGeneration(type)));
+            setNarratorBlock(fullBlock(currentStateForGeneration(type), { roleplaySpeech: !['quiet', 'impersonate'].includes(type) }));
             return;
         }
         const userMsg = chat[ui];
+        const text = String(userMsg.mes || '').trim();
+        const narration = lastNarrationBefore(chat, ui);
+        const turnContext = { playerText: text, narration, privateExchange: type === 'normal' };
         const isLastUser = ui === chat.length - 1;
         const regen = type === 'swipe' || type === 'regenerate';
         const existing = userMsg.extra?.elephant_game;
 
         // Swipes and regenerations never reroll: the dice already fell.
         if ((regen || type === 'continue') && existing?.checked) {
-            setNarratorBlock(fullBlock(existing.state ?? stateAt(ui), { record: existing.record, events: existing.record?.events ?? [] }));
+            setNarratorBlock(fullBlock(existing.state ?? stateAt(ui), {
+                ...turnContext, record: existing.record, events: existing.record?.events ?? [],
+                adjudication: existing.adjudication ?? 'unruled',
+            }));
             return;
         }
         if (!isLastUser || existing?.checked) {
-            setNarratorBlock(fullBlock(currentStateForGeneration(type)));
+            setNarratorBlock(fullBlock(currentStateForGeneration(type), turnContext));
             return;
         }
 
         const before = stateAt(ui - 1);
-        const text = String(userMsg.mes || '').trim();
         if (before.enc?.status === 'active') {
-            const res = await encounterTurn(before, text, lastNarrationBefore(chat, ui));
+            const res = await encounterTurn(before, text, narration);
             if (res.round) journal(res.state, res.round.notes);
             writeSnapshot(ui, { checked: true, state: res.state, encRound: res.round });
             await c.saveChat();
-            setNarratorBlock(fullBlock(res.state));
+            setNarratorBlock(fullBlock(res.state, turnContext));
             renderHud(res.state);
             renderEnc(res.state, { resolved: res.round });
             if (res.round) showNotes(res.round.notes);
@@ -179,15 +235,16 @@ export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
             return;
         }
         let verdict = null;
-        if (text.length >= 6 && !/^\(\(|^\[ooc|^ooc:/i.test(text) && worthRefereeing(text)) {
+        if (worthRefereeing(text)) {
             setHudBusy(true);
-            verdict = await referee(before, lastNarrationBefore(chat, ui), text);
+            verdict = await referee(before, narration, text, artifactForReferee(ui));
             setHudBusy(false);
         }
 
         if (!verdict?.check) {
-            writeSnapshot(ui, { checked: true, state: before });
-            setNarratorBlock(fullBlock(before));
+            const adjudication = verdict ? 'no_roll' : 'unruled';
+            writeSnapshot(ui, { checked: true, state: before, adjudication });
+            setNarratorBlock(fullBlock(before, { ...turnContext, adjudication }));
             return;
         }
 
@@ -205,7 +262,7 @@ export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
         writeSnapshot(ui, { checked: true, state, record });
         await c.saveChat();
         afterCheck(record, state);
-        setNarratorBlock(fullBlock(state, { record, events: record.events }));
+        setNarratorBlock(fullBlock(state, { ...turnContext, record, events: record.events }));
         renderHud(state);
         if (record.events.some(e => e.kind === 'defeat')) {
             const go = await handleDefeat(ui, state);
@@ -214,7 +271,7 @@ export async function beforeGenerate(_coreChat, _contextSize, abort, type) {
     } catch (e) {
         setHudBusy(false);
         log('interceptor failed', e);
-        setNarratorBlock(fullBlock(currentState()));
+        setNarratorBlock(fullBlock(currentState(), { adjudication: 'unruled' }));
     }
 }
 
@@ -225,13 +282,13 @@ function currentStateForGeneration(type) {
     return currentState();
 }
 
-async function referee(state, narration, action) {
+async function referee(state, narration, action, artifact) {
     const c = ctx();
     const ss = stageSettings();
     if (!hasHelper(ss)) return heuristicReferee(action);
     try {
         const out = await callHelper(ss, 'You are a fair, strict tabletop RPG referee. Output only JSON.',
-            (E.setPersona(personaText()), E.refereePrompt({ state, lastNarration: narration, action, user: c.name1, char: c.name2 })), 260, { json: true });
+            (E.setPersona(personaText()), E.refereePrompt({ state, lastNarration: narration, action, artifact, user: c.name1, char: c.name2 })), 260, { json: true });
         const v = E.parseJsonLine(out);
         if (v && typeof v.check === 'boolean') return v;
     } catch (e) {
@@ -253,11 +310,10 @@ function heuristicReferee(action) {
     for (const [skill, re] of table) {
         if (re.test(t)) return { check: true, skill, action_en: 'act', label_ru: 'Рискованное действие', position: 'risky', effect: 'standard', dc: 8, threat: '' };
     }
-    return { check: false };
+    return null;
 }
 
-// Words that suggest an uncertain, consequential action (EN + RU). Without one of them (and
-// without an *action* in asterisks) the referee call is skipped — plain talk costs nothing.
+// Risk words distinguish a consequential question from ordinary dialogue.
 const RISKY = [
     'attack', 'strike', 'hit', 'punch', 'kick', 'stab', 'shoot', 'fight', 'parry', 'dodge', 'block', 'grab', 'tackle', 'wrestle', 'throw',
     'sneak', 'hide', 'steal', 'pickpocket', 'lockpick', 'pick the lock', 'climb', 'jump', 'leap', 'run', 'chase', 'escape', 'flee', 'swim',
@@ -273,8 +329,15 @@ const RISKY = [
 ];
 
 function worthRefereeing(text) {
-    const t = ` ${String(text || '').toLowerCase()} `;
-    return /\*[^*]{3,}\*/.test(text) || RISKY.some(w => t.includes(w));
+    if (!text || /^(?:\(\(|\[ooc|ooc:)/i.test(text)) return false;
+    if (/^(?:yes|no|okay|ok|thanks|hello|hi|да|нет|ладно|хорошо|спасибо|привет)[.!]?$/iu.test(text)) return false;
+    const dialogue = /^["«“][^"»”\n]+["»”][.!?]?$/u.test(text) || /^[^.!?*\n]+\?$/u.test(text);
+    if (dialogue) {
+        const spoken = text.toLowerCase();
+        return RISKY.some(word => spoken.includes(word));
+    }
+    // An unformatted action can still be risky. Let the referee read it in context.
+    return true;
 }
 
 // ------------------------------------------------------------------ after the reply: extractor
@@ -301,7 +364,7 @@ async function fetchEcon(st) {
     } catch (e) { log('econ failed', e); return null; } finally { econBusy = false; }
 }
 
-async function onReply(mesId) {
+async function onReply(mesId, reportReady) {
     if (!isActive()) return;
     const c = ctx();
     const msg = c.chat?.[mesId];
@@ -331,7 +394,10 @@ async function onReply(mesId) {
     const voices = globalThis.ElephantCore?.voices;
     if (report && base.enc?.kind === 'combat') report.harm = 0; // the round already dealt it
     if (report && base.enc) report.encounter = null;
-    let { state, notes, events } = E.applyReport(base, report, { trackerLine: tracker, colors: voices ? (name) => voices.colorFor(name, { assign: false }) : null, userName: c.name1 });
+    let { state, notes, events } = E.applyReport(base, report, {
+        trackerLine: tracker, colors: voices ? name => voices.colorFor(name, { assign: false }) : null,
+        userName: c.name1, playerText: ui >= 0 ? c.chat[ui].mes : '', reply: msg.mes,
+    });
     if (voices) for (const n of Object.values(state.npcs)) voices.adopt(n.name, n.color);
     // an encounter that ended in this reply is archived; an active one waits for its next cards
     let finished = null;
@@ -342,6 +408,7 @@ async function onReply(mesId) {
     }
     journal(state, notes);
     writeSnapshot(mesId, { state, notes, events });
+    reportReady();
     await c.saveChat();
     // Toasts, banners and the HUD change land with the (translated) text, not before it.
     await whenRevealed();
@@ -1362,6 +1429,7 @@ function cardHtml(state, name) {
         ${n.meets?.length ? `<h4 class="eg-h">🗓 Встречи <small class="eg-muted">${n.meetCount || n.meets.length}</small></h4><div class="eg2-sec eg3-pad"><div class="eg-tl">${n.meets.slice(-8).reverse().map(m => `<div class="eg-tl-row"><span>📍</span><div><b>${escapeHtml(m.place || 'где-то')}</b><small>${fmt(m.time)} · ${agoRu(m.time, state.time)}</small></div></div>`).join('')}</div></div>` : ''}
         ${n.deeds?.length ? `<h4 class="eg-h">Что помнит персонаж</h4><ul class="eg-deeds">${n.deeds.map(text => `<li>${escapeHtml(text)}</li>`).join('')}</ul>` : ''}
         ${n.diary?.length ? `<h4 class="eg-h">📔 Дневник отношений</h4><div class="eg2-sec eg3-pad"><div class="eg-tl">${n.diary.slice().reverse().map(d => `<div class="eg-tl-row"><span>•</span><div><b>${escapeHtml(d.ru)}</b><small>${fmt(d.time)}</small></div></div>`).join('')}</div></div>` : ''}
+        ${n.plan?.known && !n.plan.completedAt ? `<h4 class="eg-h">Что планирует персонаж</h4><div class="eg2-sec eg3-pad"><b>${escapeHtml(n.plan.goal)}</b><div>${escapeHtml(n.plan.step)}</div></div>` : ''}
         ${Array.isArray(n.schedule) && n.schedule.length ? `<h4 class="eg-h">🗓 Распорядок</h4><div class="eg2-sec eg3-pad"><div class="eg-sched">${n.schedule.map(e => `<div><span>${e.from}–${e.to}</span><b>${escapeHtml(e.doing_ru || e.doing_en)}</b><small>${escapeHtml(e.where_ru)}${e.days !== 'all' ? ` · ${e.days === 'weekdays' ? 'будни' : 'выходные'}` : ''}</small></div>`).join('')}</div></div>` : ''}
         ${raw && others.length ? `<details class="eg2-fmt eg3-merge"><summary>Это дубль другого персонажа?</summary><div class="eg3-merge-body"><small class="eg-muted">Выбери, с кем объединить запись: отношения, счётчики и дневник сложатся в одну карточку.</small><div class="eg-chips">${others.map(o => `<button class="eg-chip" data-merge="${escapeHtml(o.name)}">${escapeHtml(o.name)}</button>`).join('')}</div></div></details>` : ''}
         ${raw ? `<details class="eg2-fmt eg3-merge eg-fix"><summary>✏️ Исправить счётчики</summary><div class="eg3-merge-body">
@@ -1880,7 +1948,20 @@ export async function init() {
     const ev = c.eventSource;
     const et = c.eventTypes ?? c.event_types;
     ev.on(et.CHAT_CHANGED, () => { pendingRound = null; setTimeout(refresh, 50); });
-    ev.on(et.MESSAGE_RECEIVED, (id, type) => { if (type !== 'impersonate' && type !== 'extension') onReply(Number(id)); });
+    ev.on(et.CHAT_COMPLETION_PROMPT_READY, protectStoryPrompt);
+    ev.on(et.GENERATE_AFTER_COMBINE_PROMPTS, protectStoryPrompt);
+    ev.on(et.MESSAGE_RECEIVED, (id, type) => {
+        if (type === 'impersonate' || type === 'extension' || !isActive()) return;
+        const message = ctx().chat[Number(id)];
+        if (!message) return;
+        let ready;
+        const pending = new Promise(resolve => { ready = resolve; });
+        pendingReports.set(message, pending);
+        void onReply(Number(id), ready).catch(error => log('tracker update failed', error)).finally(() => {
+            ready();
+            if (pendingReports.get(message) === pending) pendingReports.delete(message);
+        });
+    });
     for (const e of [et.MESSAGE_SWIPED, et.MESSAGE_DELETED, et.MESSAGE_EDITED, et.MESSAGE_UPDATED]) if (e) ev.on(e, () => setTimeout(refresh, 30));
     for (const e of [et.CHARACTER_MESSAGE_RENDERED, et.USER_MESSAGE_RENDERED, et.MORE_MESSAGES_LOADED]) if (e) ev.on(e, () => setTimeout(hideTrackerLines, 0));
     registerCommands();

@@ -1,9 +1,10 @@
 import { ctx } from '../stage/helper.js';
 import {
     ARTIFACT_UPDATED, acceptArtifact, deferArtifact, getArtifactState, initArtifactStore,
-    proposeArtifact, reconcileArtifact, revertArtifact, setArtifactPage,
+    proposeArtifact, proposeReplacement, reconcileArtifact, revertArtifact, setArtifactPage,
 } from './store.js';
 import { createArtifactInteraction } from './interaction.js';
+import { displayItem, requestItemTranslation } from './translation.js';
 
 const SURPRISE = 'Offer a substantially different artifact that still belongs in this story. Surprise the player.';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -15,11 +16,13 @@ let renderedItem;
 let renderedProposal;
 let returnFocus;
 let revising = false;
+let replacing = false;
 let revision = '';
 let ready = false;
 let chatVersion = 0;
 let autoTimer;
 let revealTimer;
+let showingDescription = false;
 
 function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -57,7 +60,7 @@ function ensureDialog() {
     });
     dialog.addEventListener('submit', event => {
         event.preventDefault();
-        if (revision.trim()) void proposeArtifact(revision.trim());
+        if (revision.trim()) void (replacing ? proposeReplacement(revision) : proposeArtifact(revision));
     });
     document.body.append(dialog);
 }
@@ -75,6 +78,8 @@ function closeArtifact(restoreFocus = true) {
     revealTimer = undefined;
     interaction?.close();
     renderedItem = undefined;
+    showingDescription = false;
+    replacing = false;
     renderedProposal = undefined;
     revising = false;
     revision = '';
@@ -91,7 +96,13 @@ function closeArtifact(restoreFocus = true) {
 
 function render(state = getArtifactState()) {
     if (!dialog?.open || revealTimer) return;
-    if (state.active && state.active.pages === renderedItem?.pages && state.active.pageId === renderedItem.pageId) return;
+    const source = replacing ? state.proposal : state.active || state.proposal;
+    requestItemTranslation(source, render);
+    const item = displayItem(source);
+    if (state.active && !replacing && item.id === renderedItem?.id && item.pageId === renderedItem.pageId
+        && item.available === renderedItem.available
+        && (item.pages === renderedItem.pages || interaction?.isThreadOpen())
+        && Boolean(state.proposal) === Boolean(renderedItem.proposal)) return;
     const previousAction = dialog.contains(document.activeElement)
         ? document.activeElement.dataset.artifactAction : undefined;
     const editing = document.activeElement?.id === 'ea-revision';
@@ -99,33 +110,43 @@ function render(state = getArtifactState()) {
     const close = button('close', '×', 'ea-close');
     close.setAttribute('aria-label', 'Закрыть');
     panel.append(close);
-    const item = state.active || state.proposal;
-    const heading = element('h2', 'ea-title', item?.title || 'Артефакт');
+    const heading = element('h2', 'ea-title', item?.title || (replacing ? 'Заменить предмет' : 'Артефакт'));
     heading.id = 'ea-title';
     heading.tabIndex = -1;
-    if (state.active) {
+    if (state.active && !replacing) {
         panel.classList.add('ea-panel-item');
         panel.append(heading);
-        if (item.description) panel.append(element('p', 'ea-description', item.description));
-        if (item.available === false) {
-            panel.append(element('p', 'ea-status', 'Сейчас предмет у вас не находится.'));
+        if (item.description) {
+            const info = button('description', showingDescription ? '‹' : 'ⓘ', 'ea-info');
+            info.setAttribute('aria-label', showingDescription ? 'Вернуться к предмету' : 'Описание предмета');
+            info.setAttribute('aria-expanded', String(showingDescription));
+            panel.append(info);
+        }
+        const replacement = button('replace', state.proposal ? 'Посмотреть замену' : 'Заменить предмет', 'ea-replace');
+        if (showingDescription || item.available === false) {
+            if (showingDescription) {
+                panel.append(element('p', 'ea-description ea-item-description', item.description));
+                if (item.utility) panel.append(element('p', 'ea-utility', item.utility));
+            }
+            if (item.available === false) panel.append(element('p', 'ea-status', 'Сейчас предмет у вас не находится.'));
+            panel.append(replacement);
             dialog.replaceChildren(panel);
-            renderedItem = item;
+            renderedItem = { ...item, proposal: state.proposal };
             heading.focus({ preventScroll: true });
             return;
         }
         artifactHost ??= element('div', 'ea-artifact');
         artifactHost.id = 'ea-artifact';
-        panel.append(artifactHost);
+        panel.append(artifactHost, replacement);
         dialog.replaceChildren(panel);
-        interaction ??= createArtifactInteraction({ host: artifactHost, onPageChange: setArtifactPage });
-        renderedItem = item;
-        interaction.render(item, { itemId: item.id, onClose: closeArtifact });
+        interaction ??= createArtifactInteraction({ host: artifactHost, onPageChange: setArtifactPage, onThreadBack: render });
+        renderedItem = { ...item, proposal: state.proposal };
+        interaction.render(item, { itemId: item.id, canonicalTitle: source.title, onClose: closeArtifact });
         heading.focus({ preventScroll: true });
         return;
     }
 
-    if (renderedProposal && item?.id !== renderedProposal) {
+    if (item && item.id !== renderedProposal) {
         revising = false;
         revision = '';
     }
@@ -136,21 +157,22 @@ function render(state = getArtifactState()) {
     seal.append(icon);
     panel.append(seal, heading);
     if (item?.description) panel.append(element('p', 'ea-description', item.description));
+    if (item?.utility) panel.append(element('p', 'ea-utility', item.utility));
     const busy = state.status === 'generating';
     const status = element('p', 'ea-status');
     status.setAttribute('role', 'status');
-    if (busy) status.textContent = item ? 'Готовится новый вариант…' : 'Артефакт обретает форму…';
+    if (busy) status.textContent = item || replacing ? 'Готовится новый предмет…' : 'Артефакт обретает форму…';
     else if (!state.helperAvailable) status.textContent = 'Для создания артефакта подключите служебную модель в «Сцена и арт».';
-    else if (state.error || state.status === 'error') status.textContent = 'Не удалось создать артефакт. Попробуйте ещё раз.';
+    else if (state.error) status.textContent = state.error;
     if (status.textContent) panel.append(status);
 
     const actions = element('div', 'ea-actions');
     if (item) {
-        const keep = button('keep', 'Оставить', 'ea-primary');
+        const keep = button('keep', replacing ? 'Подтвердить замену' : 'Оставить', 'ea-primary');
         const change = button('change', 'Изменить');
-        const later = button('later', 'Позже');
-        keep.disabled = busy;
-        change.disabled = busy || !state.helperAvailable;
+        const later = replacing ? button('current', 'К текущему предмету') : button('later', 'Позже');
+        keep.disabled = !state.canAccept;
+        change.disabled = !state.canAccept || !state.helperAvailable;
         change.setAttribute('aria-expanded', String(revising));
         later.disabled = busy;
         actions.append(keep, change, later);
@@ -159,6 +181,8 @@ function render(state = getArtifactState()) {
             revert.disabled = busy;
             actions.append(revert);
         }
+    } else if (replacing) {
+        actions.append(button('current', 'К текущему предмету'));
     } else {
         const create = state.error || state.status === 'error'
             ? button('retry', 'Повторить', 'ea-primary') : button('create', 'Создать', 'ea-primary');
@@ -167,9 +191,9 @@ function render(state = getArtifactState()) {
     }
     panel.append(actions);
     let input;
-    if (item && revising) {
+    if ((item || replacing) && revising) {
         const form = element('form', 'ea-change');
-        const label = element('label', '', 'Каким должен быть артефакт?');
+        const label = element('label', '', replacing ? 'Опишите новый предмет и его назначение' : 'Каким должен быть артефакт?');
         label.htmlFor = 'ea-revision';
         input = element('textarea', 'ea-revision');
         input.id = 'ea-revision';
@@ -180,11 +204,12 @@ function render(state = getArtifactState()) {
         input.disabled = busy;
         const submit = button('revise', 'Предложить вариант');
         submit.type = 'submit';
-        submit.disabled = busy;
+        submit.disabled = !state.canAccept || !state.helperAvailable;
         const surprise = button('surprise', 'Удиви меня');
         surprise.disabled = busy;
         const choices = element('div', 'ea-actions');
-        choices.append(submit, surprise);
+        choices.append(submit);
+        if (!replacing) choices.append(surprise);
         form.append(label, input, choices);
         panel.append(form);
     }
@@ -204,6 +229,32 @@ function handleClick(event) {
     switch (action) {
         case 'skip': finishReveal(); break;
         case 'close': closeArtifact(); break;
+        case 'replace':
+            interaction?.close();
+            renderedItem = undefined;
+            renderedProposal = undefined;
+            replacing = true;
+            revising = !getArtifactState().proposal;
+            revision = '';
+            render();
+            document.getElementById('ea-revision')?.focus();
+            break;
+        case 'current':
+            replacing = false;
+            revising = false;
+            revision = '';
+            renderedItem = undefined;
+            renderedProposal = undefined;
+            render();
+            dialog.querySelector('.ea-replace')?.focus({ preventScroll: true });
+            break;
+        case 'description':
+            showingDescription = !showingDescription;
+            interaction?.close();
+            renderedItem = undefined;
+            render();
+            dialog.querySelector('.ea-info')?.focus({ preventScroll: true });
+            break;
         case 'keep': void acceptArtifact().then(accepted => { if (accepted) closeArtifact(); }); break;
         case 'later': void deferArtifact(); closeArtifact(); break;
         case 'revert': void revertArtifact(); break;

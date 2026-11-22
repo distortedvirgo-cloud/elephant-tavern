@@ -10,6 +10,8 @@ import { MOOD_IDS } from '../stage/scene.js';
 
 import * as P from './prompts.js';
 import * as ST from './status.js';
+import { advanceNpcPlans, localPlanConsequences, npcPlanSummary, updateNpcPlan } from './npc-plans.js';
+import { obligationSummary, recordStoryMemory, remapStoryMemory, storyMemoryForTracker } from './story-memory.js';
 
 export const SKILLS = {
     might:   { ru: 'Сила',     icon: '💪', en: 'Might' },
@@ -250,9 +252,16 @@ export function mergeNpcs(s, keepName, dropName) {
     keep.diary = [...keep.diary, ...drop.diary].sort((x, y) => String(x.time).localeCompare(String(y.time))).slice(-40);
     keep.knows = { ...drop.knows, ...keep.knows };
     keep.aliases = uniq(keep.aliases, [drop.name, ...(drop.aliases || [])], 6).filter(a => a.toLowerCase() !== keep.name.toLowerCase());
+    keep.plan ??= drop.plan;
+    if (keep.planNotices || drop.planNotices) {
+        keep.planNotices = [...(keep.planNotices || []), ...(drop.planNotices || [])]
+            .sort((a, b) => a.at.localeCompare(b.at)).slice(-3);
+    }
+    keep.speechLanguage ||= drop.speechLanguage;
     keep.schedule ??= drop.schedule; keep.experience ||= drop.experience;
     if (!keep.last || (drop.last && String(drop.last.time) > String(keep.last.time))) keep.last = drop.last;
     keep.present = keep.present || drop.present; keep.seen = Math.max(keep.seen || 0, drop.seen || 0); keep.met = Math.min(keep.met ?? 1e9, drop.met ?? 1e9);
+    remapStoryMemory(s, dKey, kKey);
     delete s.npcs[dKey];
     for (const other of Object.values(s.npcs)) {
         if (other.knows && dKey in other.knows) { if (other !== keep) other.knows[kKey] = Math.max(other.knows[kKey] || 0, other.knows[dKey]); delete other.knows[dKey]; }
@@ -1151,7 +1160,7 @@ export function parseTrackerLine(text) {
  * Applies the extractor's report of what happened in the narrator's reply.
  * Everything is clamped: the model reports, the engine decides how much it counts.
  */
-export function applyReport(state, report, { trackerLine = null, colors = null, userName = '' } = {}) {
+export function applyReport(state, report, { trackerLine = null, colors = null, userName = '', playerText = '', reply = '' } = {}) {
     const s = ensureState(clone(state));
     const notes = [];
     const events = [];
@@ -1190,7 +1199,10 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
     for (const o of s.offers || []) if (o.status === 'offered') o.hooks = (o.hooks || 0) + 1;
     // an offer nobody picked up fades after a while
     s.offers = (s.offers || []).filter(o => !(o.status === 'offered' && o.hooks > 12));
-    if (!report) return { state: s, notes, events };
+    if (!report) {
+        advanceNpcPlans(s);
+        return { state: s, notes, events };
+    }
 
     // relationships, romance, intimacy
     const touched = new Set();
@@ -1220,6 +1232,10 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
         const wasHere = npc.present && npc.seen >= s.turn - 1;
         npc.present = n.present !== false;
         npc.seen = s.turn;
+        if (typeof n.speech_language === 'string' && n.speech_language.trim()) {
+            npc.speechLanguage = n.speech_language.replace(/[<>\r\n]/g, ' ').trim().slice(0, 60);
+        }
+        updateNpcPlan(npc, n.plan, s.time);
         // meetings: a new one starts when the character turns up again, or in a new scene
         if (npc.present && (!wasHere || report?.scene_changed)) {
             const last = npc.meets.at(-1);
@@ -1382,7 +1398,10 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
         if (touched.has(key)) continue;
         npc.lust = clamp(npc.lust - (npc.seen === s.turn ? 6 : 20), 0, 100);
     }
-    for (const npc of Object.values(s.npcs)) if (npc.seen !== s.turn) npc.present = false;
+    // Missing tracker data does not mean the scene was explicitly empty.
+    if (Array.isArray(report.npcs)) {
+        for (const npc of Object.values(s.npcs)) if (npc.seen !== s.turn) npc.present = false;
+    }
 
     // body & mind outside of checks (rest, healing, an unanswered blow)
     const dh = clamp(Math.round(Number(report.harm) || 0), -1, 1);
@@ -1449,6 +1468,8 @@ export function applyReport(state, report, { trackerLine = null, colors = null, 
         if (clock.filled >= clock.size && before < clock.size) { events.push({ kind: 'clock_full', clock: clone(clock) }); if (clock.kind === 'progress') xp(3); }
     }
 
+    recordStoryMemory(s, report, { playerText, reply });
+    advanceNpcPlans(s);
     levelUp(s, notes);
     return { state: s, notes, events };
 }
@@ -1488,8 +1509,46 @@ export function intimacyLine(n0, state, userName = '{{user}}') {
     return parts.join('; ');
 }
 
+const RECALL_WORDS = new Set([
+    'about', 'after', 'again', 'before', 'could', 'should', 'their', 'there',
+    'these', 'those', 'through', 'would', 'where', 'which',
+    'врод', 'когд', 'кото', 'можн', 'посл', 'пото', 'пере',
+    'поче', 'прос', 'сейч', 'снов', 'тако', 'чтоб',
+]);
+
+function recallWords(text) {
+    return new Set((String(text ?? '').toLowerCase().replaceAll('ё', 'е').match(/\p{L}{4,}/gu) ?? [])
+        .map(word => /[а-я]/u.test(word) ? word.slice(0, 4) : word)
+        .filter(word => !RECALL_WORDS.has(word)));
+}
+
+function relevantMemory(npc, { playerText, narration }) {
+    const deeds = (npc.deeds || []).slice().reverse().map(text => ({ text, lookup: text }));
+    const diary = (npc.diary || []).slice().reverse().map(entry => ({
+        text: entry.en || entry.ru,
+        lookup: [entry.en, entry.ru].filter(Boolean).join(' '),
+    }));
+    const memories = [...deeds, ...diary].filter(entry => entry.text);
+    const actionWords = recallWords(playerText);
+    const sceneWords = recallWords(narration);
+    let best = actionWords.size || sceneWords.size ? undefined : memories[0]?.text;
+    let bestScore = 0;
+    for (const memory of memories) {
+        let score = 0;
+        for (const word of recallWords(memory.lookup)) {
+            if (actionWords.has(word)) score += 3;
+            else if (sceneWords.has(word)) score += 1;
+        }
+        if (score > bestScore) {
+            best = memory.text;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
 /** What the narrator needs to know about one character's feelings and body. */
-export function npcLine(n0, userName = '{{user}}', state = null) {
+export function npcLine(n0, userName = '{{user}}', state = null, turn = {}) {
     const n = ensureNpc(JSON.parse(JSON.stringify(n0)));
     const parts = [`${n.name}: ${tierOf(n.trust).en}`];
     parts.push(band(n.affection, [[0, 'no attachment yet'], [25, 'fond of ' + userName], [50, 'attached, cares, gets jealous'], [75, 'in love with ' + userName + ', shows it in small ways']]));
@@ -1502,13 +1561,16 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
     if (state) {
         const il = intimacyLine(n, state, userName); if (il) parts.push(il);
         const r = readiness(n, readyOpts(state));
-        if (n.lust >= 60 && r.ready >= 5) parts.push(`may make the first move herself when it fits: propose it outright, or — if it is in her nature (dominant, predatory, a succubus, starved or desperate with need) — simply take ${userName} without asking, within her ladder`);
+        if (n.lust >= 60 && r.ready >= 5 && !ST.speechRule(n)) parts.push(`may make the first move herself when it fits: propose it outright, or — if it is in her nature (dominant, predatory, a succubus, starved or desperate with need) — simply take ${userName} without asking, within her ladder`);
     }
     if (n.likes.length) parts.push(`known turn-ons: ${n.likes.join(', ')}`);
     if (n.spots.length) parts.push(`weak spots (strong reaction when touched): ${n.spots.join(', ')}`);
     if (n.limits.length) parts.push(`limits they have set: ${n.limits.join(', ')}`);
     if (state) {
-        const act = activityAt(n, state.time);
+        if (n.speechLanguage) parts.push(`established usual speech language: ${n.speechLanguage}; switch only as established in this scene`);
+        const plan = npcPlanSummary(n.plan);
+        if (plan) parts.push(`private continuity for this NPC: ${plan}. Let it guide choices when relevant and reveal only what the player can observe or learn`);
+        const act = n.plan?.dueAt && !n.plan.completedAt ? null : activityAt(n, state.time);
         if (act) parts.push(`by their routine they should be ${act.doing_en || act.doing_ru}${act.where_ru ? ` (${act.where_ru})` : ''} now${act.busy ? ' — busy, with obligations' : ''}`);
         const known = Object.entries(n.knows || {}).filter(([k, st]) => st >= 2 && state.npcs?.[k]).map(([k, st]) => `${state.npcs[k].name} (${STAGES[st].en})`);
         if (known.length && (n.attraction >= 30 || n.affection >= 30 || n.stage >= 2)) parts.push(`KNOWS ${userName} has been intimate with ${known.join(', ')}: reacts in character — jealous, hurt, possessive, competitive, curious or fine with it, depending on who they are and what they feel for ${userName}`);
@@ -1516,9 +1578,10 @@ export function npcLine(n0, userName = '{{user}}', state = null) {
         if (n.feel?.en && state.turn - n.feel.turn <= 6) parts.push(`mood: ${n.feel.en}`);
         if (n.stage >= 1 && n.other?.last) parts.push(`has also been intimate with others in this story (${n.other.partners.slice(-3).join(', ') || n.other.last.who}; last: ${n.other.last.act} with ${n.other.last.who}): part of who they are now — they may hide it from ${userName}, confess it, or flaunt it, by their nature and how they feel about ${userName}`);
         if (n.meetCount > 1) parts.push(`${n.meetCount} meetings with ${userName} so far`);
-        if (n.deeds?.length) parts.push(`remembered actions: ${n.deeds.slice(-3).join(' / ')}. Let relevant memories shape this character's choices in keeping with their card`);
-        const recent = (n.diary || []).slice(-3).map(d => d.en || d.ru);
-        if (recent.length) parts.push(`shared history: ${recent.join(' / ')}`);
+        const obligations = obligationSummary(state, turn.npcKey, userName);
+        if (obligations.length) parts.push(`obligations known to this NPC: ${obligations.join(' / ')}. Let the player see their consequences in this character's choices when relevant`);
+        const memory = relevantMemory(n, turn);
+        if (memory) parts.push(`relevant shared memory: ${memory}. Let it affect what this character does when it matters to these circumstances`);
     }
     return `${parts.join('; ')}; #${n.color}`;
 }
@@ -1529,7 +1592,9 @@ export function erogeDirection(u = '{{user}}') {
 /** The note every helper prompt gets when eroge mode is on. */
 export const erogeHelperNote = () => P.render('eroge_helper');
 
-export function narratorBlock(state0, { record = null, events = [], userName = '{{user}}' } = {}) {
+export function narratorBlock(state0, {
+    record = null, events = [], userName = '{{user}}', adjudication, playerText, narration,
+} = {}) {
     const state = ensureState(clone(state0));
     const lines = [P.render('narrator_head', { user: userName })];
     const threats = state.clocks.filter(c => c.kind === 'threat' && c.filled < c.size).map(c => `${c.name} ${c.filled}/${c.size}`);
@@ -1547,16 +1612,21 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
     lines.push(`${userName} carries: ${inv || 'nothing of note'}${hasCondoms(state) ? '' : ' (no condoms)'}`);
     const moneyRule = P.render('narrator_money', { user: userName, money: state.money, currency: state.currency, scale: state.econ ? ` (a simple meal costs about ${state.econ.meal}, a day of ordinary work pays about ${state.econ.day})` : '' }).trim();
     if (moneyRule) lines.push(moneyRule);
+    const localConsequences = localPlanConsequences(state);
+    if (localConsequences.length) {
+        lines.push(`LOCAL WORLD CHANGES (past events at this place; use any evidence that still holds and the player can observe, without repeating what they already found): ${localConsequences.join(' / ')}`);
+    }
     if (state.pending?.length) lines.push(`Since the last reply: ${state.pending.join('; ')}.`);
     const hook = (state.offers || []).find(o => o.status === 'offered' && o.hooks <= 3);
     if (hook) lines.push(`SIDE QUEST HOOK (weave it in naturally within the next reply or two, through ${hook.giver || 'someone or something in the scene'}; ${userName} decides whether to take it): ${hook.hook_en}`);
     const traits = traitsBlock(state, userName);
     if (traits) lines.push(traits);
     if (state.eroge) lines.push(erogeDirection(userName));
-    const present = Object.values(state.npcs).filter(n => n.present);
+    if (state.secrets?.length) lines.push('Character knowledge is individual. Concealed details stay unknown unless a character directly witnesses the evidence or learns them through a genuine disclosure. Arrival, familiarity, narration and the user’s unspoken thoughts do not grant knowledge.');
+    const present = Object.entries(state.npcs).filter(([, npc]) => npc.present);
     if (present.length) {
         lines.push(`Characters present (how they feel about ${userName} right now; let it drive their behaviour; dialogue colour):`);
-        for (const n of present.slice(0, 4)) lines.push(`- ${npcLine(n, userName, state)}`);
+        for (const [npcKey, npc] of present.slice(0, 4)) lines.push(`- ${npcLine(npc, userName, state, { playerText, narration, npcKey })}`);
     }
     if (record) {
         const o = OUTCOMES[record.outcome];
@@ -1575,16 +1645,46 @@ export function narratorBlock(state0, { record = null, events = [], userName = '
         const harmNote = record.notes.find(n => n.kind === 'harm');
         if (harmNote) lines.push(`${userName} is hurt by this (${HARM[harmNote.to].ru === 'Тяжело ранен' ? 'seriously' : 'noticeably'}).`);
     }
+    if (!record && adjudication === 'no_roll') {
+        lines.push('TURN: The referee declined a roll. Resolve the action within established abilities, conditions and opposition. A skipped roll does not authorize an impossible result.');
+    } else if (!record && adjudication === 'unruled') {
+        lines.push('TURN: No mechanical verdict was issued. Treat declared goals as attempts. Show ordinary actions and what the fiction supports. For an uncertain or opposed goal, show the immediate response and leave the contested outcome open if it is not yet established.');
+    }
     for (const ev of events) {
         if (ev.kind === 'clock_full' && ev.clock.kind === 'threat') lines.push(`THREAT ARRIVES NOW: "${ev.clock.name}" comes to pass in this reply.`);
         if (ev.kind === 'clock_full' && ev.clock.kind === 'progress') lines.push(`MILESTONE REACHED: "${ev.clock.name}" is achieved — let it land.`);
         if (ev.kind === 'breakdown') lines.push(`${userName}'s nerves snap — show a brief loss of composure (do not dictate their words).`);
     }
     const cond = conditionsLine(state, userName);
-    if (cond) lines.push(`${cond} Show each condition in how they move, speak and look.`);
+    if (cond) lines.push(`${cond} Show conditions through observable effects. Silence can be the entire response from a character.`);
     const extra = P.render('narrator_extra', { user: userName }).trim();
     if (extra) lines.push(extra);
     return lines.join('\n');
+}
+
+export function roleplaySpeechBlock(state) {
+    const instructions = [
+        'SPEECH RULES (binding where a status or language is established). Dialogue is optional. Let a pause, a gesture, breathing or a change in the surroundings carry the beat. A question alone does not require an answer.',
+        'An asleep or unconscious character stays silent until a grounded waking event or recovery. A hypnotized character stays silent unless their controller explicitly commands speech in the scene, and then gives only the brief permitted utterance. A gagged or magically silenced character cannot speak while the effect applies. Never end a condition merely to create a reply.',
+        'Keep narration in the story language. Write actual speech in the language established for that speaker or exchange. Keep the original words, not a paraphrase in the narration language. Wrap genuinely different-language speech, including its quotes, in <span lang="xx">…</span>, where xx is its language code (use und for a fictional language with no standard code). Keep the span within the speaker’s usual colour tag, if used. Only show an in-world translation when someone who understands the language actually interprets it.',
+    ];
+    const roster = new Map();
+    const participants = state?.enc?.status === 'active' ? state.enc.participants || [] : [];
+    const holders = [...Object.values(state?.npcs ?? {}).filter(npc => npc.present), ...participants];
+    for (const holder of holders) {
+        const name = holder?.name?.trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        const entry = roster.get(key) ?? { name, statuses: [] };
+        entry.statuses.push(...ST.listOf(holder));
+        roster.set(key, entry);
+    }
+    const restrictions = [...roster.values()].flatMap(holder => {
+        const rule = ST.speechRule(holder);
+        return rule ? [`${holder.name}: ${rule}.`] : [];
+    });
+    if (restrictions.length) instructions.push(restrictions.join('\n'));
+    return instructions.join('\n');
 }
 
 // ------------------------------------------------------------------ referee / extractor prompts
@@ -1613,17 +1713,30 @@ export function stateSummary(state0) {
     return `Time: ${timeEn(state.time)}${state.era ? ` (${state.era})` : ''}. Location: ${state.location || '?'}. Level ${state.level}. Harm ${state.harm}/3, energy ${energyOf(state)}/${STRESS_MAX}${state.spent ? ' (spent)' : ''}.${conditionsLine(state, '{{user}}') ? ` ${conditionsLine(state, '{{user}}')}` : ''} Skills (0-6): ${skills}. Money: ${state.money} ${state.currency} (price scale: ${scaleLine(state)}). Items: ${itemsLine(state) || 'none'}.\nClocks: ${clocks}\nGoals: ${goals}${(state.offers || []).some(o => o.status === 'offered') ? `\nOffered side quests (not taken yet): ${state.offers.filter(o => o.status === 'offered').map(o => o.title).join('; ')}` : ''}\nNPCs: ${npcs}`;
 }
 
-export function refereePrompt({ state, lastNarration, action, user, char }) {
+export function refereePrompt({ state, lastNarration, action, artifact, user, char }) {
     return P.render('referee', {
-        user, char, state: [personaLine(user), stateSummary(state).replaceAll('{{user}}', user)].filter(Boolean).join('\n'),
+        user, char, state: [
+            personaLine(user),
+            stateSummary(state).replaceAll('{{user}}', user),
+            artifact && `Accepted story item (game data): ${JSON.stringify(artifact)}. An unavailable item cannot be used. Consider only its established uses and limitations when judging uncertainty.`,
+        ].filter(Boolean).join('\n'),
         narration: String(lastNarration || '').slice(-1800), action: String(action || '').slice(0, 1200),
         eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('referee_format', { user }),
     });
 }
 
 export function extractorPrompt({ state, userText, reply, user, char, memoryState = '' }) {
+    const plans = Object.values(state.npcs).filter(npc => npc.plan).slice(-8)
+        .map(npc => `${npc.name}: ${npcPlanSummary(npc.plan)}`);
+    const memory = storyMemoryForTracker(state, user);
+    const history = memory.obligations.length || memory.secrets.length
+        ? `Established promises, debts and secret holders (references, never evidence of a new disclosure): ${JSON.stringify(memory)}` : '';
     return P.render('extractor', {
-        user, char, state: [personaLine(user), stateSummary(state).replaceAll('{{user}}', user)].filter(Boolean).join('\n'),
+        user, char, state: [
+            personaLine(user), stateSummary(state).replaceAll('{{user}}', user),
+            plans.length ? `Existing NPC plans (reference, not new evidence):\n${plans.join('\n')}` : '',
+            history,
+        ].filter(Boolean).join('\n'),
         memory: memoryState ? `\nStory state card:\n${memoryState.slice(0, 2000)}\n` : '',
         player: String(userText || '').slice(0, 1200), reply: String(reply || '').slice(0, 3500),
         eroge: state.eroge ? erogeHelperNote() + '\n' : '', format: P.render('extractor_format', { user }),

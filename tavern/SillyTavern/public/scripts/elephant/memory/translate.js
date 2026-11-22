@@ -20,6 +20,7 @@ export const TRANSLATE_PROMPTS = {
 - Moans, gasps and broken speech stay sounds and fragments, written the way they are written in the target language (haa → ха-а, mm → м-м, nngh → нн-х, ohh → о-ох), with the same stutters and cut-offs ("p-please" → "п-пожалуйста").
 - Names: use the glossary; otherwise transliterate a name once by its sound and keep exactly that spelling every time (Mara → Мара). Keep the gender of every character correct in verbs and adjectives.
 - Keep markup intact: HTML tags and attributes, markdown (*, _, **), line breaks, emoji and placeholders like ⟦0⟧ stay exactly where they are. Use «ёлочки» for quotation marks and an em dash for interrupted speech. Translate only human-readable text.
+- A protected span of intentional foreign speech stands exactly where its placeholder is. Keep the placeholder in the same order and do not add a translation or explanation for it.
 - Do not summarize, add, explain or skip anything. Output only the translation.`,
 
     translate_display: `Glossary (original → translation):
@@ -75,6 +76,10 @@ export function hasCyrillic(text) {
     return cyr / letters.length > 0.3;
 }
 
+// Explicitly marked in-world speech retains its language in the translated view.
+const LANGUAGE_SPAN = /<span\b(?=[^>]*\slang\s*=\s*(?:"[a-z]{2,8}(?:-[a-z0-9]{1,8})*"|'[a-z]{2,8}(?:-[a-z0-9]{1,8})*'|[a-z]{2,8}(?:-[a-z0-9]{1,8})*(?=[\s>])))[^>]*>(?:(?!<\/?span\b)[\s\S])*<\/span\s*>/gi;
+const isLanguageSpan = part => /^<span\b[^>]*\slang\s*=/i.test(part);
+
 /**
  * Прячет от переводчика то, что переводить нельзя: HTML-комментарии,
  * <style>/<script>, блоки кода и (опционально) целые VTK-вставки.
@@ -91,11 +96,12 @@ export function maskProtected(text, { maskVtk = false } = {}) {
     t = t.replace(/<script[\s\S]*?<\/script>/gi, put);
     t = t.replace(/```[\s\S]*?```/g, put);
     t = t.replace(/<!--[\s\S]*?-->/g, put);
+    t = t.replace(LANGUAGE_SPAN, put);
     return { masked: t, parts };
 }
 
 /** Возвращает спрятанные куски на место; потерянные переводчиком — дописывает в конец. */
-export function unmaskProtected(text, parts) {
+export function unmaskProtected(text, parts, original) {
     const used = new Set();
     let t = String(text ?? '').replace(/⟦(\d+)⟧/g, (all, n) => {
         const i = Number(n);
@@ -106,19 +112,21 @@ export function unmaskProtected(text, parts) {
         return '';
     });
     const lost = parts.filter((_, i) => !used.has(i));
+    if (typeof original === 'string' && lost.some(isLanguageSpan)) return original;
     if (lost.length) t = t.trimEnd() + '\n' + lost.join('\n');
     return t;
 }
 
 const FONT_RE = /<font\s+color\s*=\s*["']?(#?[0-9a-fA-F]{3,8})["']?[^>]*>([\s\S]*?)<\/font>/g;
-const QUOTE_RE = /«[^»]*»|“[^”]*”|„[^“”]*[“”]|"[^"\n]*"/g;
+const QUOTE_RE = /<[^>]+>|«[^»]*»|“[^”]*”|„[^“”]*[“”]|"[^"\n]*"/g;
+const spokenQuotes = text => [...text.matchAll(QUOTE_RE)].filter(match => !match[0].startsWith('<'));
 
 /** Quoted lines of a text in order, each with the colour of the <font> it sits in (or null). */
 export function speechColours(text) {
     const t = String(text ?? '');
     const fonts = [...t.matchAll(FONT_RE)].map(m => ({ from: m.index, to: m.index + m[0].length, color: m[1] }));
     const plainFonts = fonts.length;
-    const quotes = [...t.matchAll(QUOTE_RE)].map((m) => {
+    const quotes = spokenQuotes(t).map((m) => {
         const from = m.index, to = m.index + m[0].length;
         const f = fonts.find(x => x.from < to && x.to > from);
         return f ? f.color : null;
@@ -142,11 +150,12 @@ export function keepSpeechColours(original, translated) {
     if (open === closed && open >= src.fonts && now.quotes.filter(Boolean).length >= wanted) return tr;
     // rebuild: drop what is left of the colour tags, colour the quoted lines again
     const bare = tr.replace(/<\/?font\b[^>]*>/gi, '');
-    const count = (bare.match(QUOTE_RE) ?? []).length;
+    const count = spokenQuotes(bare).length;
     if (!count) return tr;
     const one = new Set(src.quotes.filter(Boolean));
     let i = 0;
     return bare.replace(QUOTE_RE, (q) => {
+        if (q.startsWith('<')) return q;
         // same number of lines: one to one; otherwise only a single-voice message is safe to recolour
         const color = count === src.quotes.length ? src.quotes[i] : (one.size === 1 && !src.quotes.includes(null) ? [...one][0] : null);
         i++;

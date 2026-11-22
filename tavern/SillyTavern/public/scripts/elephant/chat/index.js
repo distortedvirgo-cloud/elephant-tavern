@@ -11,6 +11,7 @@ import { branchChat, createNewBookmark } from '../../bookmarks.js';
 import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast } from '../stage/helper.js';
 import { canOpenArtifact, openArtifact } from '../artifact/index.js';
 import { getArtifactState } from '../artifact/store.js';
+import { displayItem } from '../artifact/translation.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 const MODULE = 'elephant_chat';
@@ -230,7 +231,7 @@ function quickActions() {
     if (state?.items?.length) actions.push(['items', 'Инвентарь', 'fa-box-open', () => game.openStateSheet('items')]);
     if (canOpenArtifact()) {
         const artifact = getArtifactState();
-        actions.push(['artifact', artifact?.active?.title || artifact?.proposal?.title || 'Сюжетный предмет', 'fa-gem', openArtifact]);
+        actions.push(['artifact', displayItem(artifact.active || artifact.proposal)?.title || 'Сюжетный предмет', 'fa-gem', openArtifact]);
     }
     if (state?.goals?.some(g => g.status === 'active') || state?.offers?.some(o => o.status === 'offered')) {
         actions.push(['goals', 'Цели', 'fa-bullseye', () => game.openStateSheet('goals')]);

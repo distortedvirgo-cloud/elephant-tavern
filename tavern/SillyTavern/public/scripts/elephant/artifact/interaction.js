@@ -1,3 +1,4 @@
+import { fitArtifactPage, SCREEN_STYLE, SCROLL_LABELS } from './layout.js';
 import { artifactTimelineKeys } from './store.js';
 import {
     chat_metadata, eventSource, event_types, generateQuietPrompt, getCurrentChatId,
@@ -20,10 +21,10 @@ function element(tag, text = '', className = '') {
  * Rebuild markup from inert input, including only presentation and declared actions.
  * The frame does not run scripts and CSP blocks all subresource requests.
  */
-function renderMarkup(doc, html, actions) {
+export function renderMarkup(doc, html, actions, container = doc.body) {
     const template = document.createElement('template');
     template.innerHTML = html;
-    function copyChildren(source, destination) {
+    function copyChildren(source, destination, insideScroll = false) {
         for (const child of source.childNodes) {
             if (child.nodeType === Node.TEXT_NODE) {
                 destination.append(doc.createTextNode(child.textContent));
@@ -43,6 +44,13 @@ function renderMarkup(doc, html, actions) {
                 node.disabled = !actions.has(actionId);
             }
             if (tag === 'details' && child.hasAttribute('open')) node.open = true;
+            const scroll = child.getAttribute('data-scroll');
+            if (SCROLL_LABELS.has(scroll) && !insideScroll && !actions.has(actionId)) {
+                node.dataset.scroll = scroll;
+                node.tabIndex = 0;
+                node.setAttribute('role', 'region');
+                if (!node.hasAttribute('aria-label')) node.setAttribute('aria-label', SCROLL_LABELS.get(scroll));
+            }
             if (actions.has(actionId)) {
                 node.dataset.action = actionId;
                 if (node.localName !== 'button') {
@@ -50,11 +58,11 @@ function renderMarkup(doc, html, actions) {
                     node.tabIndex = 0;
                 }
             }
-            copyChildren(child, node);
+            copyChildren(child, node, insideScroll || node.hasAttribute('data-scroll'));
             destination.append(node);
         }
     }
-    copyChildren(template.content, doc.body);
+    copyChildren(template.content, container);
 }
 
 function renderStyles(doc, css) {
@@ -63,14 +71,9 @@ function renderStyles(doc, css) {
     // model text cannot terminate the style element or introduce HTML.
     parsed.replaceSync(css);
     const style = doc.createElement('style');
-    style.textContent = `body { margin: 0; padding: 1rem; font: 16px system-ui, sans-serif; overflow-wrap: anywhere; }
-[data-action]:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    style.textContent = `body { margin: 0; font: 16px system-ui, sans-serif; overflow-wrap: anywhere; }
 ${Array.from(parsed.cssRules, rule => rule.cssText).join('\n')}
-html, body { min-width: 0 !important; max-width: 100% !important; }
-body * { box-sizing: border-box !important; min-width: 0 !important; max-width: 100% !important; }
-body, body * { overflow-wrap: anywhere !important; }
-pre { white-space: pre-wrap !important; }
-[data-action] { white-space: normal !important; }
+${SCREEN_STYLE}
 `;
     doc.head.append(style);
 }
@@ -123,17 +126,20 @@ function findThread(metadata, itemId, recipient, create = false) {
     return thread;
 }
 
-export function createArtifactInteraction({ host, onPageChange }) {
+export function createArtifactInteraction({ host, onPageChange, onThreadBack }) {
     const drafts = new Map();
     let draftTimer;
     let scope;
     let view;
     let threadView;
     let sending;
+    let stopFitting;
 
     const inChat = candidate => Boolean(candidate?.chatId && candidate.chatId === getCurrentChatId() && candidate.metadata === chat_metadata);
 
     function close() {
+        stopFitting?.();
+        stopFitting = undefined;
         view = undefined;
         threadView = undefined;
         host.replaceChildren();
@@ -146,20 +152,23 @@ export function createArtifactInteraction({ host, onPageChange }) {
     }
     eventSource.on(event_types.CHAT_CHANGED, chatChanged);
 
-    function render(artifact, { itemId = artifact?.id, onClose } = {}) {
+    function render(artifact, { itemId = artifact?.id, canonicalTitle = artifact?.title, onClose } = {}) {
         chatChanged();
         if (!artifact || !host.isConnected) return close();
         scope = { chatId: getCurrentChatId(), metadata: chat_metadata };
-        view = { artifact, itemId, onClose, scope, actions: new Map(artifact.actions.map(action => [action.id, action])) };
+        view = { artifact, itemId, canonicalTitle, onClose, scope, actions: new Map(artifact.actions.map(action => [action.id, action])) };
         threadView = undefined;
         renderPage();
     }
 
     function renderPage(pageId = view.artifact.pageId) {
+        stopFitting?.();
+        stopFitting = undefined;
         const current = view;
         const page = current.artifact.pages.find(entry => entry.id === pageId) || current.artifact.pages[0];
         const iframe = document.createElement('iframe');
         iframe.className = 'elephant-artifact-frame';
+        iframe.setAttribute('scrolling', 'no');
         iframe.title = page?.title || current.artifact.title;
         iframe.setAttribute('sandbox', 'allow-same-origin');
         iframe.setAttribute('referrerpolicy', 'no-referrer');
@@ -167,8 +176,9 @@ export function createArtifactInteraction({ host, onPageChange }) {
             if (view !== current || !iframe.isConnected) return;
             const doc = iframe.contentDocument;
             if (!doc) return;
-            renderStyles(doc, page?.css || '');
+            renderStyles(doc, [current.artifact.sharedCss, page?.css].filter(Boolean).join('\n'));
             renderMarkup(doc, page?.html || '', current.actions);
+            stopFitting = fitArtifactPage(doc, current.actions, iframe);
             function activate(event) {
                 const target = event.target.closest?.('[data-action]');
                 if (!target) return;
@@ -244,6 +254,8 @@ export function createArtifactInteraction({ host, onPageChange }) {
     }
 
     function openThread(recipient) {
+        stopFitting?.();
+        stopFitting = undefined;
         const from = view;
         if (!from.itemId || !recipient) return;
         const draftKey = JSON.stringify([from.itemId, recipient]);
@@ -252,7 +264,8 @@ export function createArtifactInteraction({ host, onPageChange }) {
         back.type = 'button';
         back.addEventListener('click', () => {
             threadView = undefined;
-            renderPage();
+            onThreadBack();
+            if (view === from) renderPage();
         });
         const heading = element('h3', recipient);
         const history = element('ol', '', 'elephant-artifact-thread-history');
@@ -311,7 +324,7 @@ export function createArtifactInteraction({ host, onPageChange }) {
         // Prefix the declared intent so it cannot be processed as a slash command.
         // Neutralize the macro delimiters in generated text before submitting.
         const intent = action.text.replaceAll('{{', '｛｛').replaceAll('}}', '｝｝');
-        const title = current.artifact.title.replaceAll('{{', '｛｛').replaceAll('}}', '｝｝');
+        const title = current.canonicalTitle.replaceAll('{{', '｛｛').replaceAll('}}', '｝｝');
         try {
             const sent = await sendIntent(`*Я пытаюсь использовать «${title}».* ${intent}`, () => inChat(current.scope));
             if (sent && view === current && inChat(current.scope)) current.onClose?.();
@@ -324,5 +337,14 @@ export function createArtifactInteraction({ host, onPageChange }) {
         }
     }
 
-    return { render, dispatch, close, destroy() { close(); eventSource.removeListener(event_types.CHAT_CHANGED, chatChanged); } };
+    return {
+        render,
+        dispatch,
+        close,
+        isThreadOpen: () => Boolean(threadView),
+        destroy() {
+            close();
+            eventSource.removeListener(event_types.CHAT_CHANGED, chatChanged);
+        },
+    };
 }

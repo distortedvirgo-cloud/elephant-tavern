@@ -47,6 +47,16 @@ export function blockOf(holder) {
 export const cannotStrike = (holder) => Boolean(blockOf(holder));
 /** Cannot leave, surrender-and-walk, or end the scene by their own body. */
 export const cannotLeave = (holder) => ['act', 'move'].includes(blockOf(holder)) || has(holder, 'charmed');
+export function speechRule(holder) {
+    if (has(holder, 'asleep')) return 'silent and unaware until actually awake. No dialogue, whispered replies, or sleep-talking as a substitute';
+    if (has(holder, 'stunned')) return 'no coherent speech until recovered. Show involuntary reactions or silence';
+    if (has(holder, 'charmed')) {
+        const controller = listOf(holder).find(status => status.id === 'charmed')?.by;
+        return `silent by default. No spontaneous speech, explanations, questions or conversation. A short utterance is possible only if ${controller || 'the person controlling the hypnosis'} explicitly gives an in-story command to speak and the character can physically speak`;
+    }
+    if (has(holder, 'paralyzed')) return 'still and quiet. Speech is possible only if the established effect leaves the voice functional and the scene gives a concrete reason to speak';
+    return '';
+}
 export const isOpen = (holder) => listOf(holder).some(s => STATUSES[s.id]?.open);
 export const modOf = (holder) => listOf(holder).reduce((a, s) => a + (STATUSES[s.id]?.mod || 0), 0);
 export const dotOf = (holder) => listOf(holder).reduce((a, s) => a + (STATUSES[s.id]?.dot || 0), 0);

@@ -39,8 +39,18 @@
 
 .ea-panel-item { padding: 1rem; }
 .ea-panel-item .ea-title { padding-inline: 2.4rem; }
-.ea-panel-item .ea-description { margin-bottom: .25rem; }
-
+.ea-panel-item .ea-title { margin: 0; align-content: center; min-height: 44px; }
+.ea-item-description { padding: .5rem .25rem; text-align: start; }
+.ea-dialog .ea-info {
+    position: absolute;
+    top: .4rem;
+    inset-inline-start: .4rem;
+    width: 44px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    font-size: 1.15rem;
+}
 .ea-dialog button {
     min-height: 44px;
     padding: .35rem .9rem;
@@ -143,7 +153,8 @@
 .ea-artifact iframe {
     display: block;
     width: 100%;
-    height: min(47dvh, 28rem);
+    --ea-frame-limit: min(72dvh, 36rem);
+    height: min(var(--ea-content-height, var(--ea-frame-limit)), var(--ea-frame-limit));
     border: 1px solid var(--ea-edge);
     border-radius: .75rem;
     background: #211e21;
@@ -286,11 +297,10 @@
     .ea-title, .ea-reveal-title { font-size: clamp(1.125rem, 5vw, 1.5rem); }
     .ea-seal { width: 2.15rem; font-size: .9rem; outline-offset: 2px; }
     .ea-description, .ea-status { font-size: .875rem; line-height: 1.32; }
-    .ea-panel-item .ea-description {
-        max-height: 3.96em;
-        overflow: auto;
-        margin: 0;
+    .ea-dialog:has(.ea-panel-item) {
+        max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     }
+    .ea-dialog .ea-info { top: .25rem; inset-inline-start: .25rem; }
     .ea-dialog button { font-size: .875rem; padding-inline: .55rem; white-space: normal; }
     .ea-dialog .ea-close { inset: .25rem .25rem auto auto; font-size: 1.4rem; }
     .ea-actions, .ea-change { gap: .35rem; }
@@ -298,4 +308,22 @@
     .ea-reveal { padding: .75rem .75rem 3rem; gap: .5rem; min-height: min(33dvh, 13rem); }
     .ea-reveal-glow { width: clamp(3rem, 18vw, 5rem); }
     .ea-reveal-gem { font-size: clamp(1.25rem, 6vw, 2rem); }
+}
+
+@media (max-height: 420px) {
+    .ea-artifact iframe { --ea-frame-limit: min(50dvh, 34rem); }
+}
+
+.ea-utility {
+    margin: 0;
+    max-width: 42ch;
+    color: var(--ea-gold);
+    font-size: .875rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.ea-dialog .ea-replace {
+    justify-self: end;
+    background: transparent;
+    color: var(--ea-muted);
 }
