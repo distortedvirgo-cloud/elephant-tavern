@@ -9,6 +9,8 @@
  */
 import { branchChat, createNewBookmark } from '../../bookmarks.js';
 import { ctx, callHelper, hasHelper, memoryState, haptic, log, toast } from '../stage/helper.js';
+import { canOpenArtifact, openArtifact } from '../artifact/index.js';
+import { getArtifactState } from '../artifact/store.js';
 
 const $ = (...a) => globalThis.jQuery(...a);
 const MODULE = 'elephant_chat';
@@ -185,13 +187,17 @@ function ensureIdeasBar() {
         const actions = quickActions();
         const panel = document.getElementById('ec-quick');
         panel.replaceChildren();
-        for (const [label, icon, run] of actions) {
+        for (const [id, label, icon] of actions) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i>${label}`;
+            const glyph = document.createElement('i');
+            glyph.classList.add('fa-solid', icon);
+            glyph.setAttribute('aria-hidden', 'true');
+            button.append(glyph, label);
             button.onclick = () => {
                 closeQuick(true);
-                if (quickActions().some(([name]) => name === label)) run();
+                const action = quickActions().find(([name]) => name === id);
+                if (action) action[3]();
             };
             panel.append(button);
         }
@@ -220,17 +226,21 @@ function quickActions() {
     const game = globalThis.ElephantGame;
     const state = game?.isActive() ? game.currentState() : null;
     const actions = [];
-    if (state && game.canOpenMap(state)) actions.push(['Карта', 'fa-map', () => game.openStateSheet('map')]);
-    if (state?.items?.length) actions.push(['Инвентарь', 'fa-box-open', () => game.openStateSheet('items')]);
+    if (state && game.canOpenMap(state)) actions.push(['map', 'Карта', 'fa-map', () => game.openStateSheet('map')]);
+    if (state?.items?.length) actions.push(['items', 'Инвентарь', 'fa-box-open', () => game.openStateSheet('items')]);
+    if (canOpenArtifact()) {
+        const artifact = getArtifactState();
+        actions.push(['artifact', artifact?.active?.title || artifact?.proposal?.title || 'Сюжетный предмет', 'fa-gem', openArtifact]);
+    }
     if (state?.goals?.some(g => g.status === 'active') || state?.offers?.some(o => o.status === 'offered')) {
-        actions.push(['Цели', 'fa-bullseye', () => game.openStateSheet('goals')]);
+        actions.push(['goals', 'Цели', 'fa-bullseye', () => game.openStateSheet('goals')]);
     }
     if (S().ideas !== 'off' && ctx().chat?.length && !ctx().chat.at(-1).is_user) {
-        if ($('#ec-ideas').children().length) actions.push(['Скрыть варианты ответа', 'fa-eye-slash', clearIdeas]);
-        else actions.push(['Варианты ответа', 'fa-lightbulb', () => loadIdeas(true)]);
+        if ($('#ec-ideas').children().length) actions.push(['hideIdeas', 'Скрыть варианты ответа', 'fa-eye-slash', clearIdeas]);
+        else actions.push(['showIdeas', 'Варианты ответа', 'fa-lightbulb', () => loadIdeas(true)]);
     }
-    if (state) actions.push(['Герой', 'fa-user', () => game.openStateSheet('hero')]);
-    else actions.push(['Персонажи', 'fa-address-book', () => {
+    if (state) actions.push(['hero', 'Герой', 'fa-user', () => game.openStateSheet('hero')]);
+    else actions.push(['characters', 'Персонажи', 'fa-address-book', () => {
         if (shell()) globalThis.ElephantStage.openSheet('chars');
         else {
             const drawer = $('#rightNavHolder');

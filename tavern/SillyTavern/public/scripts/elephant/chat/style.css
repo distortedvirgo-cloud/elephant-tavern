@@ -74,3 +74,10 @@ body.ec-sheet-open #ec-scrim { opacity: 1; pointer-events: auto; }
 #ec-quick button:focus-visible, #ec-quick-btn:focus-visible { outline: 2px solid var(--et-highlight); outline-offset: -2px; }
 #ec-ideas { touch-action: pan-x; overscroll-behavior-x: contain; }
 .ec-idea { touch-action: pan-x; }
+
+#ec-quick button { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+#ec-quick button i { flex: none; }
+@media (max-width: 520px) {
+    #ec-quick:not([hidden]) { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 26dvh; padding: 4px; }
+    #ec-quick button { padding: 5px 7px; font-size: .875rem; line-height: 1.2; }
+}

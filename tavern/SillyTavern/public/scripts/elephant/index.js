@@ -6,6 +6,7 @@
  *   game   — referee, dice, HUD, bonds, goals;
  *   proactive — characters write first (with the server scheduler);
  *   chat   — gestures, long-press actions, reply ideas;
+ *   artifact — the story item, its actions and history;
  *   welcome — first-run setup (name, NanoGPT key, models);
  *   power  — the character controls the app (scene, colours, title cards, glitch, whispers);
  *   forge  — character generator (canon-aware cards + Anima avatars);
@@ -21,6 +22,7 @@ import { init as initStage } from './stage/index.js';
 import { init as initGame, beforeGenerate as gameBeforeGenerate } from './game/index.js';
 import { init as initProactive } from './proactive/index.js';
 import { init as initChat } from './chat/index.js';
+import { initArtifact } from './artifact/index.js';
 import { init as initWelcome } from './welcome/index.js';
 import { init as initPower } from './power/index.js';
 import { init as initForge } from './forge/index.js';
@@ -43,7 +45,7 @@ async function beforeGenerate(chat, contextSize, abort, type) {
 
 export async function initElephantCore() {
     globalThis.ElephantCore = { version: 2, beforeGenerate };
-    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['power', initPower], ['forge', initForge], ['director', initDirector], ['cost', initCost], ['voices', initVoices], ['transfer', initTransfer]]) {
+    for (const [name, init] of [['memory', initMemory], ['stage', initStage], ['game', initGame], ['proactive', initProactive], ['chat', initChat], ['welcome', initWelcome], ['artifact', initArtifact], ['power', initPower], ['forge', initForge], ['director', initDirector], ['cost', initCost], ['voices', initVoices], ['transfer', initTransfer]]) {
         try {
             await init();
         } catch (e) {
